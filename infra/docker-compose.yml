@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: athenis
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: athenis_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U athenis -d athenis_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - athenis
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.backend
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql://athenis:${POSTGRES_PASSWORD:-password}@postgres:5432/athenis_db
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - athenis
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.frontend
+    restart: unless-stopped
+    networks:
+      - athenis
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - athenis
+
+volumes:
+  postgres_data:
+
+networks:
+  athenis:
+    driver: bridge

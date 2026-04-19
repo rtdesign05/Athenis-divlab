@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Prisma
+apps/backend/prisma/migrations/
+
+# Test coverage
+coverage/
+
+# Temp
+*.tmp
+*.temp

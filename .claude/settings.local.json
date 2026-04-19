@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(node_modules/.bin/tsc --noEmit -p apps/backend/tsconfig.json)",
+      "Bash(\"C:/Users/admin/Documents/Athenis/node_modules/.bin/tsc\" --noEmit -p \"C:/Users/admin/Documents/Athenis/apps/backend/tsconfig.json\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && node_modules/.bin/tsc --noEmit -p apps/backend/tsconfig.json 2>&1 | head -80\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && node_modules/.bin/tsc --noEmit -p apps/backend/tsconfig.json 2>&1 | grep -v 'auth.service.ts' | grep -v 'env.ts:7'\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && node_modules/.bin/tsc --noEmit -p apps/backend/tsconfig.json 2>&1 | grep -E '^\\\\S.*error TS' | grep -v 'auth.service.ts' | grep -v 'env.ts'\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && node_modules/.bin/tsc --noEmit -p apps/backend/tsconfig.json 2>&1 | grep '^apps/backend/src/modules' | grep -v 'auth'\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && node_modules/.bin/tsc --noEmit -p apps/backend/tsconfig.json 2>&1\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && node_modules/.bin/tsc --noEmit -p apps/backend/tsconfig.json 2>&1 | grep 'error TS'\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && timeout 12 npm run dev -w apps/backend 2>&1 | head -30\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && timeout 8 npm run dev -w apps/backend 2>&1\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis/apps/backend && timeout 6 node --env-file=../../.env --import tsx/esm src/index.ts 2>&1\")",
+      "Bash(wsl -e bash -c 'cd /mnt/c/Users/admin/Documents/Athenis/apps/backend && node --env-file=../../.env --import tsx/esm src/index.ts & *)",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && npm install -w apps/frontend class-variance-authority clsx tailwind-merge date-fns 2>&1 | tail -5\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && node_modules/.bin/tsc --noEmit -p apps/frontend/tsconfig.json 2>&1\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis/apps/frontend && timeout 20 node_modules/.bin/vite build 2>&1 | tail -15\")",
+      "Bash(wsl -e bash -c \"cd /mnt/c/Users/admin/Documents/Athenis && timeout 25 npx --prefix apps/frontend vite build 2>&1 | tail -15\")",
+      "Bash(node \"C:/Users/admin/Documents/Athenis/node_modules/typescript/bin/tsc\" --version)",
+      "Bash(npm install *)",
+      "Bash(xargs grep *)",
+      "Bash(node ../../node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/refresh)",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/register -H \"Content-Type: application/json\" -d '{}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"x@x.com\",\"password\":\"wrong\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"Test1234!\",\"accountType\":\"PERSONAL\"}')",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/register -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"Test1234!\"}')",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"x@x.com\",\"password\":\"Bad1234!\"}')"
+    ]
+  }
+}

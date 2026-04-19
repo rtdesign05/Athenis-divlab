@@ -1,0 +1,26 @@
+{
+  "name": "athenis",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build -w packages/shared-types && concurrently -n backend,frontend,types -c blue,green,yellow \"npm run dev -w apps/backend\" \"npm run dev -w apps/frontend\" \"npm run dev -w packages/shared-types\"",
+    "build": "npm run build -w packages/shared-types && npm run build -w apps/backend && npm run build -w apps/frontend",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate -w apps/backend",
+    "prisma:migrate": "npm run prisma:migrate -w apps/backend",
+    "prisma:studio": "npm run prisma:studio -w apps/backend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

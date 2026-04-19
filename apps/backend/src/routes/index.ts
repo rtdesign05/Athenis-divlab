@@ -1,0 +1,26 @@
+import { Router } from 'express'
+import { authRouter } from '../modules/auth/auth.router.js'
+import { invoicesRouter } from '../modules/invoices/invoices.routes.js'
+import { clientsRouter } from '../modules/clients/clients.routes.js'
+import { expensesRouter } from '../modules/expenses/expenses.routes.js'
+import { employeesRouter } from '../modules/employees/employees.routes.js'
+import { accountingRouter } from '../modules/accounting/accounting.routes.js'
+import { esgRouter } from '../modules/esg/esg.routes.js'
+import { cabinetRouter } from '../modules/cabinet/cabinet.routes.js'
+
+const router = Router()
+
+router.get('/health', (_req, res) => {
+  res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } })
+})
+
+router.use('/auth', authRouter)
+router.use('/invoices', invoicesRouter)
+router.use('/clients', clientsRouter)
+router.use('/expenses', expensesRouter)
+router.use('/employees', employeesRouter)
+router.use('/accounting', accountingRouter)
+router.use('/esg', esgRouter)
+router.use('/cabinet', cabinetRouter)
+
+export { router }

@@ -1,0 +1,107 @@
+import type { Request, Response, NextFunction } from 'express'
+import * as authService from './auth.service.js'
+
+function clientIp(req: Request): string {
+  return String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? 'unknown').split(',')[0]?.trim() ?? 'unknown'
+}
+
+function userAgent(req: Request): string {
+  return req.headers['user-agent'] ?? 'unknown'
+}
+
+export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { response, refreshToken } = await authService.register(req.body, clientIp(req), userAgent(req))
+    authService.setRefreshCookie(res, refreshToken)
+    res.status(201).json({ success: true, data: response })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { response, refreshToken } = await authService.login(req.body, clientIp(req), userAgent(req))
+    if (refreshToken) authService.setRefreshCookie(res, refreshToken)
+    res.json({ success: true, data: response })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function loginVerifyTotp(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { response, refreshToken } = await authService.loginVerifyTotp(
+      req.body.tempToken,
+      req.body.code,
+      clientIp(req),
+      userAgent(req),
+    )
+    authService.setRefreshCookie(res, refreshToken)
+    res.json({ success: true, data: response })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function refresh(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const rawToken: string = req.cookies['refreshToken'] ?? ''
+    if (!rawToken) {
+      res.status(401).json({ success: false, error: 'No refresh token', code: 'TOKEN_MISSING' })
+      return
+    }
+    const data = await authService.refreshAccessToken(rawToken)
+    res.json({ success: true, data })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function logout(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const rawToken: string = req.cookies['refreshToken'] ?? ''
+    await authService.logout(rawToken, req.user!.sub, req.user!.companyId, clientIp(req), userAgent(req))
+    res.clearCookie('refreshToken', { path: '/api/auth' })
+    res.json({ success: true, data: null })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function setupTotp(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await authService.setupTotp(req.user!.sub)
+    res.json({ success: true, data })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function enableTotp(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await authService.enableTotp(req.user!.sub, req.body, clientIp(req), userAgent(req))
+    res.json({ success: true, data })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function disableTotp(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await authService.disableTotp(req.user!.sub, req.body, clientIp(req), userAgent(req))
+    res.json({ success: true, data: null })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function changePassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await authService.changePassword(req.user!.sub, req.body, clientIp(req), userAgent(req))
+    res.clearCookie('refreshToken', { path: '/api/auth' })
+    res.json({ success: true, data: null })
+  } catch (err) {
+    next(err)
+  }
+}
