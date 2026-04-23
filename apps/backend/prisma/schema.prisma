@@ -66,6 +66,26 @@ enum RecurringFrequency {
   ANNUAL
 }
 
+enum LeaveType {
+  CP
+  RTT
+  SICK
+  MATERNITY
+  UNPAID
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum ReviewStatus {
+  DRAFT
+  COMPLETED
+}
+
 enum BankTxType {
   CREDIT
   DEBIT
@@ -166,6 +186,9 @@ model Company {
   recurringInvoices RecurringInvoice[]
   bankTransactions  BankTransaction[]
   fiscalYearCloses  FiscalYearClose[]
+  leaveRequests     LeaveRequest[]
+  annualReviews     AnnualReview[]
+  workSchedules     WorkSchedule[]
 
   @@index([cabinetId])
   @@map("companies")
@@ -374,8 +397,77 @@ model Employee {
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
+  leaveRequests LeaveRequest[]
+  annualReviews AnnualReview[]
+  workSchedules WorkSchedule[]
+
   @@index([companyId])
   @@map("employees")
+}
+
+model LeaveRequest {
+  id         String      @id @default(cuid())
+  companyId  String      @map("company_id")
+  company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId String      @map("employee_id")
+  employee   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type       LeaveType
+  startDate  DateTime    @map("start_date")
+  endDate    DateTime    @map("end_date")
+  days       Int
+  status     LeaveStatus @default(PENDING)
+  reason     String?
+  notes      String?
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+model AnnualReview {
+  id           String       @id @default(cuid())
+  companyId    String       @map("company_id")
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId   String       @map("employee_id")
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  year         Int
+  rating       Int?
+  strengths    String?
+  improvements String?
+  objectives   Json?
+  status       ReviewStatus @default(DRAFT)
+  reviewedAt   DateTime?    @map("reviewed_at")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  @@unique([companyId, employeeId, year])
+  @@index([companyId])
+  @@index([employeeId])
+  @@map("annual_reviews")
+}
+
+model WorkSchedule {
+  id         String   @id @default(cuid())
+  companyId  String   @map("company_id")
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  weekStart  DateTime @map("week_start")
+  monday     Json?
+  tuesday    Json?
+  wednesday  Json?
+  thursday   Json?
+  friday     Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([companyId, employeeId, weekStart])
+  @@index([companyId])
+  @@index([employeeId])
+  @@map("work_schedules")
 }
 
 model ESGData {

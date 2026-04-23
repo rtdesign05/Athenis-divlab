@@ -29,10 +29,11 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     module: 'rh',
     label: 'Ressources humaines',
     items: [
-      { label: 'Employés', path: '/app/hr/employees', icon: '👤' },
-      { label: 'Contrats', path: '/app/hr/contracts', icon: '📄' },
-      { label: 'Paie', path: '/app/hr/payroll', icon: '💶' },
-      { label: 'Congés', path: '/app/hr/leaves', icon: '🏖️' },
+      { label: 'Employés',  path: '/app/hr/employees', icon: '👤' },
+      { label: 'Congés',    path: '/app/hr/leaves',    icon: '🏖️' },
+      { label: 'Planning',  path: '/app/hr/planning',  icon: '📅' },
+      { label: 'Entretiens', path: '/app/hr/reviews',  icon: '📝' },
+      { label: 'Bulletins', path: '/app/hr/payslip',   icon: '💶' },
     ],
   },
   {

@@ -9,6 +9,9 @@ import { accountingRouter } from '../modules/accounting/accounting.routes.js'
 import { esgRouter } from '../modules/esg/esg.routes.js'
 import { bankRouter } from '../modules/bank/bank.routes.js'
 import { cabinetRouter } from '../modules/cabinet/cabinet.routes.js'
+import { leavesRouter } from '../modules/leaves/leaves.routes.js'
+import { reviewsRouter } from '../modules/reviews/reviews.routes.js'
+import { scheduleRouter } from '../modules/schedule/schedule.routes.js'
 
 const router = Router()
 
@@ -26,5 +29,8 @@ router.use('/accounting', accountingRouter)
 router.use('/bank', bankRouter)
 router.use('/esg', esgRouter)
 router.use('/cabinet', cabinetRouter)
+router.use('/leaves', leavesRouter)
+router.use('/reviews', reviewsRouter)
+router.use('/schedule', scheduleRouter)
 
 export { router }

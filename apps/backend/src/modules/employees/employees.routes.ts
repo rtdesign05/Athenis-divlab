@@ -5,6 +5,8 @@ import { validateRequest } from '../../middleware/validateRequest.js'
 import { getCompanyId } from '../../lib/companyContext.js'
 import { CreateEmployeeDto, UpdateEmployeeDto, ListEmployeesDto } from './employees.dto.js'
 import * as svc from './employees.service.js'
+import { computePayslip } from './payslip.js'
+import { prisma } from '../../lib/prisma.js'
 
 export const employeesRouter = Router()
 
@@ -86,6 +88,27 @@ employeesRouter.delete(
     try {
       await svc.deleteEmployee(getCompanyId(req), req.params.id!)
       res.json({ success: true, data: null })
+    } catch (e) { next(e) }
+  },
+)
+
+employeesRouter.get(
+  '/:id/payslip',
+  checkModule('rh', 'read'),
+  async (req, res, next) => {
+    try {
+      const companyId = getCompanyId(req)
+      const month = (req.query.month as string) ?? new Date().toISOString().slice(0, 7)
+      const emp = await prisma.employee.findFirst({ where: { id: req.params.id!, companyId } })
+      if (!emp) return res.status(404).json({ success: false, error: 'Employee not found' })
+      const gross = Number(emp.salary)
+      const payslip = computePayslip(
+        gross,
+        { firstName: emp.firstName, lastName: emp.lastName, email: emp.email ?? '', employmentType: emp.employmentType },
+        month,
+        true,
+      )
+      res.json({ success: true, data: payslip })
     } catch (e) { next(e) }
   },
 )
