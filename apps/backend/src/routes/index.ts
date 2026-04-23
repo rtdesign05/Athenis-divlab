@@ -13,6 +13,7 @@ import { leavesRouter } from '../modules/leaves/leaves.routes.js'
 import { reviewsRouter } from '../modules/reviews/reviews.routes.js'
 import { scheduleRouter } from '../modules/schedule/schedule.routes.js'
 import { legalRouter } from '../modules/legal/legal.routes.js'
+import { aiRouter } from '../modules/ai/ai.routes.js'
 
 const router = Router()
 
@@ -34,5 +35,6 @@ router.use('/leaves', leavesRouter)
 router.use('/reviews', reviewsRouter)
 router.use('/schedule', scheduleRouter)
 router.use('/legal', legalRouter)
+router.use('/ai', aiRouter)
 
 export { router }

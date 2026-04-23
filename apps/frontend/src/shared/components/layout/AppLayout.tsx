@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { Topbar } from './Topbar'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
+import { AiWidget } from '@/features/ai/AiWidget'
 
 interface AppLayoutProps {
   variant?: 'app' | 'personal' | 'cabinet'
@@ -19,6 +20,7 @@ export function AppLayout({ variant = 'app' }: AppLayoutProps) {
           </ErrorBoundary>
         </main>
       </div>
+      {variant === 'app' && <AiWidget />}
     </div>
   )
 }

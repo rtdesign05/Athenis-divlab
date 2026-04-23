@@ -245,6 +245,7 @@ model Company {
   gdprEntries       GdprEntry[]
   legalAlerts       LegalAlert[]
   esgActions        EsgAction[]
+  aiConversations   AiConversation[]
 
   @@index([cabinetId])
   @@map("companies")
@@ -735,6 +736,36 @@ model LegalAlert {
   @@index([status])
   @@index([severity])
   @@map("legal_alerts")
+}
+
+// ── AI Assistant ─────────────────────────────────────────────────────────────
+
+model AiConversation {
+  id        String      @id @default(cuid())
+  companyId String      @map("company_id")
+  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title     String      @default("Nouvelle conversation")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  messages  AiMessage[]
+
+  @@index([companyId])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             String         @id @default(cuid())
+  conversationId String         @map("conversation_id")
+  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String         // "user" | "assistant"
+  content        String         @db.Text
+  inputTokens    Int?           @map("input_tokens")
+  outputTokens   Int?           @map("output_tokens")
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  @@index([conversationId])
+  @@map("ai_messages")
 }
 
 // ── AuditLog ──────────────────────────────────────────────────────────────────
