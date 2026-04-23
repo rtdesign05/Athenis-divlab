@@ -244,6 +244,7 @@ model Company {
   legalContracts    LegalContract[]
   gdprEntries       GdprEntry[]
   legalAlerts       LegalAlert[]
+  esgActions        EsgAction[]
 
   @@index([cabinetId])
   @@map("companies")
@@ -525,22 +526,81 @@ model WorkSchedule {
   @@map("work_schedules")
 }
 
+enum EsgActionStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum EsgActionPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum EsgPilier {
+  E
+  S
+  G
+}
+
 model ESGData {
   id            String   @id @default(cuid())
   companyId     String   @map("company_id")
   company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   year          Int
-  co2Emissions  Decimal? @map("co2_emissions") @db.Decimal(10, 2)
+  // Scope 1 — direct emissions (tCO2e)
+  scope1Total   Decimal? @map("scope1_total") @db.Decimal(10, 2)
+  scope1Details Json?    @map("scope1_details") // { naturalGas, fuelOil, vehicles, process }
+  // Scope 2 — purchased electricity (tCO2e)
+  scope2Total   Decimal? @map("scope2_total") @db.Decimal(10, 2)
+  scope2Kwh     Decimal? @map("scope2_kwh") @db.Decimal(12, 2)
+  // Scope 3 — value chain (tCO2e)
+  scope3Total   Decimal? @map("scope3_total") @db.Decimal(10, 2)
+  scope3Details Json?    @map("scope3_details") // { businessTravel, freight, waste, purchasedGoods }
+  // Social
   energyKwh     Decimal? @map("energy_kwh") @db.Decimal(12, 2)
   wasteKg       Decimal? @map("waste_kg") @db.Decimal(10, 2)
+  renewableRatio Decimal? @map("renewable_ratio") @db.Decimal(5, 2)
   genderPayGap  Decimal? @map("gender_pay_gap") @db.Decimal(5, 2)
   trainingHours Decimal? @map("training_hours") @db.Decimal(8, 2)
+  absenteeismRate Decimal? @map("absenteeism_rate") @db.Decimal(5, 2)
+  workplaceAccidents Int? @map("workplace_accidents")
+  // Governance
+  boardFemaleRatio Decimal? @map("board_female_ratio") @db.Decimal(5, 2)
+  hasEthicsCode    Boolean  @default(false) @map("has_ethics_code")
+  hasAnticorruption Boolean @default(false) @map("has_anticorruption")
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@unique([companyId, year])
   @@index([companyId])
   @@map("esg_data")
+}
+
+model EsgAction {
+  id          String            @id @default(cuid())
+  companyId   String            @map("company_id")
+  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  pilier      EsgPilier
+  priority    EsgActionPriority @default(MEDIUM)
+  status      EsgActionStatus   @default(TODO)
+  targetYear  Int               @map("target_year")
+  deadline    DateTime?
+  owner       String?
+  kpiTarget   String?           @map("kpi_target")
+  kpiCurrent  String?           @map("kpi_current")
+  co2Saving   Decimal?          @map("co2_saving") @db.Decimal(10, 2)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([status])
+  @@map("esg_actions")
 }
 
 // ── Bank / Accounting ─────────────────────────────────────────────────────────

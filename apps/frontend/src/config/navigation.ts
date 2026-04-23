@@ -63,10 +63,11 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     module: 'esg',
     label: 'ESG & CSRD',
     items: [
-      { label: 'Score ESG', path: '/app/esg', icon: '🌿' },
-      { label: 'Indicateurs', path: '/app/esg/indicators', icon: '📉' },
-      { label: 'Risques', path: '/app/esg/risks', icon: '⚠️' },
-      { label: 'Rapport CSRD', path: '/app/esg/csrd', icon: '🌍' },
+      { label: 'Tableau de bord', path: '/app/esg',           icon: '🌿' },
+      { label: 'Saisie Scopes',   path: '/app/esg/scope',     icon: '📊' },
+      { label: 'Benchmark',       path: '/app/esg/benchmark', icon: '📈' },
+      { label: 'Rapport CSRD',    path: '/app/esg/csrd',      icon: '🌍' },
+      { label: "Plan d'action",   path: '/app/esg/actions',   icon: '✅' },
     ],
   },
 ]
