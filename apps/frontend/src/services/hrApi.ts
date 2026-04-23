@@ -1,7 +1,7 @@
 import { api } from '@/lib/api'
 
 export type EmploymentType = 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'INTERN'
-export type LeaveType   = 'CP' | 'RTT' | 'SICKNESS' | 'UNPAID' | 'OTHER'
+export type LeaveType   = 'CP' | 'RTT' | 'SICK' | 'MATERNITY' | 'UNPAID'
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 export type ReviewStatus = 'DRAFT' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
 
@@ -9,20 +9,20 @@ export interface Employee {
   id: string
   firstName: string
   lastName: string
-  email: string | null
+  email: string
   employmentType: EmploymentType
   startDate: string
   endDate: string | null
-  salary: string
-  isActive: boolean
+  grossSalary: string
   createdAt: string
   updatedAt: string
 }
 
 export interface EmployeeStats {
-  totalActive: number
-  totalSalaryAnnual: string
-  byType: { type: EmploymentType; count: number }[]
+  byType: { employmentType: EmploymentType; _count: number; _sum: { grossSalary: string } }[]
+  active: { count: number; avgSalary: string | null; totalMonthly: string }
+  annualMasseSalariale: string
+  totalHeadcount: number
 }
 
 export interface CreateEmployeeDto {
@@ -31,7 +31,7 @@ export interface CreateEmployeeDto {
   email?: string
   employmentType: EmploymentType
   startDate: string
-  salary: number
+  grossSalary: number
 }
 
 export type UpdateEmployeeDto = Partial<CreateEmployeeDto>
@@ -44,17 +44,20 @@ export interface LeaveRequest {
   type: LeaveType
   startDate: string
   endDate: string
-  businessDays: number
+  days: number
   status: LeaveStatus
   reason: string | null
-  reviewedBy: string | null
-  reviewedAt: string | null
+  notes: string | null
   createdAt: string
 }
 
 export interface LeaveBalance {
-  balance: { cp: number; rtt: number }
-  pendingRequests: LeaveRequest[]
+  employee: { id: string; firstName: string; lastName: string }
+  balance: {
+    cp:  { accrued: number; taken: number; balance: number }
+    rtt: { accrued: number; taken: number; balance: number }
+  }
+  pendingRequests: number
 }
 
 export interface LeaveStats {
@@ -89,12 +92,15 @@ export interface AnnualReview {
   id: string
   employeeId: string
   employee?: { firstName: string; lastName: string }
+  year: number
   reviewerId: string | null
   status: ReviewStatus
   scheduledAt: string | null
   completedAt: string | null
   rating: number | null
   notes: string | null
+  strengths: string | null
+  improvements: string | null
   objectives: ReviewObjective[]
   createdAt: string
 }
@@ -107,10 +113,13 @@ export interface CreateReviewDto {
 
 export interface UpdateReviewDto {
   status?: ReviewStatus
-  scheduledAt?: string
-  completedAt?: string
-  rating?: number
-  notes?: string
+  scheduledAt?: string | null
+  completedAt?: string | null
+  reviewerId?: string | null
+  rating?: number | null
+  notes?: string | null
+  strengths?: string | null
+  improvements?: string | null
   objectives?: ReviewObjective[]
 }
 
@@ -175,7 +184,7 @@ const d = <T>(r: { data: { data: T } }) => r.data.data
 
 export const hrApi = {
   // Employees
-  list:   (activeOnly?: boolean) => api.get<{ data: Employee[] }>('/employees', { params: activeOnly !== undefined ? { activeOnly } : undefined }).then(d),
+  list:   (activeOnly?: boolean) => api.get<{ data: Employee[] }>('/employees', { params: activeOnly !== undefined ? { active: activeOnly ? 'true' : 'false' } : undefined }).then(d),
   stats:  ()                     => api.get<{ data: EmployeeStats }>('/employees/stats').then(d),
   get:    (id: string)           => api.get<{ data: Employee }>(`/employees/${id}`).then(d),
   create: (dto: CreateEmployeeDto) => api.post<{ data: Employee }>('/employees', dto).then(d),

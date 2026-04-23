@@ -10,26 +10,27 @@ const ObjectiveSchema = z.object({
 })
 
 export const CreateReviewDto = z.object({
-  employeeId:   z.string().min(1),
-  year:         z.number().int().min(2020).max(2030),
-  rating:       z.number().int().min(1).max(5).optional(),
-  strengths:    z.string().optional(),
-  improvements: z.string().optional(),
-  objectives:   z.array(ObjectiveSchema).optional(),
+  employeeId:  z.string().min(1),
+  scheduledAt: z.string().datetime({ offset: true }).optional(),
+  notes:       z.string().optional(),
 })
 
 export const UpdateReviewDto = z.object({
-  rating:       z.number().int().min(1).max(5).optional(),
-  strengths:    z.string().optional(),
-  improvements: z.string().optional(),
+  rating:       z.number().int().min(1).max(5).nullish(),
+  strengths:    z.string().nullish(),
+  improvements: z.string().nullish(),
   objectives:   z.array(ObjectiveSchema).optional(),
-  status:       z.enum(['DRAFT', 'COMPLETED']).optional(),
+  status:       z.enum(['DRAFT', 'SCHEDULED', 'COMPLETED', 'CANCELLED']).optional(),
+  scheduledAt:  z.string().datetime({ offset: true }).nullish(),
+  completedAt:  z.string().datetime({ offset: true }).nullish(),
+  reviewerId:   z.string().nullish(),
+  notes:        z.string().nullish(),
 })
 
 export const ListReviewsDto = z.object({
   employeeId: z.string().optional(),
   year:       z.coerce.number().int().optional(),
-  status:     z.enum(['DRAFT', 'COMPLETED']).optional(),
+  status:     z.enum(['DRAFT', 'SCHEDULED', 'COMPLETED', 'CANCELLED']).optional(),
 })
 
 export type CreateReviewInput = z.infer<typeof CreateReviewDto>

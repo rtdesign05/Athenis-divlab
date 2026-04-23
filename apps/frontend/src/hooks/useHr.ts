@@ -40,7 +40,7 @@ export function useEmployees(activeOnly?: boolean) {
     queryFn:  () => hrApi.list(activeOnly),
     select:   (data) => ({
       items:               data,
-      masseSalarialeMonth: data.filter(e => e.isActive).reduce((s, e) => s + toSafeAmount(e.salary), 0),
+      masseSalarialeMonth: data.filter(e => !e.endDate).reduce((s, e) => s + toSafeAmount(e.grossSalary), 0),
     }),
   })
 }

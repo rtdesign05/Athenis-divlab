@@ -34,21 +34,23 @@ export async function createReview(companyId: string, data: CreateReviewInput) {
   if (!employee || employee.companyId !== companyId)
     throw new AppError('Employee not found', 404, 'NOT_FOUND')
 
+  const scheduledAt = data.scheduledAt ? new Date(data.scheduledAt) : null
+  const year = scheduledAt ? scheduledAt.getFullYear() : new Date().getFullYear()
+
   const existing = await prisma.annualReview.findUnique({
-    where: { companyId_employeeId_year: { companyId, employeeId: data.employeeId, year: data.year } },
+    where: { companyId_employeeId_year: { companyId, employeeId: data.employeeId, year } },
   })
   if (existing) throw new AppError('Review already exists for this employee and year', 409, 'REVIEW_EXISTS')
 
   return prisma.annualReview.create({
     data: {
       companyId,
-      employeeId:   data.employeeId,
-      year:         data.year,
-      rating:       data.rating       ?? null,
-      strengths:    data.strengths    ?? null,
-      improvements: data.improvements ?? null,
-      objectives:   data.objectives   ?? [],
-      status:       'DRAFT',
+      employeeId:  data.employeeId,
+      year,
+      scheduledAt,
+      notes:       data.notes ?? null,
+      objectives:  [],
+      status:      scheduledAt ? 'SCHEDULED' : 'DRAFT',
     },
     include: { employee: { select: EMP_SELECT } },
   })
@@ -56,15 +58,25 @@ export async function createReview(companyId: string, data: CreateReviewInput) {
 
 export async function updateReview(companyId: string, id: string, data: UpdateReviewInput) {
   await getReview(companyId, id)
+
+  const statusTransition: Record<string, Date | null> = {}
+  if (data.status === 'COMPLETED') {
+    statusTransition['reviewedAt']  = new Date()
+    statusTransition['completedAt'] = new Date()
+  }
+
   return prisma.annualReview.update({
     where: { id },
     data: {
-      ...(data.rating       !== undefined ? { rating:       data.rating       ?? null } : {}),
-      ...(data.strengths    !== undefined ? { strengths:    data.strengths    ?? null } : {}),
+      ...(data.rating       !== undefined ? { rating:       data.rating ?? null }       : {}),
+      ...(data.strengths    !== undefined ? { strengths:    data.strengths ?? null }    : {}),
       ...(data.improvements !== undefined ? { improvements: data.improvements ?? null } : {}),
       ...(data.objectives   !== undefined ? { objectives:   data.objectives }           : {}),
-      ...(data.status       !== undefined ? { status:       data.status,
-                                              reviewedAt:   data.status === 'COMPLETED' ? new Date() : null } : {}),
+      ...(data.status       !== undefined ? { status:       data.status, ...statusTransition } : {}),
+      ...(data.scheduledAt  !== undefined ? { scheduledAt:  data.scheduledAt ? new Date(data.scheduledAt) : null } : {}),
+      ...(data.completedAt  !== undefined ? { completedAt:  data.completedAt ? new Date(data.completedAt) : null } : {}),
+      ...(data.reviewerId   !== undefined ? { reviewerId:   data.reviewerId ?? null }   : {}),
+      ...(data.notes        !== undefined ? { notes:        data.notes ?? null }        : {}),
     },
     include: { employee: { select: EMP_SELECT } },
   })

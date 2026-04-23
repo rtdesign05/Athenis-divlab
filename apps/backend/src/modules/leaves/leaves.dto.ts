@@ -9,7 +9,7 @@ export const CreateLeaveDto = z.object({
 }).refine((d) => d.endDate >= d.startDate, { message: 'endDate must be after startDate' })
 
 export const ReviewLeaveDto = z.object({
-  status: z.enum(['APPROVED', 'REJECTED', 'CANCELLED']),
+  status: z.enum(['APPROVED', 'REJECTED']),
   notes:  z.string().optional(),
 })
 

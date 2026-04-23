@@ -83,7 +83,9 @@ enum LeaveStatus {
 
 enum ReviewStatus {
   DRAFT
+  SCHEDULED
   COMPLETED
+  CANCELLED
 }
 
 enum BankTxType {
@@ -356,7 +358,7 @@ model Invoice {
   taxAmount Decimal       @map("tax_amount") @db.Decimal(12, 2)
   total     Decimal       @db.Decimal(12, 2)
   notes                String?
-  quoteId              String?           @map("quote_id")
+  quoteId              String?           @unique @map("quote_id")
   quote                Quote?            @relation(fields: [quoteId], references: [id])
   recurringInvoiceId   String?           @map("recurring_invoice_id")
   recurringInvoice     RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id])
@@ -496,6 +498,10 @@ model AnnualReview {
   improvements String?
   objectives   Json?
   status       ReviewStatus @default(DRAFT)
+  scheduledAt  DateTime?    @map("scheduled_at")
+  completedAt  DateTime?    @map("completed_at")
+  reviewerId   String?      @map("reviewer_id")
+  notes        String?
   reviewedAt   DateTime?    @map("reviewed_at")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")

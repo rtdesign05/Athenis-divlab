@@ -35,11 +35,12 @@ async function buildContext(companyId: string): Promise<string> {
 
   const caMonth  = Number(invoices._sum.total ?? 0)
   const overdueTxt = overdueInvoices.length
-    ? overdueInvoices.map(i => `  • ${i.number} — ${Number(i.total).toFixed(2)} € (échue le ${new Date(i.dueDate).toLocaleDateString('fr-FR')})`).join('\n')
+    ? overdueInvoices.map((i: { number: string; total: unknown; dueDate: Date }) =>
+        `  • ${i.number} — ${Number(i.total).toFixed(2)} € (échue le ${new Date(i.dueDate).toLocaleDateString('fr-FR')})`).join('\n')
     : '  Aucune facture en retard'
 
   const alertsTxt = openAlerts.length
-    ? openAlerts.map(a => `  • [${a.severity}] ${a.title}`).join('\n')
+    ? openAlerts.map((a: { severity: string; title: string }) => `  • [${a.severity}] ${a.title}`).join('\n')
     : '  Aucune alerte ouverte'
 
   const co2 = esgData
@@ -135,7 +136,7 @@ export async function streamChat(
   }
 
   // Build message history for API
-  const history = (conv.messages ?? []).map(m => ({
+  const history = (conv.messages ?? []).map((m: { role: string; content: string }) => ({
     role: m.role as 'user' | 'assistant',
     content: m.content,
   }))

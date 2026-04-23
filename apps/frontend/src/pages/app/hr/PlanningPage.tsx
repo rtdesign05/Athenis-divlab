@@ -12,9 +12,9 @@ const DAY_LABEL: Record<Day, string> = {
 const LEAVE_TYPE_COLOR: Record<string, string> = {
   CP: 'bg-blue-100 text-blue-700',
   RTT: 'bg-purple-100 text-purple-700',
-  SICKNESS: 'bg-red-100 text-red-700',
+  SICK: 'bg-red-100 text-red-700',
+  MATERNITY: 'bg-pink-100 text-pink-700',
   UNPAID: 'bg-gray-100 text-gray-600',
-  OTHER: 'bg-yellow-100 text-yellow-700',
 }
 
 function toMonday(date: Date): Date {
@@ -156,7 +156,7 @@ export function PlanningPage() {
                   <th key={day} className="px-3 py-3 text-center font-medium text-gray-500 min-w-36">
                     <span className="block">{DAY_LABEL[day]}</span>
                     <span className="block text-xs font-normal text-gray-400">
-                      {dayDates[i].toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
+                      {dayDates[i]?.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}
                     </span>
                   </th>
                 ))}

@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import type { CreateLeaveInput, ReviewLeaveInput, ListLeavesInput } from './leaves.dto.js'
@@ -39,7 +38,7 @@ function computeLeaveBalance(
 
 export async function listLeaves(companyId: string, query: ListLeavesInput) {
   const { page, limit, status, employeeId } = query
-  const where: Prisma.LeaveRequestWhereInput = {
+  const where = {
     companyId,
     ...(status     ? { status }     : {}),
     ...(employeeId ? { employeeId } : {}),
@@ -147,10 +146,14 @@ export async function getEmployeeBalance(companyId: string, employeeId: string) 
 }
 
 export async function leaveStats(companyId: string) {
-  const [pending, approvedThisYear, byType] = await Promise.all([
+  const now   = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  const end   = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+
+  const [pending, approvedThisMonth, byType] = await Promise.all([
     prisma.leaveRequest.count({ where: { companyId, status: 'PENDING' } }),
     prisma.leaveRequest.aggregate({
-      where: { companyId, status: 'APPROVED', startDate: { gte: new Date(`${new Date().getFullYear()}-01-01`) } },
+      where: { companyId, status: 'APPROVED', startDate: { gte: start, lte: end } },
       _sum: { days: true },
       _count: true,
     }),
@@ -161,5 +164,10 @@ export async function leaveStats(companyId: string) {
       _count: true,
     }),
   ])
-  return { pending, approvedThisYear, byType }
+  return {
+    pending,
+    approvedThisMonth: approvedThisMonth._count,
+    totalBusinessDays: approvedThisMonth._sum.days ?? 0,
+    byType,
+  }
 }

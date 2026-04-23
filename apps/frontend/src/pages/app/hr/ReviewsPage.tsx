@@ -132,14 +132,12 @@ function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => v
   const objectives: ReviewObjective[] = (form.objectives ?? review.objectives) as ReviewObjective[]
 
   const startEdit = () => {
-    setForm({
-      status: review.status,
-      scheduledAt: review.scheduledAt ?? undefined,
-      completedAt: review.completedAt ?? undefined,
-      rating: review.rating ?? undefined,
-      notes: review.notes ?? undefined,
-      objectives: review.objectives,
-    })
+    const next: UpdateReviewDto = { status: review.status, objectives: review.objectives }
+    if (review.scheduledAt) next.scheduledAt = review.scheduledAt
+    if (review.completedAt) next.completedAt = review.completedAt
+    if (review.rating)      next.rating      = review.rating
+    if (review.notes)       next.notes       = review.notes
+    setForm(next)
     setEditing(true)
   }
 
@@ -245,7 +243,7 @@ function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => v
             <label className="block text-xs font-medium text-gray-500 mb-1">Évaluation globale</label>
             <StarRating
               value={editing ? (form.rating ?? null) : review.rating}
-              onChange={editing ? v => setForm(f => ({ ...f, rating: v })) : undefined}
+              {...(editing ? { onChange: (v: number) => setForm(f => ({ ...f, rating: v })) } : {})}
             />
           </div>
 
@@ -306,7 +304,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    await create.mutateAsync({ employeeId, scheduledAt: scheduledAt || undefined })
+    await create.mutateAsync({ employeeId, ...(scheduledAt ? { scheduledAt } : {}) })
     onClose()
   }
 

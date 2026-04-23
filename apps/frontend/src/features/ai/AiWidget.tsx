@@ -16,7 +16,7 @@ interface Conversation {
   _count:       { messages: number }
 }
 
-const d = <T>(r: { data: { data: T } }) => r.data.data
+const d = <T,>(r: { data: { data: T } }) => r.data.data
 
 async function fetchConversations(): Promise<Conversation[]> {
   return api.get<{ data: Conversation[] }>('/ai/conversations').then(d)
@@ -26,9 +26,6 @@ async function fetchConversation(id: string): Promise<{ messages: Message[] }> {
   return api.get<{ data: { messages: Message[] } }>(`/ai/conversations/${id}`).then(d)
 }
 
-async function deleteConversation(id: string): Promise<void> {
-  await api.delete(`/ai/conversations/${id}`)
-}
 
 const SUGGESTED = [
   'Analyse mes factures en retard et donne-moi des conseils',

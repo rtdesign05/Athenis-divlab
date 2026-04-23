@@ -7,8 +7,8 @@ import { useEmployees } from '@/hooks/useHr'
 import type { LeaveStatus, LeaveType, CreateLeaveDto } from '@/services/hrApi'
 
 const TYPE_LABEL: Record<LeaveType, string> = {
-  CP: 'Congés payés', RTT: 'RTT', SICKNESS: 'Maladie',
-  UNPAID: 'Sans solde', OTHER: 'Autre',
+  CP: 'Congés payés', RTT: 'RTT', SICK: 'Maladie',
+  MATERNITY: 'Maternité', UNPAID: 'Sans solde',
 }
 
 const STATUS_BADGE: Record<LeaveStatus, string> = {
@@ -125,16 +125,16 @@ function BalancePanel({ empId, name }: BalancePanelProps) {
       <p className="text-xs font-medium text-gray-500 mb-2">{name}</p>
       <div className="flex gap-6">
         <div>
-          <span className="text-2xl font-bold text-blue-600">{data.balance.cp}</span>
+          <span className="text-2xl font-bold text-blue-600">{data.balance.cp.balance}</span>
           <span className="ml-1 text-xs text-gray-500">j CP</span>
         </div>
         <div>
-          <span className="text-2xl font-bold text-purple-600">{data.balance.rtt}</span>
+          <span className="text-2xl font-bold text-purple-600">{data.balance.rtt.balance}</span>
           <span className="ml-1 text-xs text-gray-500">j RTT</span>
         </div>
       </div>
-      {data.pendingRequests.length > 0 && (
-        <p className="mt-2 text-xs text-yellow-600">{data.pendingRequests.length} demande(s) en attente</p>
+      {data.pendingRequests > 0 && (
+        <p className="mt-2 text-xs text-yellow-600">{data.pendingRequests} demande(s) en attente</p>
       )}
     </div>
   )
@@ -247,7 +247,7 @@ export function LeavesPage() {
                     {new Date(leave.startDate).toLocaleDateString('fr-FR')} →{' '}
                     {new Date(leave.endDate).toLocaleDateString('fr-FR')}
                   </td>
-                  <td className="px-4 py-3 text-center text-gray-600">{leave.businessDays}j</td>
+                  <td className="px-4 py-3 text-center text-gray-600">{leave.days}j</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[leave.status]}`}>
                       {STATUS_LABEL[leave.status]}
