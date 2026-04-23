@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { authRouter } from '../modules/auth/auth.router.js'
 import { invoicesRouter } from '../modules/invoices/invoices.routes.js'
+import { quotesRouter } from '../modules/quotes/quotes.routes.js'
 import { clientsRouter } from '../modules/clients/clients.routes.js'
 import { expensesRouter } from '../modules/expenses/expenses.routes.js'
 import { employeesRouter } from '../modules/employees/employees.routes.js'
@@ -16,6 +17,7 @@ router.get('/health', (_req, res) => {
 
 router.use('/auth', authRouter)
 router.use('/invoices', invoicesRouter)
+router.use('/quotes', quotesRouter)
 router.use('/clients', clientsRouter)
 router.use('/expenses', expensesRouter)
 router.use('/employees', employeesRouter)

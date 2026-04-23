@@ -19,6 +19,7 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Tableau de bord', path: '/app/dashboard', icon: '▦' },
       { label: 'Factures', path: '/app/invoices', icon: '🧾' },
+      { label: 'Devis', path: '/app/quotes', icon: '📋' },
       { label: 'Clients', path: '/app/clients', icon: '👥' },
       { label: 'Dépenses', path: '/app/expenses', icon: '💸' },
       { label: 'Rapports', path: '/app/reports', icon: '📊' },

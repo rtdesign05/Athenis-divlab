@@ -6,6 +6,17 @@ import { Button } from '@/shared/components/ui/Button'
 import { Modal } from '@/shared/components/ui/Modal'
 import type { Client, CreateClientDto } from '@/services/clientsApi'
 
+function ReliabilityBadge({ score }: { score?: number }) {
+  if (score === undefined) return null
+  const color = score >= 80 ? 'text-green-600 bg-green-50' : score >= 50 ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50'
+  const label = score >= 80 ? 'Fiable' : score >= 50 ? 'Moyen' : 'Risqué'
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
+      <span className="font-bold">{score}</span>/100 · {label}
+    </span>
+  )
+}
+
 interface ClientCardProps { client: Client; onEdit: (c: Client) => void; onDelete: (id: string) => void }
 const ClientCard = React.memo(function ClientCard({ client, onEdit, onDelete }: ClientCardProps) {
   return (
@@ -22,9 +33,12 @@ const ClientCard = React.memo(function ClientCard({ client, onEdit, onDelete }: 
           <button onClick={() => onDelete(client.id)} className="text-xs text-red-500 hover:text-red-700 font-medium">Supprimer</button>
         </div>
       </div>
-      {client._count && (
-        <p className="mt-2 text-xs text-gray-400">{client._count.invoices} facture{client._count.invoices !== 1 ? 's' : ''}</p>
-      )}
+      <div className="mt-2 flex items-center gap-2 flex-wrap">
+        {client._count && (
+          <p className="text-xs text-gray-400">{client._count.invoices} facture{client._count.invoices !== 1 ? 's' : ''}</p>
+        )}
+        <ReliabilityBadge score={client.reliabilityScore} />
+      </div>
     </div>
   )
 })

@@ -7,6 +7,9 @@ export interface Client {
   phone: string | null
   address: string | null
   siren: string | null
+  reliabilityScore?: number
+  invoiceCount?: number
+  invoiceTotal?: string
   createdAt: string
   updatedAt: string
   _count?: { invoices: number }
