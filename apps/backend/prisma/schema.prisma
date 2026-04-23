@@ -115,6 +115,58 @@ enum EmploymentType {
   INTERN
 }
 
+enum ContractType {
+  EMPLOYMENT
+  SERVICE
+  NDA
+  PARTNERSHIP
+  LEASE
+  SUPPLIER
+  CLIENT
+  OTHER
+}
+
+enum ContractStatus {
+  DRAFT
+  PENDING_SIGNATURE
+  SIGNED
+  EXPIRED
+  TERMINATED
+}
+
+enum SignatureStatus {
+  PENDING
+  SIGNED
+  REFUSED
+}
+
+enum GdprLegalBasis {
+  CONSENT
+  CONTRACT
+  LEGAL_OBLIGATION
+  VITAL_INTEREST
+  PUBLIC_TASK
+  LEGITIMATE_INTEREST
+}
+
+enum GdprRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum AlertStatus {
+  OPEN
+  DISMISSED
+  RESOLVED
+}
+
 enum AuditAction {
   LOGIN
   LOGOUT
@@ -189,6 +241,9 @@ model Company {
   leaveRequests     LeaveRequest[]
   annualReviews     AnnualReview[]
   workSchedules     WorkSchedule[]
+  legalContracts    LegalContract[]
+  gdprEntries       GdprEntry[]
+  legalAlerts       LegalAlert[]
 
   @@index([cabinetId])
   @@map("companies")
@@ -527,6 +582,99 @@ model FiscalYearClose {
   @@unique([companyId, year])
   @@index([companyId])
   @@map("fiscal_year_closes")
+}
+
+// ── Juridique ─────────────────────────────────────────────────────────────────
+
+model LegalContract {
+  id          String         @id @default(cuid())
+  companyId   String         @map("company_id")
+  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title       String
+  type        ContractType
+  status      ContractStatus @default(DRAFT)
+  parties     Json           // [{ name, email, role }]
+  content     String?        @db.Text
+  fileUrl     String?        @map("file_url")
+  signedAt    DateTime?      @map("signed_at")
+  expiresAt   DateTime?      @map("expires_at")
+  terminatedAt DateTime?     @map("terminated_at")
+  notes       String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  signatures  ContractSignature[]
+  alerts      LegalAlert[]
+
+  @@index([companyId])
+  @@index([status])
+  @@index([type])
+  @@map("legal_contracts")
+}
+
+model ContractSignature {
+  id         String          @id @default(cuid())
+  contractId String          @map("contract_id")
+  contract   LegalContract   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  signerName  String         @map("signer_name")
+  signerEmail String         @map("signer_email")
+  signerRole  String?        @map("signer_role")
+  status      SignatureStatus @default(PENDING)
+  token       String         @unique
+  signedAt    DateTime?      @map("signed_at")
+  refusedAt   DateTime?      @map("refused_at")
+  refusedNote String?        @map("refused_note")
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  @@index([contractId])
+  @@index([token])
+  @@map("contract_signatures")
+}
+
+model GdprEntry {
+  id               String         @id @default(cuid())
+  companyId        String         @map("company_id")
+  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  treatmentName    String         @map("treatment_name")
+  purpose          String
+  legalBasis       GdprLegalBasis @map("legal_basis")
+  dataCategories   String[]       @map("data_categories")
+  dataSubjects     String[]       @map("data_subjects")
+  retentionMonths  Int            @map("retention_months")
+  responsible      String
+  subcontractors   String[]
+  securityMeasures String[]       @map("security_measures")
+  riskLevel        GdprRiskLevel  @default(LOW) @map("risk_level")
+  dpiaRequired     Boolean        @default(false) @map("dpia_required")
+  lastReviewedAt   DateTime?      @map("last_reviewed_at")
+  notes            String?
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@map("gdpr_entries")
+}
+
+model LegalAlert {
+  id          String        @id @default(cuid())
+  companyId   String        @map("company_id")
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contractId  String?       @map("contract_id")
+  contract    LegalContract? @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  title       String
+  message     String
+  severity    AlertSeverity @default(INFO)
+  status      AlertStatus   @default(OPEN)
+  dueDate     DateTime?     @map("due_date")
+  dismissedAt DateTime?     @map("dismissed_at")
+  resolvedAt  DateTime?     @map("resolved_at")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([status])
+  @@index([severity])
+  @@map("legal_alerts")
 }
 
 // ── AuditLog ──────────────────────────────────────────────────────────────────

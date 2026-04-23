@@ -54,10 +54,9 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     module: 'juridique',
     label: 'Juridique',
     items: [
-      { label: 'Contrats', path: '/app/legal/contracts', icon: '📜' },
-      { label: 'Conformité', path: '/app/legal/compliance', icon: '✅' },
-      { label: 'RGPD', path: '/app/legal/gdpr', icon: '🔒' },
-      { label: 'Documents', path: '/app/legal/documents', icon: '🗂️' },
+      { label: 'Contrats',  path: '/app/legal/contracts', icon: '📜' },
+      { label: 'RGPD',      path: '/app/legal/gdpr',      icon: '🔒' },
+      { label: 'Alertes',   path: '/app/legal/alerts',    icon: '⚠️' },
     ],
   },
   {
