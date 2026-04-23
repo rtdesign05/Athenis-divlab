@@ -43,7 +43,10 @@ export const APP_NAV_SECTIONS: NavSection[] = [
       { label: 'Grand livre', path: '/app/accounting/ledger', icon: '📚' },
       { label: 'Bilan', path: '/app/accounting/balance-sheet', icon: '⚖️' },
       { label: 'Résultat', path: '/app/accounting/income', icon: '📈' },
-      { label: 'TVA', path: '/app/accounting/vat', icon: '%' },
+      { label: 'Relevé bancaire', path: '/app/accounting/bank', icon: '🏦' },
+      { label: 'TVA CA3', path: '/app/accounting/vat', icon: '%' },
+      { label: 'Export FEC', path: '/app/accounting/fec', icon: '📤' },
+      { label: 'Clôture exercice', path: '/app/accounting/cloture', icon: '🔒' },
     ],
   },
   {

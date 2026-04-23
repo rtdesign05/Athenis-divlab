@@ -7,6 +7,7 @@ import { expensesRouter } from '../modules/expenses/expenses.routes.js'
 import { employeesRouter } from '../modules/employees/employees.routes.js'
 import { accountingRouter } from '../modules/accounting/accounting.routes.js'
 import { esgRouter } from '../modules/esg/esg.routes.js'
+import { bankRouter } from '../modules/bank/bank.routes.js'
 import { cabinetRouter } from '../modules/cabinet/cabinet.routes.js'
 
 const router = Router()
@@ -22,6 +23,7 @@ router.use('/clients', clientsRouter)
 router.use('/expenses', expensesRouter)
 router.use('/employees', employeesRouter)
 router.use('/accounting', accountingRouter)
+router.use('/bank', bankRouter)
 router.use('/esg', esgRouter)
 router.use('/cabinet', cabinetRouter)
 
