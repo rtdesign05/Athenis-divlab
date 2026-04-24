@@ -12,7 +12,7 @@ function NavItemLink({ item }: { item: NavItem }) {
   return (
     <NavLink
       to={item.path}
-      end={item.path.endsWith('dashboard')}
+      end={item.end ?? false}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors',

@@ -7,7 +7,7 @@ import {
 } from 'react'
 import { tokenStore } from '@/lib/tokenStore'
 import { authApi } from './authApi'
-import type { JwtPayload } from '@athenis/shared-types'
+import type { JwtPayload, RegisterRequest } from '@athenis/shared-types'
 
 export interface AuthContextValue {
   user: JwtPayload | null
@@ -17,6 +17,7 @@ export interface AuthContextValue {
     password: string,
   ) => Promise<{ requires2fa: boolean; tempToken: string | null; accountType: string | null }>
   loginVerifyTotp: (tempToken: string, code: string) => Promise<void>
+  register: (data: RegisterRequest) => Promise<void>
   logout: () => Promise<void>
   setToken: (token: string) => void
 }
@@ -27,9 +28,8 @@ function decodeJwt(token: string): JwtPayload | null {
   try {
     const segment = token.split('.')[1]
     if (!segment) return null
-    return JSON.parse(
-      atob(segment.replace(/-/g, '+').replace(/_/g, '/')),
-    ) as JwtPayload
+    const bytes = Uint8Array.from(atob(segment.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))
+    return JSON.parse(new TextDecoder().decode(bytes)) as JwtPayload
   } catch {
     return null
   }
@@ -75,6 +75,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [setToken],
   )
 
+  const register = useCallback(
+    async (data: RegisterRequest) => {
+      const res = await authApi.register(data)
+      setToken(res.data.data.accessToken)
+    },
+    [setToken],
+  )
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout()
@@ -86,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, loginVerifyTotp, logout, setToken }}>
+    <AuthContext.Provider value={{ user, isLoading, login, loginVerifyTotp, register, logout, setToken }}>
       {children}
     </AuthContext.Provider>
   )

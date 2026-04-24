@@ -5,7 +5,7 @@ export const PLAN_MODULES: Record<Plan, Module[]> = {
   FREE: ['gestion'],
   STARTER: ['gestion', 'rh'],
   PRO: ['gestion', 'rh', 'comptabilite', 'juridique'],
-  PREMIUM: ['gestion', 'rh', 'comptabilite', 'juridique', 'esg'],
+  PREMIUM: ['gestion', 'rh', 'comptabilite', 'juridique', 'esg', 'fiscalite'],
 }
 
 export type Action = 'read' | 'write' | 'delete'
@@ -18,6 +18,7 @@ export const MODULE_ROLE_ACCESS: Record<string, Record<Module, Action[]>> = {
     comptabilite: ['read', 'write', 'delete'],
     juridique: ['read', 'write', 'delete'],
     esg: ['read', 'write', 'delete'],
+    fiscalite: ['read', 'write', 'delete'],
   },
   COMPTABLE: {
     gestion: ['read', 'write'],
@@ -25,6 +26,7 @@ export const MODULE_ROLE_ACCESS: Record<string, Record<Module, Action[]>> = {
     comptabilite: ['read', 'write', 'delete'],
     juridique: ['read'],
     esg: ['read'],
+    fiscalite: ['read', 'write'],
   },
   READONLY: {
     gestion: ['read'],
@@ -32,6 +34,7 @@ export const MODULE_ROLE_ACCESS: Record<string, Record<Module, Action[]>> = {
     comptabilite: ['read'],
     juridique: ['read'],
     esg: ['read'],
+    fiscalite: ['read'],
   },
   RH: {
     gestion: ['read'],
@@ -39,6 +42,7 @@ export const MODULE_ROLE_ACCESS: Record<string, Record<Module, Action[]>> = {
     comptabilite: ['read'],
     juridique: ['read'],
     esg: ['read'],
+    fiscalite: ['read'],
   },
   JURIDIQUE: {
     gestion: ['read'],
@@ -46,6 +50,7 @@ export const MODULE_ROLE_ACCESS: Record<string, Record<Module, Action[]>> = {
     comptabilite: ['read'],
     juridique: ['read', 'write', 'delete'],
     esg: ['read'],
+    fiscalite: ['read'],
   },
 }
 

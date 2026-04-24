@@ -1,5 +1,5 @@
 import { useDashboardStats, useCashFlow, useReminders } from '@/hooks/useBilling'
-import { formatCurrency } from '@/shared/utils/currency'
+import { useCurrency } from '@/hooks/useCurrency'
 import { Badge } from '@/shared/components/ui/Badge'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
 import type { CashFlowWeek } from '@/services/billingApi'
@@ -121,6 +121,7 @@ function CashFlowChart({ weeks }: { weeks: CashFlowWeek[] }) {
 }
 
 function RemindersPanel() {
+  const { fmt } = useCurrency()
   const { data: reminders } = useReminders()
   if (!reminders?.length) return null
 
@@ -146,7 +147,7 @@ function RemindersPanel() {
               {inv.client?.name ?? inv.number} · {inv.number}
             </span>
             <div className="flex items-center gap-2">
-              <span className="text-gray-400">{formatCurrency(inv.total)}</span>
+              <span className="text-gray-400">{fmt(inv.total)}</span>
               <Badge variant={inv.reminderLevel === 3 ? 'danger' : inv.reminderLevel === 2 ? 'warning' : 'info'}>
                 J+{inv.daysOverdue}
               </Badge>
@@ -159,6 +160,7 @@ function RemindersPanel() {
 }
 
 export function AppDashboard() {
+  const { fmt } = useCurrency()
   const { data: stats, isLoading: statsLoading } = useDashboardStats()
   const { data: cashFlow, isLoading: cfLoading }  = useCashFlow()
 
@@ -174,7 +176,7 @@ export function AppDashboard() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KpiCard
             label="CA (année en cours)"
-            value={statsLoading ? '…' : formatCurrency(stats?.revenue.current ?? 0)}
+            value={statsLoading ? '…' : fmt(stats?.revenue.current ?? 0)}
             sub={stats ? trend(stats.revenue.growth) : undefined}
           />
           <KpiCard
@@ -188,7 +190,7 @@ export function AppDashboard() {
             }
             sub={
               stats
-                ? <span className="text-xs text-gray-400">{formatCurrency(stats.grossProfit.amount)}</span>
+                ? <span className="text-xs text-gray-400">{fmt(stats.grossProfit.amount)}</span>
                 : undefined
             }
           />
@@ -199,11 +201,11 @@ export function AppDashboard() {
           />
           <KpiCard
             label="Encours à encaisser"
-            value={statsLoading ? '…' : formatCurrency(stats?.pendingAmount ?? 0)}
+            value={statsLoading ? '…' : fmt(stats?.pendingAmount ?? 0)}
             accent={!!stats?.overdueAmount}
             sub={
               stats?.overdueAmount
-                ? <span className="text-xs text-red-500">{formatCurrency(stats.overdueAmount)} en retard</span>
+                ? <span className="text-xs text-red-500">{fmt(stats.overdueAmount)} en retard</span>
                 : undefined
             }
           />
@@ -218,7 +220,7 @@ export function AppDashboard() {
             <h3 className="font-semibold text-gray-900">Trésorerie prévisionnelle — 90 jours</h3>
             {cashFlow && (
               <span className={`text-sm font-medium ${cashFlow.summary.netCashFlow >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                Solde net : {formatCurrency(cashFlow.summary.netCashFlow)}
+                Solde net : {fmt(cashFlow.summary.netCashFlow)}
               </span>
             )}
           </div>

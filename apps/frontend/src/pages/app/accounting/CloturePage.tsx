@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useClotureStatus, useCloseExercise } from '@/hooks/useAccounting'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
 import { Button } from '@/shared/components/ui/Button'
-import { formatCurrency } from '@/shared/utils/currency'
+import { useCurrency } from '@/hooks/useCurrency'
 import { formatDate } from '@/shared/utils/date'
 
 const CURRENT_YEAR = new Date().getFullYear()
@@ -16,6 +16,7 @@ const CHECKLIST = [
 ]
 
 export function CloturePage() {
+  const { fmt } = useCurrency()
   const [year, setYear]       = useState(CURRENT_YEAR - 1)
   const [notes, setNotes]     = useState('')
   const [checks, setChecks]   = useState<boolean[]>(CHECKLIST.map(() => false))
@@ -75,7 +76,7 @@ export function CloturePage() {
               <div className="text-right">
                 <p className="text-xs text-gray-500">Résultat net</p>
                 <p className={`text-xl font-bold mt-0.5 ${status.resultatNet >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatCurrency(status.resultatNet)}
+                  {fmt(status.resultatNet)}
                 </p>
               </div>
             </div>
@@ -157,7 +158,7 @@ export function CloturePage() {
         {status?.alreadyClosed && (
           <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-4 text-sm text-green-800">
             <p className="font-medium">✓ L'exercice {status.year} est clôturé.</p>
-            <p className="mt-1 text-green-700">Résultat net comptabilisé : {formatCurrency(status.resultatNet)}</p>
+            <p className="mt-1 text-green-700">Résultat net comptabilisé : {fmt(status.resultatNet)}</p>
           </div>
         )}
       </div>

@@ -333,7 +333,7 @@ export function GdprPage() {
 
       {editing && (
         <EntryModal
-          entry={editing === 'new' ? undefined : editing}
+          {...(editing !== 'new' ? { entry: editing } : {})}
           onClose={() => setEditing(null)}
         />
       )}

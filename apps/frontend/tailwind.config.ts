@@ -33,6 +33,12 @@ export default {
         'card-md':
           '0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.08)',
       },
+      keyframes: {
+        'fade-in': { from: { opacity: '0' }, to: { opacity: '1' } },
+      },
+      animation: {
+        'fade-in': 'fade-in 200ms ease-out',
+      },
     },
   },
   plugins: [],

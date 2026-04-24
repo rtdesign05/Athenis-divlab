@@ -29,6 +29,7 @@ export const RegisterCompanyDto = z.object({
   secteur: z.string().max(100).trim().optional(),
   taille: z.enum(['TPE', 'PME', 'ETI', 'GE']).default('PME'),
   plan: z.enum(['FREE', 'STARTER', 'PRO', 'PREMIUM']),
+  country: z.string().length(2).regex(/^[A-Z]{2}$/).default('FR').transform((v) => v.toUpperCase()),
 })
 
 export const RegisterCabinetDto = z.object({

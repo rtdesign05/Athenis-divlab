@@ -1,14 +1,37 @@
 import { Router } from 'express'
+import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { authenticate } from '../../middleware/authenticate.js'
 import { checkModule } from '../../middleware/checkModule.js'
 import { validateRequest } from '../../middleware/validateRequest.js'
 import { getCompanyId } from '../../lib/companyContext.js'
+import { AppError } from '../../middleware/errorHandler.js'
+import { prisma } from '../../lib/prisma.js'
 import * as svc from './accounting.service.js'
+import * as fsSvc from './financialStatements.service.js'
 
 export const accountingRouter = Router()
 
 accountingRouter.use(authenticate)
+
+// ── Read-only guard ───────────────────────────────────────────────────────────
+
+async function requireFiscalYearWritable(req: Request, res: Response, next: NextFunction) {
+  const fiscalYearId = (req.params['id'] ?? req.body?.fiscalYearId ?? req.query['fiscalYearId']) as string | undefined
+  if (!fiscalYearId) return next()
+  try {
+    const fy = await prisma.fiscalYear.findUnique({ where: { id: fiscalYearId }, select: { status: true } })
+    if (fy?.status === 'CLOSED') {
+      res.status(403).json({
+        success: false,
+        error:   'Exercice cl\xf4tur\xe9 \u2014 lecture seule. Les modifications ne sont pas autoris\xe9es.',
+        code:    'FISCAL_YEAR_CLOSED',
+      })
+      return
+    }
+    next()
+  } catch { next() }
+}
 
 const YearQuery = z.object({
   year: z.coerce.number().int().min(2000).max(2100).default(new Date().getFullYear()),
@@ -149,6 +172,239 @@ accountingRouter.post(
       const user = (req as never as { user?: { email?: string } }).user
       const data = await svc.closeExercise(getCompanyId(req), year, notes, user?.email)
       res.status(201).json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Plan comptable & Comptes ───────────────────────────────────────────────────
+
+const AddCompteBody = z.object({
+  numero:   z.string().min(1).max(10),
+  intitule: z.string().min(1).max(200),
+  classe:   z.number().int().min(1).max(9),
+  type:     z.enum(['ACTIF', 'PASSIF', 'CHARGE', 'PRODUIT']),
+  isSystem: z.boolean().optional(),
+})
+
+const UpdateCompteBody = z.object({
+  intitule: z.string().min(1).max(200),
+})
+
+accountingRouter.get(
+  '/plan',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const data = await svc.getPlan(getCompanyId(req))
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/comptes',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const data = await svc.getComptes(getCompanyId(req))
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/comptes',
+  checkModule('comptabilite', 'write'),
+  requireFiscalYearWritable,
+  validateRequest({ body: AddCompteBody }),
+  async (req, res, next) => {
+    try {
+      const data = await svc.addCompte(getCompanyId(req), req.body)
+      res.status(201).json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.put(
+  '/comptes/:id',
+  checkModule('comptabilite', 'write'),
+  requireFiscalYearWritable,
+  validateRequest({ body: UpdateCompteBody }),
+  async (req, res, next) => {
+    try {
+      const id = req.params['id'] as string
+      const data = await svc.updateCompte(getCompanyId(req), id, req.body.intitule)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.delete(
+  '/comptes/:id',
+  checkModule('comptabilite', 'write'),
+  requireFiscalYearWritable,
+  async (req, res, next) => {
+    try {
+      const id = req.params['id'] as string
+      await svc.deleteCompte(getCompanyId(req), id)
+      res.json({ success: true })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Fiscal Years ──────────────────────────────────────────────────────────────
+
+const CreateFiscalYearBody = z.object({
+  year:      z.number().int().min(2000).max(2100),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+})
+
+accountingRouter.get(
+  '/fiscal-years',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const data = await svc.listFiscalYears(getCompanyId(req)!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/fiscal-years',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: CreateFiscalYearBody }),
+  async (req, res, next) => {
+    try {
+      if (req.user?.role !== 'ADMIN')
+        throw new AppError('Accès réservé aux administrateurs', 403, 'FORBIDDEN')
+      const userId = req.user?.sub ?? ''
+      const data = await svc.createFiscalYear(getCompanyId(req)!, req.body, userId)
+      res.status(201).json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/fiscal-years/:id',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const id = req.params['id'] as string
+      const data = await svc.getFiscalYear(getCompanyId(req)!, id)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.put(
+  '/fiscal-years/:id/lock',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      if (req.user?.role !== 'ADMIN')
+        throw new AppError('Accès réservé aux administrateurs', 403, 'FORBIDDEN')
+      const id = req.params['id'] as string
+      const data = await svc.lockFiscalYear(getCompanyId(req)!, id)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/fiscal-years/:id/close',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      if (req.user?.role !== 'ADMIN')
+        throw new AppError('Accès réservé aux administrateurs', 403, 'FORBIDDEN')
+      const id = req.params['id'] as string
+      const userId = req.user?.sub ?? ''
+      const data = await svc.closeFiscalYearNew(getCompanyId(req)!, id, userId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/fiscal-years/:id/reopen',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      if (req.user?.role !== 'ADMIN')
+        throw new AppError('Accès réservé aux administrateurs', 403, 'FORBIDDEN')
+      const id = req.params['id'] as string
+      const data = await svc.reopenFiscalYear(getCompanyId(req)!, id)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── États financiers ──────────────────────────────────────────────────────────
+
+async function handleFinancialStatements(req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) {
+  try {
+    const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+    if (!fiscalYearId)
+      throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+    const data = await fsSvc.getFinancialStatements(getCompanyId(req)!, fiscalYearId)
+    res.json({ success: true, data })
+  } catch (e) { next(e) }
+}
+
+accountingRouter.get('/etats-financiers',      checkModule('comptabilite', 'read'), handleFinancialStatements)
+accountingRouter.get('/financial-statements',   checkModule('comptabilite', 'read'), handleFinancialStatements)
+
+// ── Journal / Balance / Grand Livre by fiscalYearId ────────────────────────
+
+accountingRouter.get(
+  '/journal',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await svc.getJournalByFiscalYear(getCompanyId(req)!, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/balance-journal',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await svc.getBalanceByFiscalYear(getCompanyId(req)!, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/grand-livre-journal',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await svc.getGrandLivreByFiscalYear(getCompanyId(req)!, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/fiscal-years/:id/summary',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const id = req.params['id'] as string
+      const data = await svc.getFiscalYearSummary(getCompanyId(req)!, id)
+      res.json({ success: true, data })
     } catch (e) { next(e) }
   },
 )

@@ -4,7 +4,7 @@ export const PLAN_MODULES: Record<Plan, Module[]> = {
   FREE: ['gestion'],
   STARTER: ['gestion', 'rh'],
   PRO: ['gestion', 'rh', 'comptabilite', 'juridique'],
-  PREMIUM: ['gestion', 'rh', 'comptabilite', 'juridique', 'esg'],
+  PREMIUM: ['gestion', 'rh', 'comptabilite', 'juridique', 'esg', 'fiscalite'],
 }
 
 export interface PlanLimits {

@@ -14,6 +14,9 @@ import { reviewsRouter } from '../modules/reviews/reviews.routes.js'
 import { scheduleRouter } from '../modules/schedule/schedule.routes.js'
 import { legalRouter } from '../modules/legal/legal.routes.js'
 import { aiRouter } from '../modules/ai/ai.routes.js'
+import { attachmentsRouter } from '../modules/attachments/attachments.routes.js'
+import { settingsRouter } from '../modules/settings/settings.routes.js'
+import { fiscalRouter } from '../modules/fiscal/fiscal.routes.js'
 
 const router = Router()
 
@@ -36,5 +39,8 @@ router.use('/reviews', reviewsRouter)
 router.use('/schedule', scheduleRouter)
 router.use('/legal', legalRouter)
 router.use('/ai', aiRouter)
+router.use('/attachments', attachmentsRouter)
+router.use('/settings', settingsRouter)
+router.use('/fiscal', fiscalRouter)
 
 export { router }

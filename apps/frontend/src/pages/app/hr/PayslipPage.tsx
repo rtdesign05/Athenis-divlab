@@ -1,20 +1,21 @@
 import { useState } from 'react'
 import { useEmployees, usePayslip } from '@/hooks/useHr'
+import { useCurrency } from '@/hooks/useCurrency'
+import { useAuth } from '@/hooks/useAuth'
 import type { Payslip } from '@/services/hrApi'
-
-function fmt(n: number) {
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
-}
+import { PdfButton } from '@/shared/components/ui/PdfButton'
+import { usePdf } from '@/shared/hooks/usePdf'
 
 function fmtRate(r: number) {
   return r === 0 ? '—' : r.toFixed(3).replace(/\.?0+$/, '') + ' %'
 }
 
 function PayslipView({ payslip }: { payslip: Payslip }) {
+  const { fmt } = useCurrency()
   return (
-    <div className="rounded-xl border border-gray-200 bg-white print:shadow-none">
+    <div className="rounded-xl border border-gray-200 bg-white">
       {/* Header */}
-      <div className="border-b border-gray-100 bg-gray-50 px-6 py-4 print:bg-white">
+      <div className="border-b border-gray-100 bg-gray-50 px-6 py-4">
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Bulletin de paie</h2>
@@ -103,10 +104,17 @@ function PayslipView({ payslip }: { payslip: Payslip }) {
   )
 }
 
+const LEGAL_NOTICE: Record<string, string> = {
+  CM: 'Calcul basé sur les taux CNPS 2026 — Plafond mensuel 750 000 FCFA. Ce bulletin est indicatif et ne remplace pas un logiciel de paie agréé.',
+  FR: 'Calcul basé sur les taux URSSAF 2026 — PMSS 3 925 €/mois. Ce bulletin est indicatif et ne remplace pas un logiciel de paie agréé.',
+}
+
 export function PayslipPage() {
+  const { user } = useAuth()
   const employees = useEmployees(true)
   const [selectedEmpId, setSelectedEmpId] = useState('')
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
+  const { downloadBulletinPaie } = usePdf()
 
   const { data: payslip, isLoading, isError } = usePayslip(selectedEmpId, month)
 
@@ -118,10 +126,7 @@ export function PayslipPage() {
           <p className="text-sm text-gray-500">Calcul automatique — cotisations 2026</p>
         </div>
         {payslip && (
-          <button onClick={() => window.print()}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
-            Imprimer / PDF
-          </button>
+          <PdfButton onDownload={() => downloadBulletinPaie(payslip)} label="Télécharger PDF" />
         )}
       </div>
 
@@ -170,7 +175,7 @@ export function PayslipPage() {
 
       {/* Legal notice */}
       <p className="text-xs text-gray-400">
-        Calcul basé sur les taux URSSAF 2026 — PMSS 3 925 €/mois. Ce bulletin est indicatif et ne remplace pas un logiciel de paie agréé.
+        {LEGAL_NOTICE[user?.country ?? 'FR'] ?? LEGAL_NOTICE.FR}
       </p>
     </div>
   )

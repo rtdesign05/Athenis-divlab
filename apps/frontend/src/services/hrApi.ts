@@ -184,7 +184,7 @@ const d = <T>(r: { data: { data: T } }) => r.data.data
 
 export const hrApi = {
   // Employees
-  list:   (activeOnly?: boolean) => api.get<{ data: Employee[] }>('/employees', { params: activeOnly !== undefined ? { active: activeOnly ? 'true' : 'false' } : undefined }).then(d),
+  list:   (activeOnly?: boolean) => api.get<{ data: { items: Employee[] } }>('/employees', { params: activeOnly !== undefined ? { active: activeOnly ? 'true' : 'false' } : undefined }).then(r => d(r).items ?? []),
   stats:  ()                     => api.get<{ data: EmployeeStats }>('/employees/stats').then(d),
   get:    (id: string)           => api.get<{ data: Employee }>(`/employees/${id}`).then(d),
   create: (dto: CreateEmployeeDto) => api.post<{ data: Employee }>('/employees', dto).then(d),
@@ -196,7 +196,7 @@ export const hrApi = {
   // Leaves
   leaves: {
     list:    (params?: { employeeId?: string; status?: LeaveStatus }) =>
-               api.get<{ data: LeaveRequest[] }>('/leaves', { params }).then(d),
+               api.get<{ data: { items: LeaveRequest[] } }>('/leaves', { params }).then(r => d(r).items ?? []),
     get:     (id: string) => api.get<{ data: LeaveRequest }>(`/leaves/${id}`).then(d),
     stats:   ()           => api.get<{ data: LeaveStats }>('/leaves/stats').then(d),
     balance: (empId: string) => api.get<{ data: LeaveBalance }>(`/leaves/balance/${empId}`).then(d),
@@ -208,7 +208,7 @@ export const hrApi = {
   // Reviews
   reviews: {
     list:   (params?: { employeeId?: string; status?: ReviewStatus }) =>
-              api.get<{ data: AnnualReview[] }>('/reviews', { params }).then(d),
+              api.get<{ data: { items: AnnualReview[] } }>('/reviews', { params }).then(r => d(r).items ?? []),
     get:    (id: string) => api.get<{ data: AnnualReview }>(`/reviews/${id}`).then(d),
     create: (dto: CreateReviewDto) => api.post<{ data: AnnualReview }>('/reviews', dto).then(d),
     update: (id: string, dto: UpdateReviewDto) => api.patch<{ data: AnnualReview }>(`/reviews/${id}`, dto).then(d),

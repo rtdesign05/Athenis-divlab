@@ -9,6 +9,8 @@ export interface JwtPayload {
   cabinetId: string | null
   plan: Plan | null
   modules: Module[]
+  country?: string | null
+  currencySymbol?: string | null
   iat?: number
   exp?: number
 }
@@ -34,6 +36,7 @@ export interface RegisterCompanyRequest {
   secteur?: string
   taille?: 'TPE' | 'PME' | 'ETI' | 'GE'
   plan: Plan
+  country?: string
 }
 
 export interface RegisterCabinetRequest {

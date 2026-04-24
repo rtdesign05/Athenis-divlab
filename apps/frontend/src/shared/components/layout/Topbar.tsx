@@ -1,73 +1,59 @@
-import { useLocation } from 'react-router-dom'
-import { Badge } from '@/shared/components/ui/Badge'
 import { useAuth } from '@/features/auth/useAuth'
-
-const ROUTE_TITLES: Record<string, string> = {
-  '/app/dashboard': 'Tableau de bord',
-  '/app/invoices': 'Factures',
-  '/app/clients': 'Clients',
-  '/app/expenses': 'Dépenses',
-  '/app/reports': 'Rapports',
-  '/app/hr/employees': 'Employés',
-  '/app/hr/contracts': 'Contrats',
-  '/app/hr/payroll': 'Paie',
-  '/app/hr/leaves': 'Congés',
-  '/app/accounting/journal': 'Journal',
-  '/app/accounting/ledger': 'Grand livre',
-  '/app/accounting/balance-sheet': 'Bilan',
-  '/app/accounting/income': 'Compte de résultat',
-  '/app/accounting/vat': 'TVA',
-  '/app/legal/contracts': 'Contrats',
-  '/app/legal/compliance': 'Conformité',
-  '/app/legal/gdpr': 'RGPD',
-  '/app/legal/documents': 'Documents juridiques',
-  '/app/esg': 'Score ESG',
-  '/app/esg/indicators': 'Indicateurs',
-  '/app/esg/risks': 'Risques',
-  '/app/esg/csrd': 'Rapport CSRD',
-  '/app/settings': 'Paramètres',
-  '/cabinet/dashboard': 'Tableau de bord',
-  '/cabinet/clients': 'Portefeuille clients',
-  '/cabinet/access': 'Accès & mandats',
-  '/cabinet/billing': 'Facturation',
-  '/personal/dashboard': 'Tableau de bord',
-  '/personal/expenses': 'Mes dépenses',
-  '/personal/income': 'Mes revenus',
-  '/personal/savings': 'Mon épargne',
-}
-
-const PLAN_VARIANT: Record<string, 'default' | 'info' | 'success' | 'warning' | 'purple'> = {
-  FREE: 'neutral' as never,
-  STARTER: 'info',
-  PRO: 'success',
-  PREMIUM: 'purple',
-  CABINET: 'default',
-}
+import { getFlagEmoji } from '@athenis/shared-types'
 
 export function Topbar() {
-  const { pathname } = useLocation()
-  const { user } = useAuth()
-
-  const title = ROUTE_TITLES[pathname] ?? 'Athenis'
-  const plan = user?.plan ?? (user?.accountType === 'CABINET' ? 'CABINET' : null)
+  const { user, logout } = useAuth()
   const displayName = user?.email ?? ''
+  const initial = displayName.charAt(0).toUpperCase() || '?'
+
+  const showLocale = user?.accountType === 'COMPANY' && user.country && user.currencySymbol
 
   return (
-    <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-6 shrink-0">
-      <h1 className="text-lg font-semibold text-gray-900">{title}</h1>
-
-      <div className="flex items-center gap-3">
-        {plan && (
-          <Badge variant={PLAN_VARIANT[plan] ?? 'neutral'}>
-            {plan}
-          </Badge>
-        )}
-        <div className="h-8 w-8 rounded-full bg-forest-100 flex items-center justify-center text-forest-700 font-semibold text-sm">
-          {displayName?.charAt(0).toUpperCase() ?? '?'}
+    <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
+      {/* Logo */}
+      <div className="flex items-center gap-2.5">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-forest-900 text-sm font-bold text-white">
+          A
         </div>
-        <span className="text-sm font-medium text-gray-700 hidden sm:block">
-          {displayName}
-        </span>
+        <span className="text-sm font-semibold text-gray-900 tracking-tight">Athenis</span>
+      </div>
+
+      {/* Right actions */}
+      <div className="flex items-center gap-2">
+        <button
+          aria-label="Notifications"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100"
+        >
+          🔔
+        </button>
+
+        {showLocale && (
+          <>
+            <div className="mx-1 h-4 w-px bg-gray-200" />
+            <span className="flex items-center gap-1 text-sm text-gray-600">
+              <span>{getFlagEmoji(user.country!)}</span>
+              <span className="font-medium">{user.currencySymbol}</span>
+            </span>
+          </>
+        )}
+
+        <div className="mx-1 h-4 w-px bg-gray-200" />
+
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-forest-100 text-sm font-semibold text-forest-700">
+            {initial}
+          </div>
+          <span className="hidden text-sm font-medium text-gray-700 sm:block max-w-[160px] truncate">
+            {displayName}
+          </span>
+        </div>
+
+        <button
+          onClick={() => void logout()}
+          className="ml-1 text-xs text-gray-400 transition-colors hover:text-gray-600"
+        >
+          Déconnexion
+        </button>
       </div>
     </header>
   )

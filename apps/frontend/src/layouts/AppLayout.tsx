@@ -10,6 +10,7 @@ const MODULE_LABEL: Record<Module, string> = {
   comptabilite: 'Comptabilité',
   juridique: 'Juridique',
   esg: 'ESG & CSRD',
+  fiscalite: 'Fiscalité',
 }
 
 export function AppLayout() {

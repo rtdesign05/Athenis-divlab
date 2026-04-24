@@ -121,8 +121,183 @@ export const accountingApi = {
   clotureStatus:   (year: number) => api.get<{ data: ClotureStatus }>('/accounting/cloture', { params: { year } }).then(d),
   clotureClose:    (year: number, notes?: string) =>
     api.post<{ data: unknown }>('/accounting/cloture', { year, notes }).then(d),
-  fecDownloadUrl:  (year: number, token: string) =>
+  fecDownloadUrl:  (year: number) =>
     `/api/accounting/fec?year=${year}`,
+  plan:         () => api.get<{ data: PlanData }>('/accounting/plan').then(d),
+  comptes:      () => api.get<{ data: CompteItem[] }>('/accounting/comptes').then(d),
+  addCompte:    (body: { numero: string; intitule: string; classe: number; type: ChartAccountType; isSystem?: boolean }) =>
+    api.post<{ data: CompteItem }>('/accounting/comptes', body).then(d),
+  updateCompte: (id: string, intitule: string) =>
+    api.put<{ data: CompteItem }>(`/accounting/comptes/${id}`, { intitule }).then(d),
+  deleteCompte: (id: string) => api.delete(`/accounting/comptes/${id}`),
+  etatsFinanciers:        (fiscalYearId: string) =>
+    api.get<{ data: FinancialStatements }>('/accounting/etats-financiers', { params: { fiscalYearId } }).then(d),
+  getFinancialStatements: (fiscalYearId: string) =>
+    api.get<{ data: FinancialStatements }>('/accounting/financial-statements', { params: { fiscalYearId } }).then(d),
+  getJournal:             (fiscalYearId: string) =>
+    api.get<{ data: JournalData }>('/accounting/journal', { params: { fiscalYearId } }).then(d),
+  getBalanceByFiscalYear: (fiscalYearId: string) =>
+    api.get<{ data: BalanceData }>('/accounting/balance-journal', { params: { fiscalYearId } }).then(d),
+  getGrandLivreByFiscalYear: (fiscalYearId: string) =>
+    api.get<{ data: GrandLivreData }>('/accounting/grand-livre-journal', { params: { fiscalYearId } }).then(d),
+  listFiscalYears:   () => api.get<{ data: FiscalYear[] }>('/accounting/fiscal-years').then(d),
+  createFiscalYear:  (body: { year: number; startDate?: string; endDate?: string }) => api.post<{ data: FiscalYear }>('/accounting/fiscal-years', body).then(d),
+  getFiscalYear:     (id: string) => api.get<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}`).then(d),
+  lockFiscalYear:    (id: string) => api.put<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/lock`).then(d),
+  closeFiscalYear:   (id: string) => api.post<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/close`).then(d),
+  reopenFiscalYear:  (id: string) => api.post<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/reopen`).then(d),
+  fiscalYearSummary: (id: string) => api.get<{ data: FiscalYearSummary }>(`/accounting/fiscal-years/${id}/summary`).then(d),
+}
+
+// ── Plan comptable / Comptes types ───────────────────────────────────────────
+
+export type ChartAccountType = 'ACTIF' | 'PASSIF' | 'CHARGE' | 'PRODUIT'
+export type AccountingZone   = 'FRANCE' | 'OHADA' | 'IFRS'
+
+export interface PlanEntry {
+  numero:   string
+  intitule: string
+  classe:   number
+  type:     ChartAccountType
+  utilisé:  boolean
+}
+
+export interface PlanData {
+  zone:      AccountingZone
+  zoneLabel: { flag: string; label: string }
+  entries:   PlanEntry[]
+}
+
+export interface CompteItem {
+  id:             string
+  numero:         string
+  intitule:       string
+  classe:         number
+  type:           ChartAccountType
+  zone:           AccountingZone
+  isSystem:       boolean
+  soldeDebiteur:  number
+  soldeCrediteur: number
+  soldeNet:       number
+}
+
+// ── Financial Statements types ────────────────────────────────────────────────
+
+export interface FSPair { n: number; nm1: number }
+
+export interface FinancialStatements {
+  zone:        AccountingZone
+  year:        number
+  prevYear:    number
+  status:      string
+  entryCount:  number
+  hasPrevYear: boolean
+  // France PCG
+  bilan?:                         Record<string, Record<string, FSPair>>
+  compteDeResultat?:              Record<string, Record<string, FSPair>>
+  // OHADA-only
+  tafire?:                        Record<string, FSPair>
+  // IFRS-only
+  statementOfFinancialPosition?:  Record<string, Record<string, FSPair>>
+  statementOfProfitOrLoss?:       Record<string, FSPair>
+  statementOfCashFlows?:          Record<string, FSPair>
+  statementOfChangesInEquity?:    Record<string, FSPair>
+}
+
+// ── Journal Entry types ───────────────────────────────────────────────────────
+
+export interface JournalEntryRow {
+  id:          string
+  date:        string
+  journalCode: string
+  account:     string
+  label:       string
+  debit:       number
+  credit:      number
+  reference:   string | null
+}
+
+export interface JournalData {
+  fiscalYearId: string
+  year:         number
+  status:       string
+  entries:      JournalEntryRow[]
+}
+
+export interface BalanceRow {
+  account:        string
+  label:          string
+  totalDebit:     number
+  totalCredit:    number
+  soldeDebiteur:  number
+  soldeCrediteur: number
+}
+
+export interface BalanceData {
+  fiscalYearId: string
+  year:         number
+  status:       string
+  rows:         BalanceRow[]
+  totalDebit:   number
+  totalCredit:  number
+  equilibre:    boolean
+}
+
+export interface GrandLivreLigne {
+  id:          string
+  date:        string
+  journalCode: string
+  label:       string
+  debit:       number
+  credit:      number
+  solde:       number
+  reference:   string | null
+}
+
+export interface GrandLivreCompte {
+  account: string
+  label:   string
+  lignes:  GrandLivreLigne[]
+}
+
+export interface GrandLivreData {
+  fiscalYearId: string
+  year:         number
+  status:       string
+  comptes:      GrandLivreCompte[]
+}
+
+// ── Fiscal Year types ─────────────────────────────────────────────────────────
+
+export type FiscalYearStatus = 'DRAFT' | 'OPEN' | 'LOCKED' | 'CLOSED'
+
+export interface FiscalYear {
+  id:             string
+  year:           number
+  startDate:      string
+  endDate:        string
+  status:         FiscalYearStatus
+  openingBalance: Record<string, number> | null
+  closingBalance: Record<string, number> | null
+  createdBy:      string
+  closedBy:       string | null
+  closedAt:       string | null
+  createdAt:      string
+  updatedAt:      string
+  _count:         { entries: number; invoices: number; expenses: number }
+}
+
+export interface FiscalYearSummary {
+  id:             string
+  year:           number
+  status:         FiscalYearStatus
+  ca:             number
+  charges:        number
+  resultatNet:    number
+  openInvoices:   number
+  totalInvoices:  number
+  totalExpenses:  number
+  entriesCount:   number
 }
 
 // ── Bank API ──────────────────────────────────────────────────────────────────

@@ -32,6 +32,13 @@ export type {
 } from './auth.js'
 
 export type {
+  AccountingZone,
+  CountryConfig,
+  CountryListItem,
+} from './country.js'
+export { PAYS_OHADA, ALL_COUNTRIES, getCountryConfig, getFlagEmoji } from './country.js'
+
+export type {
   ApiSuccess,
   ApiError,
   ApiResponse,

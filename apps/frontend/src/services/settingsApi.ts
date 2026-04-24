@@ -1,0 +1,141 @@
+import { api } from '@/lib/api'
+
+export type PermissionLevel = 'none' | 'read' | 'write' | 'admin'
+
+export interface RolePermissions {
+  gestion:      PermissionLevel
+  comptabilite: PermissionLevel
+  rh:           PermissionLevel
+  juridique:    PermissionLevel
+  esg:          PermissionLevel
+  settings:     PermissionLevel
+}
+
+export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'INVITED'
+
+export interface CompanySettings {
+  id:               string
+  name:             string
+  logo:             string | null
+  legalForm:        string | null
+  siren:            string | null
+  siret:            string | null
+  naf:              string | null
+  vatNumber:        string | null
+  capital:          number | null
+  address:          string | null
+  postalCode:       string | null
+  city:             string | null
+  country:          string
+  phone:            string | null
+  contactEmail:     string | null
+  website:          string | null
+  primaryColor:     string | null
+  secondaryColor:   string | null
+  font:             string | null
+  invoiceMentions:  string | null
+  paymentTerms:     number | null
+  lateInterestRate: number | null
+  discountRate:     number | null
+  plan:             string
+  modules:          string[]
+  locale:           string
+  timezone:         string
+  accountingZone:   string
+  accountingPlan:   string
+}
+
+export interface SettingsUser {
+  id:              string
+  email:           string
+  firstName:       string | null
+  lastName:        string | null
+  globalRole:      string
+  companyRoleId:   string | null
+  companyRoleName: string | null
+  status:          UserStatus
+  totpEnabled:     boolean
+  lastLoginAt:     string | null
+  invitedAt:       string | null
+  isInvitation:    boolean
+}
+
+export interface CompanyRole {
+  id:          string
+  name:        string
+  description: string | null
+  isSystem:    boolean
+  permissions: RolePermissions
+  userCount:   number
+}
+
+export interface SecurityPolicy {
+  passwordMinLength:      number
+  requireUppercase:       boolean
+  requireNumbers:         boolean
+  requireSpecial:         boolean
+  passwordExpiryDays:     number
+  require2faAll:          boolean
+  require2faAdmin:        boolean
+  sessionDurationMinutes: number
+  autoLogoutMinutes:      number
+  ipWhitelist:            string[]
+  blockOutsideHours:      boolean
+  maxLoginAttempts:       number
+  lockoutDurationMinutes: number
+}
+
+export interface AuditLogEntry {
+  id:        string
+  action:    string
+  resource:  string | null
+  ipAddress: string | null
+  createdAt: string
+  user:      { email: string; firstName: string | null; lastName: string | null } | null
+}
+
+const d = <T>(r: { data: { data: T } }) => r.data.data
+
+export const settingsApi = {
+  getCompany:       () =>
+    api.get<{ data: CompanySettings }>('/settings/company').then(d),
+
+  updateCompany:    (body: Partial<CompanySettings>) =>
+    api.put<{ data: CompanySettings }>('/settings/company', body).then(d),
+
+  listUsers:        () =>
+    api.get<{ data: SettingsUser[] }>('/settings/users').then(d),
+
+  inviteUser:       (body: { email: string; firstName?: string; lastName?: string; roleId: string }) =>
+    api.post<{ data: { message: string } }>('/settings/users/invite', body).then(d),
+
+  updateUserRole:   (id: string, roleId: string) =>
+    api.put(`/settings/users/${id}/role`, { roleId }),
+
+  updateUserStatus: (id: string, status: string) =>
+    api.put(`/settings/users/${id}/status`, { status }),
+
+  deleteUser:       (id: string) =>
+    api.delete(`/settings/users/${id}`),
+
+  listRoles:        () =>
+    api.get<{ data: CompanyRole[] }>('/settings/roles').then(d),
+
+  createRole:       (body: { name: string; description?: string; permissions: RolePermissions }) =>
+    api.post<{ data: CompanyRole }>('/settings/roles', body).then(d),
+
+  updateRolePerms:  (id: string, body: { name?: string; description?: string; permissions?: RolePermissions }) =>
+    api.put<{ data: CompanyRole }>(`/settings/roles/${id}`, body).then(d),
+
+  deleteRole:       (id: string) =>
+    api.delete(`/settings/roles/${id}`),
+
+  getSecurity:      () =>
+    api.get<{ data: SecurityPolicy }>('/settings/security').then(d),
+
+  updateSecurity:   (body: SecurityPolicy) =>
+    api.put<{ data: SecurityPolicy }>('/settings/security', body).then(d),
+
+  getAuditLogs:     () =>
+    api.get<{ data: AuditLogEntry[] }>('/settings/security/audit').then(d),
+}

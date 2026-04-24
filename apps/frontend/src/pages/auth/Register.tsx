@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
-import { PLAN_INFO } from '@athenis/shared-types'
-import type { RegisterRequest, AccountType, Plan } from '@athenis/shared-types'
+import { PLAN_INFO, ALL_COUNTRIES, getCountryConfig } from '@athenis/shared-types'
+import type { RegisterRequest, AccountType, Plan, CountryListItem } from '@athenis/shared-types'
 
 type Step = 1 | 2 | 3 | 4
 type CompanySize = 'TPE' | 'PME' | 'ETI' | 'GE'
@@ -19,6 +19,7 @@ interface FormState {
   secteur: string
   taille: CompanySize
   plan: Plan
+  country: string
   // cabinet
   cabinetName: string
   siret: string
@@ -29,6 +30,119 @@ const ACCOUNT_TYPES: { type: AccountType; label: string; desc: string; icon: str
   { type: 'COMPANY', label: 'PME / Entreprise', desc: 'Gestion financière d\'entreprise', icon: '🏢' },
   { type: 'CABINET', label: 'Cabinet comptable', desc: 'Gestion multi-clients', icon: '⚖️' },
 ]
+
+// ── Country selector component ────────────────────────────────────────────────
+
+function CountrySelect({ value, onChange }: { value: string; onChange: (code: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus()
+  }, [open])
+
+  const filtered: CountryListItem[] = search
+    ? ALL_COUNTRIES.filter(
+        (c) =>
+          c.name.toLowerCase().includes(search.toLowerCase()) ||
+          c.code.toLowerCase().includes(search.toLowerCase()),
+      )
+    : (ALL_COUNTRIES as unknown as CountryListItem[])
+
+  const selected = ALL_COUNTRIES.find((c) => c.code === value)
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="input mt-1 flex w-full items-center gap-2 text-left"
+      >
+        <span className="text-lg leading-none">{selected?.flag ?? '🌍'}</span>
+        <span className="flex-1 truncate">{selected?.name ?? 'Sélectionner un pays'}</span>
+        <span className="text-xs text-gray-400">{open ? '▲' : '▾'}</span>
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+          <div className="border-b border-gray-100 p-2">
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Rechercher un pays…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input w-full text-sm"
+            />
+          </div>
+          <ul className="max-h-52 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-gray-400">Aucun pays trouvé</li>
+            ) : (
+              filtered.map((c) => (
+                <li key={c.code}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange(c.code)
+                      setOpen(false)
+                      setSearch('')
+                    }}
+                    className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors hover:bg-gray-50 ${
+                      c.code === value ? 'bg-forest-50 text-forest-900 font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    <span className="text-base leading-none">{c.flag}</span>
+                    <span className="flex-1 text-left">{c.name}</span>
+                    <span className="text-xs text-gray-400">{c.code}</span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Country config preview ────────────────────────────────────────────────────
+
+function CountryConfigPreview({ countryCode }: { countryCode: string }) {
+  const cfg = getCountryConfig(countryCode)
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3.5 text-sm space-y-1.5">
+      <p className="font-semibold text-gray-900">
+        {cfg.flag} {cfg.name} détectée
+      </p>
+      <p className="text-gray-600">
+        Monnaie : <span className="font-medium text-gray-800">{cfg.currency} ({cfg.currencySymbol})</span>
+      </p>
+      <p className="text-gray-600">
+        Plan comptable : <span className="font-medium text-gray-800">{cfg.accountingPlan}</span>
+      </p>
+      <p className="text-gray-600">
+        Normes : <span className="font-medium text-gray-800">{cfg.accountingNorms}</span>
+      </p>
+    </div>
+  )
+}
+
+// ── Main Register component ───────────────────────────────────────────────────
 
 export function Register() {
   const navigate = useNavigate()
@@ -41,8 +155,25 @@ export function Register() {
     email: '', password: '',
     firstName: '', lastName: '',
     companyName: '', siren: '', secteur: '', taille: 'PME', plan: 'FREE',
+    country: 'FR',
     cabinetName: '', siret: '',
   })
+
+  // IP-based country detection — only applies if user hasn't manually changed country yet
+  const countryTouched = useRef(false)
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch('https://ipapi.co/json/', { signal: controller.signal })
+      .then((r) => r.json())
+      .then((data: { country_code?: string }) => {
+        const code = data.country_code?.toUpperCase()
+        if (code && !countryTouched.current && ALL_COUNTRIES.some((c) => c.code === code)) {
+          setForm((f) => ({ ...f, country: code }))
+        }
+      })
+      .catch(() => { /* keep default FR */ })
+    return () => controller.abort()
+  }, [])
 
   function set<K extends keyof FormState>(key: K, val: FormState[K]) {
     setForm((f) => ({ ...f, [key]: val }))
@@ -78,7 +209,16 @@ export function Register() {
       if (form.accountType === 'PERSONAL') {
         dto = { ...base, accountType: 'PERSONAL' }
       } else if (form.accountType === 'COMPANY') {
-        dto = { ...base, accountType: 'COMPANY', companyName: form.companyName, taille: form.taille, plan: form.plan, ...(form.siren ? { siren: form.siren } : {}), ...(form.secteur ? { secteur: form.secteur } : {}) }
+        dto = {
+          ...base,
+          accountType: 'COMPANY',
+          companyName: form.companyName,
+          taille: form.taille,
+          plan: form.plan,
+          country: form.country,
+          ...(form.siren ? { siren: form.siren } : {}),
+          ...(form.secteur ? { secteur: form.secteur } : {}),
+        }
       } else {
         dto = { ...base, accountType: 'CABINET', cabinetName: form.cabinetName, ...(form.siret ? { siret: form.siret } : {}) }
       }
@@ -94,7 +234,6 @@ export function Register() {
     }
   }
 
-  // Step 4 triggers submission
   if (step === 4 && !loading && !error) {
     void submit()
   }
@@ -170,6 +309,12 @@ export function Register() {
                 </div>
               </div>
               <div><label className="label">Secteur d'activité</label><input className="input mt-1" placeholder="Ex: Commerce, Services…" value={form.secteur} onChange={(e) => set('secteur', e.target.value)} /></div>
+
+              <div>
+                <label className="label">Pays *</label>
+                <CountrySelect value={form.country} onChange={(code) => { countryTouched.current = true; set('country', code) }} />
+              </div>
+              {form.country && <CountryConfigPreview countryCode={form.country} />}
             </>
           )}
 

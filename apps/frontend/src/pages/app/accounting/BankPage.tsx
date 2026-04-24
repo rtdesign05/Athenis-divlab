@@ -11,7 +11,7 @@ import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
 import { SkeletonTable } from '@/shared/components/feedback/Skeleton'
 import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
-import { formatCurrency } from '@/shared/utils/currency'
+import { useCurrency } from '@/hooks/useCurrency'
 import { formatDate } from '@/shared/utils/date'
 import type { BankTransaction } from '@/services/accountingApi'
 
@@ -39,12 +39,13 @@ function TxRow({
   onUnmatch: (id: string) => void
   onDelete: (id: string) => void
 }) {
+  const { fmt } = useCurrency()
   return (
     <tr className="hover:bg-gray-50 text-sm">
       <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{formatDate(tx.date)}</td>
       <td className="px-4 py-2.5 text-gray-800 max-w-xs truncate">{tx.label}</td>
       <td className={`px-4 py-2.5 text-right font-medium tabular-nums ${tx.type === 'CREDIT' ? 'text-green-600' : 'text-red-600'}`}>
-        {tx.type === 'CREDIT' ? '+' : '−'}{formatCurrency(tx.amount)}
+        {tx.type === 'CREDIT' ? '+' : '−'}{fmt(tx.amount)}
       </td>
       <td className="px-4 py-2.5">
         <Badge variant={STATUS_BADGE[tx.status]}>{STATUS_LABEL[tx.status]}</Badge>

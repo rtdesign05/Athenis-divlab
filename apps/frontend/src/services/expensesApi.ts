@@ -10,7 +10,7 @@ export interface Expense {
   category: ExpenseCategory
   description: string
   amount: string
-  tva: string
+  tva?: string
   receiptUrl: string | null
   createdAt: string
   updatedAt: string
@@ -36,7 +36,7 @@ export type UpdateExpenseDto = Partial<CreateExpenseDto>
 const d = <T>(r: { data: { data: T } }) => r.data.data
 
 export const expensesApi = {
-  list:   (category?: ExpenseCategory) => api.get<{ data: Expense[] }>('/expenses', { params: category ? { category } : undefined }).then(d),
+  list:   (category?: ExpenseCategory) => api.get<{ data: { items: Expense[] } }>('/expenses', { params: category ? { category } : undefined }).then(r => d(r).items ?? []),
   stats:  ()                            => api.get<{ data: ExpenseStats }>('/expenses/stats').then(d),
   get:    (id: string)                  => api.get<{ data: Expense }>(`/expenses/${id}`).then(d),
   create: (dto: CreateExpenseDto)       => api.post<{ data: Expense }>('/expenses', dto).then(d),

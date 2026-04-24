@@ -22,6 +22,7 @@ import type {
   TotpSetupResponse,
   TotpVerifyResponse,
 } from '@athenis/shared-types'
+import { getCountryConfig } from '@athenis/shared-types'
 import type {
   RegisterDto,
   LoginDto,
@@ -170,12 +171,21 @@ export async function register(
     })
   } else if (dto.accountType === 'COMPANY') {
     const modules = getDefaultModules(dto.plan)
+    const countryCfg = getCountryConfig(dto.country ?? 'FR')
     dbUser = await prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
         data: {
           name: dto.companyName, siren: dto.siren ?? null,
           secteur: dto.secteur ?? null, taille: dto.taille ?? 'PME',
           plan: dto.plan, modules,
+          country: countryCfg.code,
+          currency: countryCfg.currencyCode,
+          currencySymbol: countryCfg.currencySymbol,
+          accountingZone: countryCfg.accountingZone,
+          accountingPlan: countryCfg.accountingPlan,
+          vatRates: countryCfg.vatRates,
+          locale: countryCfg.locale,
+          timezone: countryCfg.timezone,
         },
       })
       return tx.user.create({
@@ -207,6 +217,9 @@ export async function register(
 
   const plan = await getEffectivePlan(dbUser.accountType as AccountType, dbUser.companyId)
   const modules = await getEffectiveModules(dbUser.accountType as AccountType, dbUser.companyId)
+  const companyLocale = dbUser.companyId
+    ? await prisma.company.findUnique({ where: { id: dbUser.companyId }, select: { country: true, currencySymbol: true } })
+    : null
 
   const accessToken = signAccessToken({
     sub: dbUser.id, email: dbUser.email,
@@ -215,6 +228,8 @@ export async function register(
     companyId: dbUser.companyId,
     cabinetId: dbUser.cabinetId,
     plan, modules,
+    country: companyLocale?.country ?? null,
+    currencySymbol: companyLocale?.currencySymbol ?? null,
   })
   const refreshToken = await createRefreshToken(dbUser.id)
   await audit('USER_CREATED', dbUser.id, dbUser.companyId, ip, ua)
@@ -278,12 +293,17 @@ export async function login(
 
   const plan = await getEffectivePlan(user.accountType as AccountType, user.companyId)
   const modules = await getEffectiveModules(user.accountType as AccountType, user.companyId)
+  const loginLocale = user.companyId
+    ? await prisma.company.findUnique({ where: { id: user.companyId }, select: { country: true, currencySymbol: true } })
+    : null
   const accessToken = signAccessToken({
     sub: user.id, email: user.email,
     accountType: user.accountType as AccountType,
     role: user.role as UserRole,
     companyId: user.companyId, cabinetId: user.cabinetId,
     plan, modules,
+    country: loginLocale?.country ?? null,
+    currencySymbol: loginLocale?.currencySymbol ?? null,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
@@ -329,12 +349,17 @@ export async function loginVerifyTotp(
 
   const plan = await getEffectivePlan(user.accountType as AccountType, user.companyId)
   const modules = await getEffectiveModules(user.accountType as AccountType, user.companyId)
+  const totpLocale = user.companyId
+    ? await prisma.company.findUnique({ where: { id: user.companyId }, select: { country: true, currencySymbol: true } })
+    : null
   const accessToken = signAccessToken({
     sub: user.id, email: user.email,
     accountType: user.accountType as AccountType,
     role: user.role as UserRole,
     companyId: user.companyId, cabinetId: user.cabinetId,
     plan, modules,
+    country: totpLocale?.country ?? null,
+    currencySymbol: totpLocale?.currencySymbol ?? null,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
@@ -388,6 +413,9 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
   const u = stored.user
   const plan = await getEffectivePlan(u.accountType as AccountType, u.companyId)
   const modules = await getEffectiveModules(u.accountType as AccountType, u.companyId)
+  const refreshLocale = u.companyId
+    ? await prisma.company.findUnique({ where: { id: u.companyId }, select: { country: true, currencySymbol: true } })
+    : null
 
   return {
     accessToken: signAccessToken({
@@ -396,6 +424,8 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
       role: u.role as UserRole,
       companyId: u.companyId, cabinetId: u.cabinetId,
       plan, modules,
+      country: refreshLocale?.country ?? null,
+      currencySymbol: refreshLocale?.currencySymbol ?? null,
     }),
   }
 }

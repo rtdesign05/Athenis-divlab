@@ -8,7 +8,7 @@ export type CompanySize = 'TPE' | 'PME' | 'ETI' | 'GE'
 
 export type MandatType = 'COMPLET' | 'COMPTABILITE' | 'GESTION' | 'DECLARATIONS'
 
-export type Module = 'gestion' | 'rh' | 'comptabilite' | 'juridique' | 'esg'
+export type Module = 'gestion' | 'rh' | 'comptabilite' | 'juridique' | 'esg' | 'fiscalite'
 
 export interface UserProfile {
   id: string

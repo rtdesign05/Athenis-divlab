@@ -4,6 +4,7 @@ export interface NavItem {
   label: string
   path: string
   icon: string
+  end?: boolean
 }
 
 export interface NavSection {
@@ -17,71 +18,66 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     module: 'gestion',
     label: 'Gestion',
     items: [
-      { label: 'Tableau de bord', path: '/app/dashboard', icon: '▦' },
-      { label: 'Factures', path: '/app/invoices', icon: '🧾' },
-      { label: 'Devis', path: '/app/quotes', icon: '📋' },
-      { label: 'Clients', path: '/app/clients', icon: '👥' },
-      { label: 'Dépenses', path: '/app/expenses', icon: '💸' },
-      { label: 'Rapports', path: '/app/reports', icon: '📊' },
+      { label: 'Vue d\'ensemble', path: '/app/gestion',          icon: '▦',  end: true },
+      { label: 'Factures',        path: '/app/gestion/factures', icon: '🧾' },
+      { label: 'Devis',           path: '/app/gestion/devis',    icon: '📋' },
+      { label: 'Clients',         path: '/app/gestion/clients',  icon: '👥' },
+      { label: 'Dépenses',        path: '/app/gestion/depenses', icon: '💸' },
+      { label: 'Trésorerie',      path: '/app/gestion/tresorerie', icon: '💰' },
     ],
   },
   {
     module: 'rh',
     label: 'Ressources humaines',
     items: [
-      { label: 'Employés',  path: '/app/hr/employees', icon: '👤' },
-      { label: 'Congés',    path: '/app/hr/leaves',    icon: '🏖️' },
-      { label: 'Planning',  path: '/app/hr/planning',  icon: '📅' },
-      { label: 'Entretiens', path: '/app/hr/reviews',  icon: '📝' },
-      { label: 'Bulletins', path: '/app/hr/payslip',   icon: '💶' },
+      { label: 'Vue d\'ensemble', path: '/app/hr',            icon: '▦',  end: true },
+      { label: 'Employés',        path: '/app/hr/employes',   icon: '👤' },
+      { label: 'Congés',          path: '/app/hr/conges',     icon: '🏖️' },
+      { label: 'Paie',            path: '/app/hr/paie',       icon: '💶' },
+      { label: 'Planning',        path: '/app/hr/planning',   icon: '📅' },
     ],
   },
   {
     module: 'comptabilite',
     label: 'Comptabilité',
     items: [
-      { label: 'Journal', path: '/app/accounting/journal', icon: '📒' },
-      { label: 'Grand livre', path: '/app/accounting/ledger', icon: '📚' },
-      { label: 'Bilan', path: '/app/accounting/balance-sheet', icon: '⚖️' },
-      { label: 'Résultat', path: '/app/accounting/income', icon: '📈' },
-      { label: 'Relevé bancaire', path: '/app/accounting/bank', icon: '🏦' },
-      { label: 'TVA CA3', path: '/app/accounting/vat', icon: '%' },
-      { label: 'Export FEC', path: '/app/accounting/fec', icon: '📤' },
-      { label: 'Clôture exercice', path: '/app/accounting/cloture', icon: '🔒' },
+      { label: 'Tableau de bord', path: '/app/accounting',              icon: '▦',  end: true },
+      { label: 'Bilan',           path: '/app/accounting/bilan',        icon: '⚖️' },
+      { label: 'Journal',         path: '/app/accounting/journal',      icon: '📒' },
     ],
   },
   {
     module: 'juridique',
     label: 'Juridique',
     items: [
-      { label: 'Contrats',  path: '/app/legal/contracts', icon: '📜' },
-      { label: 'RGPD',      path: '/app/legal/gdpr',      icon: '🔒' },
-      { label: 'Alertes',   path: '/app/legal/alerts',    icon: '⚠️' },
+      { label: 'Vue d\'ensemble', path: '/app/legal',           icon: '▦',  end: true },
+      { label: 'Contrats',        path: '/app/legal/contrats',  icon: '📜' },
+      { label: 'RGPD',            path: '/app/legal/rgpd',      icon: '🔒' },
+      { label: 'Conformité',      path: '/app/legal/conformite', icon: '✓' },
     ],
   },
   {
     module: 'esg',
     label: 'ESG & CSRD',
     items: [
-      { label: 'Tableau de bord', path: '/app/esg',           icon: '🌿' },
-      { label: 'Saisie Scopes',   path: '/app/esg/scope',     icon: '📊' },
-      { label: 'Benchmark',       path: '/app/esg/benchmark', icon: '📈' },
-      { label: 'Rapport CSRD',    path: '/app/esg/csrd',      icon: '🌍' },
-      { label: "Plan d'action",   path: '/app/esg/actions',   icon: '✅' },
+      { label: 'Vue d\'ensemble', path: '/app/esg',                   icon: '🌿', end: true },
+      { label: 'Environnemental', path: '/app/esg/environnement',     icon: '🌱' },
+      { label: 'Risques',         path: '/app/esg/risques',           icon: '⚠️' },
+      { label: 'Rapport',         path: '/app/esg/rapport',           icon: '🌍' },
     ],
   },
 ]
 
 export const PERSONAL_NAV_ITEMS: NavItem[] = [
-  { label: 'Tableau de bord', path: '/personal/dashboard', icon: '▦' },
-  { label: 'Dépenses', path: '/personal/expenses', icon: '💸' },
-  { label: 'Revenus', path: '/personal/income', icon: '📈' },
-  { label: 'Épargne', path: '/personal/savings', icon: '🐷' },
+  { label: 'Tableau de bord', path: '/personal/dashboard', icon: '▦', end: true },
+  { label: 'Dépenses',        path: '/personal/expenses',  icon: '💸' },
+  { label: 'Revenus',         path: '/personal/income',    icon: '📈' },
+  { label: 'Épargne',         path: '/personal/savings',   icon: '🐷' },
 ]
 
 export const CABINET_NAV_ITEMS: NavItem[] = [
-  { label: 'Tableau de bord', path: '/cabinet/dashboard', icon: '▦' },
-  { label: 'Portefeuille clients', path: '/cabinet/clients', icon: '💼' },
-  { label: 'Accès & mandats', path: '/cabinet/access', icon: '🔑' },
-  { label: 'Facturation', path: '/cabinet/billing', icon: '🧾' },
+  { label: 'Tableau de bord',      path: '/cabinet/dashboard', icon: '▦', end: true },
+  { label: 'Portefeuille clients', path: '/cabinet/clients',   icon: '💼' },
+  { label: 'Accès & mandats',      path: '/cabinet/access',    icon: '🔑' },
+  { label: 'Facturation',          path: '/cabinet/billing',   icon: '🧾' },
 ]

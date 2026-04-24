@@ -6,9 +6,11 @@ import { SkeletonTable } from '@/shared/components/feedback/Skeleton'
 import { Badge } from '@/shared/components/ui/Badge'
 import { Button } from '@/shared/components/ui/Button'
 import { Modal } from '@/shared/components/ui/Modal'
-import { formatCurrency } from '@/shared/utils/currency'
+import { useCurrency } from '@/hooks/useCurrency'
 import { formatDate } from '@/shared/utils/date'
 import type { QuoteStatus, Quote, CreateQuoteDto } from '@/services/billingApi'
+import { PdfButton } from '@/shared/components/ui/PdfButton'
+import { usePdf } from '@/shared/hooks/usePdf'
 
 const STATUS_TABS: { key: QuoteStatus | 'ALL'; label: string }[] = [
   { key: 'ALL',      label: 'Tous' },
@@ -44,6 +46,8 @@ interface RowProps {
 }
 
 const QuoteRow = React.memo(function QuoteRow({ quote, onStatus, onConvert, onDelete }: RowProps) {
+  const { fmt } = useCurrency()
+  const { downloadDevis } = usePdf()
   const isExpired = quote.status === 'SENT' && new Date(quote.validUntil) < new Date()
 
   return (
@@ -56,10 +60,11 @@ const QuoteRow = React.memo(function QuoteRow({ quote, onStatus, onConvert, onDe
           {isExpired && <Badge variant="danger">Expiré</Badge>}
         </div>
       </td>
-      <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">{formatCurrency(quote.total)}</td>
+      <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">{fmt(quote.total)}</td>
       <td className="px-4 py-3 text-sm text-gray-500">{formatDate(quote.validUntil)}</td>
       <td className="px-4 py-3">
         <div className="flex gap-2 justify-end flex-wrap">
+          <PdfButton onDownload={() => downloadDevis(quote)} label="PDF" className="text-xs text-gray-400 hover:text-forest-700 font-medium disabled:opacity-60" />
           {quote.status === 'DRAFT' && (
             <button onClick={() => onStatus(quote.id, 'SENT')} className="text-xs text-forest-700 hover:text-forest-900 font-medium">
               Envoyer
@@ -94,13 +99,14 @@ const QuoteRow = React.memo(function QuoteRow({ quote, onStatus, onConvert, onDe
 // ── Create modal ──────────────────────────────────────────────────────────────
 
 function CreateQuoteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { currencySymbol, defaultVatRate } = useCurrency()
   const { data: clients } = useClients()
   const create = useCreateQuote()
   const today  = new Date().toISOString().slice(0, 10)
   const in30   = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)
 
   const [form, setForm] = useState<CreateQuoteDto>({
-    clientId: '', subtotal: 0, taxRate: 20, issueDate: today, validUntil: in30,
+    clientId: '', subtotal: 0, taxRate: defaultVatRate, issueDate: today, validUntil: in30,
   })
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
@@ -122,7 +128,7 @@ function CreateQuoteModal({ open, onClose }: { open: boolean; onClose: () => voi
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label">Montant HT (€) *</label>
+            <label className="label">Montant HT ({currencySymbol}) *</label>
             <input type="number" step="0.01" min="0" required className="input mt-1"
               value={form.subtotal}
               onChange={e => setForm(f => ({ ...f, subtotal: parseFloat(e.target.value) || 0 }))} />
@@ -130,7 +136,7 @@ function CreateQuoteModal({ open, onClose }: { open: boolean; onClose: () => voi
           <div>
             <label className="label">TVA (%)</label>
             <input type="number" step="0.1" min="0" max="100" className="input mt-1"
-              value={form.taxRate ?? 20}
+              value={form.taxRate ?? defaultVatRate}
               onChange={e => setForm(f => ({ ...f, taxRate: parseFloat(e.target.value) || 0 }))} />
           </div>
         </div>
@@ -164,6 +170,7 @@ function CreateQuoteModal({ open, onClose }: { open: boolean; onClose: () => voi
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function QuotesPage() {
+  const { fmt } = useCurrency()
   const [tab, setTab]         = useState<QuoteStatus | 'ALL'>('ALL')
   const [modalOpen, setModalOpen] = useState(false)
 
@@ -195,7 +202,7 @@ export function QuotesPage() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div className="card py-3">
               <p className="text-xs text-gray-500">Total sélection</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">{formatCurrency(totalAmount)}</p>
+              <p className="mt-1 text-xl font-bold text-gray-900">{fmt(totalAmount)}</p>
             </div>
             <div className="card py-3">
               <p className="text-xs text-gray-500">Acceptés</p>
@@ -207,7 +214,7 @@ export function QuotesPage() {
             </div>
             <div className="card py-3">
               <p className="text-xs text-gray-500">Page</p>
-              <p className="mt-1 text-xl font-bold text-gray-900">{data.page} / {data.pages || 1}</p>
+              <p className="mt-1 text-xl font-bold text-gray-900">{data.page} / {data.page || 1}</p>
             </div>
           </div>
         )}

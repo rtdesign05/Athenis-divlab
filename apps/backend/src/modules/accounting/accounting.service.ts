@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
+import { getPlanByZone, ZONE_LABELS } from '../../lib/accountingPlans.js'
 
 function toNum(d: Prisma.Decimal | null | undefined): number {
   return d ? Number(d) : 0
@@ -380,4 +381,479 @@ export async function closeExercise(companyId: string, year: number, notes?: str
       closedBy:  closedBy ?? null,
     },
   })
+}
+
+// ── Plan comptable ─────────────────────────────────────────────────────────────
+
+export async function getPlan(companyId: string) {
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { accountingZone: true },
+  })
+
+  const zone    = company.accountingZone
+  const entries = getPlanByZone(zone)
+
+  // Mark which accounts the company has activated
+  const active = await prisma.accountPlan.findMany({
+    where: { companyId },
+    select: { numero: true },
+  })
+  const activeSet = new Set(active.map(a => a.numero))
+
+  return {
+    zone,
+    zoneLabel: ZONE_LABELS[zone],
+    entries: entries.map(e => ({ ...e, utilisé: activeSet.has(e.numero) })),
+  }
+}
+
+export async function getComptes(companyId: string) {
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { accountingZone: true },
+  })
+
+  const comptes = await prisma.accountPlan.findMany({
+    where: { companyId, isActive: true },
+    orderBy: { numero: 'asc' },
+  })
+
+  // Compute balances from journal entries (invoices + expenses)
+  const invoices = await prisma.invoice.findMany({
+    where: { companyId },
+    select: { subtotal: true, taxAmount: true, total: true, status: true },
+  })
+  const expenses = await prisma.expense.findMany({
+    where: { companyId },
+    select: { amount: true },
+  })
+
+  // Build simple solde map per account number
+  const debitMap  = new Map<string, number>()
+  const creditMap = new Map<string, number>()
+
+  const zone = company.accountingZone
+  const clientAcc = zone === 'OHADA' ? '411' : zone === 'IFRS' ? '1100' : '411'
+  const salesAcc  = zone === 'OHADA' ? '706' : zone === 'IFRS' ? '7000' : '706'
+  const tvaAcc    = zone === 'OHADA' ? '4435' : zone === 'IFRS' ? '3200' : '4457'
+  const expAcc    = zone === 'OHADA' ? '604' : zone === 'IFRS' ? '6400' : '606'
+  const bankAcc   = zone === 'OHADA' ? '521' : zone === 'IFRS' ? '1000' : '512'
+
+  for (const inv of invoices) {
+    const ht  = toNum(inv.subtotal)
+    const tva = toNum(inv.taxAmount)
+    const ttc = toNum(inv.total)
+    debitMap.set(clientAcc,  (debitMap.get(clientAcc)  ?? 0) + ttc)
+    creditMap.set(salesAcc,  (creditMap.get(salesAcc)  ?? 0) + ht)
+    creditMap.set(tvaAcc,    (creditMap.get(tvaAcc)    ?? 0) + tva)
+    if (inv.status === 'PAID') {
+      debitMap.set(bankAcc,  (debitMap.get(bankAcc)    ?? 0) + ttc)
+      creditMap.set(clientAcc, (creditMap.get(clientAcc) ?? 0) + ttc)
+    }
+  }
+  for (const exp of expenses) {
+    const amt = toNum(exp.amount)
+    debitMap.set(expAcc, (debitMap.get(expAcc) ?? 0) + amt)
+    creditMap.set(bankAcc, (creditMap.get(bankAcc) ?? 0) + amt)
+  }
+
+  return comptes.map(c => {
+    const d = debitMap.get(c.numero)  ?? 0
+    const cr = creditMap.get(c.numero) ?? 0
+    return {
+      id:             c.id,
+      numero:         c.numero,
+      intitule:       c.intitule,
+      classe:         c.classe,
+      type:           c.type,
+      zone:           c.zone,
+      isSystem:       c.isSystem,
+      soldeDebiteur:  Math.max(0, d - cr),
+      soldeCrediteur: Math.max(0, cr - d),
+      soldeNet:       d - cr,
+    }
+  })
+}
+
+export async function addCompte(
+  companyId: string,
+  data: { numero: string; intitule: string; classe: number; type: string; isSystem?: boolean },
+) {
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { accountingZone: true },
+  })
+
+  const existing = await prisma.accountPlan.findUnique({
+    where: { companyId_numero: { companyId, numero: data.numero } },
+  })
+  if (existing) {
+    if (!existing.isActive) {
+      return prisma.accountPlan.update({
+        where: { id: existing.id },
+        data: { isActive: true, intitule: data.intitule },
+      })
+    }
+    throw new AppError(`Le compte ${data.numero} existe déjà`, 409, 'DUPLICATE_ACCOUNT')
+  }
+
+  return prisma.accountPlan.create({
+    data: {
+      companyId,
+      numero:   data.numero,
+      intitule: data.intitule,
+      classe:   data.classe,
+      type:     data.type as never,
+      zone:     company.accountingZone,
+      isSystem: data.isSystem ?? false,
+    },
+  })
+}
+
+export async function updateCompte(companyId: string, id: string, intitule: string) {
+  const compte = await prisma.accountPlan.findFirst({ where: { id, companyId } })
+  if (!compte) throw new AppError('Compte introuvable', 404, 'NOT_FOUND')
+
+  return prisma.accountPlan.update({ where: { id }, data: { intitule } })
+}
+
+export async function deleteCompte(companyId: string, id: string) {
+  const compte = await prisma.accountPlan.findFirst({ where: { id, companyId } })
+  if (!compte) throw new AppError('Compte introuvable', 404, 'NOT_FOUND')
+
+  return prisma.accountPlan.update({ where: { id }, data: { isActive: false } })
+}
+
+// ── Fiscal Year Management ─────────────────────────────────────────────────────
+
+export async function getOrCreateFiscalYear(companyId: string, year: number, createdBy: string) {
+  const existing = await prisma.fiscalYear.findUnique({
+    where: { companyId_year: { companyId, year } },
+  })
+  if (existing) return existing
+
+  return prisma.fiscalYear.create({
+    data: {
+      companyId,
+      year,
+      startDate: new Date(`${year}-01-01`),
+      endDate:   new Date(`${year}-12-31`),
+      status:    'OPEN',
+      createdBy,
+    },
+  })
+}
+
+export async function listFiscalYears(companyId: string) {
+  return prisma.fiscalYear.findMany({
+    where:   { companyId },
+    orderBy: { year: 'desc' },
+    include: {
+      _count: {
+        select: { entries: true, invoices: true, expenses: true },
+      },
+    },
+  })
+}
+
+export async function createFiscalYear(
+  companyId: string,
+  data: { year: number; startDate?: string; endDate?: string },
+  createdBy: string,
+) {
+  // Maximum 2 OPEN fiscal years simultaneously
+  const openYears = await prisma.fiscalYear.findMany({
+    where: { companyId, status: 'OPEN' },
+    orderBy: { year: 'asc' },
+  })
+  if (openYears.length >= 2) {
+    throw new AppError(
+      `Maximum 2 exercices ouverts simultan\xe9ment. Cl\xf4turez l\u2019exercice ${openYears[0]!.year} avant d\u2019en cr\xe9er un nouveau.`,
+      409,
+      'OPEN_FISCAL_YEAR_LIMIT',
+    )
+  }
+
+  // Year must not already exist
+  const existingYear = await prisma.fiscalYear.findUnique({
+    where: { companyId_year: { companyId, year: data.year } },
+  })
+  if (existingYear) {
+    throw new AppError(`L'exercice fiscal ${data.year} existe déjà`, 409, 'FISCAL_YEAR_EXISTS')
+  }
+
+  return prisma.fiscalYear.create({
+    data: {
+      companyId,
+      year:      data.year,
+      startDate: new Date(data.startDate ?? `${data.year}-01-01`),
+      endDate:   new Date(data.endDate   ?? `${data.year}-12-31`),
+      status:    'OPEN',
+      createdBy,
+    },
+  })
+}
+
+export async function getFiscalYear(companyId: string, id: string) {
+  const fy = await prisma.fiscalYear.findUniqueOrThrow({ where: { id } })
+  if (fy.companyId !== companyId)
+    throw new AppError('Exercice fiscal introuvable', 404, 'NOT_FOUND')
+  return fy
+}
+
+export async function lockFiscalYear(companyId: string, id: string) {
+  const fy = await getFiscalYear(companyId, id)
+  if (fy.status !== 'OPEN')
+    throw new AppError(`Impossible de verrouiller un exercice avec le statut "${fy.status}"`, 422, 'INVALID_STATUS')
+
+  return prisma.fiscalYear.update({
+    where: { id },
+    data:  { status: 'LOCKED' },
+  })
+}
+
+export async function closeFiscalYearNew(companyId: string, id: string, userId: string) {
+  const fy = await getFiscalYear(companyId, id)
+
+  if (fy.status === 'CLOSED')
+    throw new AppError(`L'exercice ${fy.year} est déjà clôturé`, 409, 'ALREADY_CLOSED')
+  if (fy.status !== 'OPEN' && fy.status !== 'LOCKED')
+    throw new AppError(`Impossible de clôturer un exercice avec le statut "${fy.status}"`, 422, 'INVALID_STATUS')
+
+  // Calculate financial summaries
+  const [compteResultat, bilan] = await Promise.all([
+    getCompteDeResultat(companyId, fy.year),
+    getBilan(companyId, fy.year),
+  ])
+
+  const closingBalance = {
+    actif:   bilan.actif,
+    passif:  bilan.passif,
+    resultat: compteResultat.resultatBrut,
+  }
+
+  // Close the fiscal year
+  const updated = await prisma.fiscalYear.update({
+    where: { id },
+    data: {
+      status:         'CLOSED',
+      closedBy:       userId,
+      closedAt:       new Date(),
+      closingBalance: closingBalance as Prisma.InputJsonValue,
+    },
+  })
+
+  // Backward compat: create FiscalYearClose record
+  await prisma.fiscalYearClose.upsert({
+    where:  { companyId_year: { companyId, year: fy.year } },
+    update: { resultNet: new Prisma.Decimal(compteResultat.resultatBrut), closedBy: userId },
+    create: {
+      companyId,
+      year:      fy.year,
+      resultNet: new Prisma.Decimal(compteResultat.resultatBrut),
+      closedBy:  userId,
+    },
+  })
+
+  // Auto-create next year's fiscal year if it doesn't exist yet
+  const nextYear = fy.year + 1
+  const nextYearExists = await prisma.fiscalYear.findUnique({
+    where: { companyId_year: { companyId, year: nextYear } },
+  })
+  if (!nextYearExists) {
+    await prisma.fiscalYear.create({
+      data: {
+        companyId,
+        year:           nextYear,
+        startDate:      new Date(`${nextYear}-01-01`),
+        endDate:        new Date(`${nextYear}-12-31`),
+        status:         'OPEN',
+        createdBy:      userId,
+        openingBalance: closingBalance as Prisma.InputJsonValue,
+      },
+    })
+  }
+
+  return updated
+}
+
+export async function reopenFiscalYear(companyId: string, id: string) {
+  const fy = await getFiscalYear(companyId, id)
+  if (fy.status !== 'CLOSED')
+    throw new AppError(`Impossible de rouvrir un exercice avec le statut "${fy.status}"`, 422, 'INVALID_STATUS')
+
+  const updated = await prisma.fiscalYear.update({
+    where: { id },
+    data: {
+      status:    'OPEN',
+      closedBy:  null,
+      closedAt:  null,
+    },
+  })
+
+  // Delete backward-compat FiscalYearClose record if it exists
+  await prisma.fiscalYearClose.deleteMany({
+    where: { companyId, year: fy.year },
+  })
+
+  return updated
+}
+
+export async function getFiscalYearSummary(companyId: string, id: string) {
+  const fy = await getFiscalYear(companyId, id)
+  const year = fy.year
+
+  const [compteResultat, bilan, totalInvoices, openInvoices, totalExpenses, entriesCount, existingClose] =
+    await Promise.all([
+      getCompteDeResultat(companyId, year),
+      getBilan(companyId, year),
+      prisma.invoice.count({ where: { companyId, fiscalYearId: id } }),
+      prisma.invoice.count({ where: { companyId, fiscalYearId: id, status: { in: ['SENT', 'OVERDUE'] } } }),
+      prisma.expense.count({ where: { companyId, fiscalYearId: id } }),
+      prisma.journalEntry.count({ where: { companyId, fiscalYearId: id } }),
+      prisma.fiscalYearClose.findUnique({ where: { companyId_year: { companyId, year } } }),
+    ])
+
+  return {
+    id:            fy.id,
+    year,
+    status:        fy.status,
+    startDate:     fy.startDate,
+    endDate:       fy.endDate,
+    ca:            compteResultat.produits.chiffreAffaires,
+    charges:       compteResultat.charges.chargesTotal,
+    resultatNet:   compteResultat.resultatBrut,
+    bilanActif:    bilan.actif.totalActif,
+    bilanPassif:   bilan.passif.totalPassif,
+    equilibre:     bilan.actif.totalActif === bilan.passif.totalPassif,
+    openInvoices,
+    totalInvoices,
+    totalExpenses,
+    entriesCount,
+    alreadyClosed: !!existingClose,
+    openingBalance: fy.openingBalance,
+    closingBalance: fy.closingBalance,
+  }
+}
+
+// ── Journal / Balance / Grand Livre by fiscalYearId ─────────────────────────
+
+export async function getJournalByFiscalYear(companyId: string, fiscalYearId: string) {
+  const fy = await getFiscalYear(companyId, fiscalYearId)
+  const entries = await prisma.journalEntry.findMany({
+    where:   { companyId, fiscalYearId },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+  })
+  return {
+    fiscalYearId,
+    year: fy.year,
+    status: fy.status,
+    entries: entries.map(e => ({
+      id:          e.id,
+      date:        e.date,
+      journalCode: e.journalCode,
+      account:     e.account,
+      label:       e.label,
+      debit:       Number(e.debit),
+      credit:      Number(e.credit),
+      reference:   e.reference,
+    })),
+  }
+}
+
+export async function getBalanceByFiscalYear(companyId: string, fiscalYearId: string) {
+  const fy = await getFiscalYear(companyId, fiscalYearId)
+  const entries = await prisma.journalEntry.findMany({
+    where:   { companyId, fiscalYearId },
+    select:  { account: true, debit: true, credit: true },
+  })
+
+  const map = new Map<string, { debit: number; credit: number }>()
+  for (const e of entries) {
+    const cur = map.get(e.account) ?? { debit: 0, credit: 0 }
+    cur.debit  += Number(e.debit)
+    cur.credit += Number(e.credit)
+    map.set(e.account, cur)
+  }
+
+  // Enrich with account labels from AccountPlan
+  const accountNumbers = [...map.keys()]
+  const plans = await prisma.accountPlan.findMany({
+    where: { companyId, numero: { in: accountNumbers } },
+    select: { numero: true, intitule: true },
+  })
+  const labelMap = new Map(plans.map(p => [p.numero, p.intitule]))
+
+  const rows = [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([account, { debit, credit }]) => ({
+      account,
+      label:         labelMap.get(account) ?? account,
+      totalDebit:    debit,
+      totalCredit:   credit,
+      soldeDebiteur:  Math.max(0, debit - credit),
+      soldeCrediteur: Math.max(0, credit - debit),
+    }))
+
+  const totalDebit  = rows.reduce((s, r) => s + r.totalDebit,  0)
+  const totalCredit = rows.reduce((s, r) => s + r.totalCredit, 0)
+
+  return {
+    fiscalYearId,
+    year:        fy.year,
+    status:      fy.status,
+    rows,
+    totalDebit,
+    totalCredit,
+    equilibre:   Math.abs(totalDebit - totalCredit) < 0.01,
+  }
+}
+
+export async function getGrandLivreByFiscalYear(companyId: string, fiscalYearId: string) {
+  const fy = await getFiscalYear(companyId, fiscalYearId)
+  const entries = await prisma.journalEntry.findMany({
+    where:   { companyId, fiscalYearId },
+    orderBy: [{ account: 'asc' }, { date: 'asc' }],
+  })
+
+  // Group by account
+  const accountMap = new Map<string, typeof entries>()
+  for (const e of entries) {
+    const arr = accountMap.get(e.account) ?? []
+    arr.push(e)
+    accountMap.set(e.account, arr)
+  }
+
+  // Enrich with labels
+  const accountNumbers = [...accountMap.keys()]
+  const plans = await prisma.accountPlan.findMany({
+    where: { companyId, numero: { in: accountNumbers } },
+    select: { numero: true, intitule: true },
+  })
+  const labelMap = new Map(plans.map(p => [p.numero, p.intitule]))
+
+  const comptes = [...accountMap.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([account, lines]) => {
+      let runningBalance = 0
+      const lignes = lines.map(e => {
+        const d = Number(e.debit)
+        const c = Number(e.credit)
+        runningBalance += d - c
+        return {
+          id:          e.id,
+          date:        e.date,
+          journalCode: e.journalCode,
+          label:       e.label,
+          debit:       d,
+          credit:      c,
+          solde:       runningBalance,
+          reference:   e.reference,
+        }
+      })
+      return { account, label: labelMap.get(account) ?? account, lignes }
+    })
+
+  return { fiscalYearId, year: fy.year, status: fy.status, comptes }
 }
