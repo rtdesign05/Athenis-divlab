@@ -85,8 +85,8 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
 
   const subtotal  = data.subtotal != null ? new Prisma.Decimal(data.subtotal) : existing.subtotal
   const taxRate   = data.taxRate ?? Number(existing.taxRate)
-  const taxAmount = subtotal.mul(taxRate).div(100)
-  const total     = subtotal.add(taxAmount)
+  const taxAmount = subtotal.mul(taxRate).div(100).toDecimalPlaces(2)
+  const total     = subtotal.add(taxAmount).toDecimalPlaces(2)
 
   return prisma.invoice.update({
     where: { id },
@@ -377,10 +377,9 @@ export async function generateFromRecurring(companyId: string, recurringId: stri
   const total     = new Prisma.Decimal(recurring.subtotal).add(taxAmount)
   const number    = await nextInvoiceNumber(companyId)
 
-  const freqDays = recurring.frequency === 'MONTHLY' ? 30
-    : recurring.frequency === 'QUARTERLY' ? 91 : 365
-
-  const nextDueDate = new Date(recurring.nextDueDate.getTime() + freqDays * 86_400_000)
+  const nextDueDate = new Date(recurring.nextDueDate)
+  const freqMonths = recurring.frequency === 'MONTHLY' ? 1 : recurring.frequency === 'QUARTERLY' ? 3 : 12
+  nextDueDate.setMonth(nextDueDate.getMonth() + freqMonths)
 
   const [invoice] = await prisma.$transaction([
     prisma.invoice.create({

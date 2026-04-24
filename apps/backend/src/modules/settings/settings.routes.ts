@@ -245,8 +245,9 @@ settingsRouter.put(
 settingsRouter.get('/security/audit', async (req, res, next) => {
   try {
     requireAdmin(req)
-    const limit = req.query['limit'] !== undefined ? Number(req.query['limit']) : 50
-    const data = await svc.getAuditLogs(getCompanyId(req), isNaN(limit) ? 50 : limit)
+    const rawLimit = Number(req.query['limit'])
+    const limit = isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 1000)
+    const data = await svc.getAuditLogs(getCompanyId(req), limit)
     res.json({ success: true, data })
   } catch (e) { next(e) }
 })
