@@ -9,6 +9,7 @@ import { AppError } from '../../middleware/errorHandler.js'
 import { prisma } from '../../lib/prisma.js'
 import * as svc from './accounting.service.js'
 import * as fsSvc from './financialStatements.service.js'
+import * as rev from './revision.service.js'
 
 export const accountingRouter = Router()
 
@@ -405,6 +406,113 @@ accountingRouter.get(
       const id = req.params['id'] as string
       const data = await svc.getFiscalYearSummary(getCompanyId(req)!, id)
       res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Révision comptable ────────────────────────────────────────────────────────
+
+const RevisionQuery = z.object({ year: z.coerce.number().int().min(2000).max(2100).default(new Date().getFullYear()) })
+const ReviewBody    = z.object({ year: z.coerce.number().int(), note: z.string().optional() })
+const AnomalyBody   = z.object({ year: z.coerce.number().int(), anomalyNote: z.string().min(1) })
+const ResolveBody   = z.object({ year: z.coerce.number().int(), resolutionNote: z.string().min(1) })
+const UnreviewBody  = z.object({ year: z.coerce.number().int() })
+
+accountingRouter.get(
+  '/revision',
+  checkModule('comptabilite', 'read'),
+  validateRequest({ query: RevisionQuery }),
+  async (req, res, next) => {
+    try {
+      const year = Number(req.query['year'])
+      const data = await rev.getCyclesWithAccounts(getCompanyId(req), year)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/revision/progress',
+  checkModule('comptabilite', 'read'),
+  validateRequest({ query: RevisionQuery }),
+  async (req, res, next) => {
+    try {
+      const year = Number(req.query['year'])
+      const data = await rev.getRevisionProgress(getCompanyId(req), year)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/revision/:accountNumber/review',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: ReviewBody }),
+  async (req, res, next) => {
+    try {
+      const { accountNumber } = req.params as { accountNumber: string }
+      const { year, note } = req.body as { year: number; note?: string }
+      const cycles = await rev.getCyclesWithAccounts(getCompanyId(req), year)
+      const cycleId = cycles.find(c => c.accounts.some(a => a.number === accountNumber))?.id ?? 0
+      await rev.reviewAccount(getCompanyId(req), year, accountNumber, cycleId, req.user?.email ?? 'unknown', note)
+      res.json({ success: true })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.delete(
+  '/revision/:accountNumber/review',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: UnreviewBody }),
+  async (req, res, next) => {
+    try {
+      const { accountNumber } = req.params as { accountNumber: string }
+      const { year } = req.body as { year: number }
+      await rev.unreviewAccount(getCompanyId(req), year, accountNumber)
+      res.json({ success: true })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/revision/:accountNumber/anomaly',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: AnomalyBody }),
+  async (req, res, next) => {
+    try {
+      const { accountNumber } = req.params as { accountNumber: string }
+      const { year, anomalyNote } = req.body as { year: number; anomalyNote: string }
+      const cycles = await rev.getCyclesWithAccounts(getCompanyId(req), year)
+      const cycleId = cycles.find(c => c.accounts.some(a => a.number === accountNumber))?.id ?? 0
+      await rev.markAnomaly(getCompanyId(req), year, accountNumber, cycleId, req.user?.email ?? 'unknown', anomalyNote)
+      res.json({ success: true })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/revision/:accountNumber/resolve-anomaly',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: ResolveBody }),
+  async (req, res, next) => {
+    try {
+      const { accountNumber } = req.params as { accountNumber: string }
+      const { year, resolutionNote } = req.body as { year: number; resolutionNote: string }
+      await rev.resolveAnomaly(getCompanyId(req), year, accountNumber, req.user?.email ?? 'unknown', resolutionNote)
+      res.json({ success: true })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/revision/mark-all',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: z.object({ year: z.coerce.number().int() }) }),
+  async (req, res, next) => {
+    try {
+      const { year } = req.body as { year: number }
+      await rev.markAllReviewed(getCompanyId(req), year, req.user?.email ?? 'unknown')
+      res.json({ success: true })
     } catch (e) { next(e) }
   },
 )

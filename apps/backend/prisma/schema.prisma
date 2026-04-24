@@ -1168,3 +1168,32 @@ model TaxDeclaration {
   @@index([companyId, type, year])
   @@map("tax_declarations")
 }
+
+// ── AccountReview ─────────────────────────────────────────────────────────────
+
+enum AccountReviewStatus {
+  PENDING
+  REVIEWED
+  ANOMALY
+}
+
+model AccountReview {
+  id                String              @id @default(cuid())
+  companyId         String              @map("company_id")
+  year              Int
+  accountNumber     String              @map("account_number")
+  cycle             Int
+  status            AccountReviewStatus @default(PENDING)
+  reviewedBy        String?             @map("reviewed_by")
+  reviewedAt        DateTime?           @map("reviewed_at")
+  note              String?
+  anomalyNote       String?             @map("anomaly_note")
+  anomalyResolvedAt DateTime?           @map("anomaly_resolved_at")
+  resolutionNote    String?             @map("resolution_note")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  @@unique([companyId, year, accountNumber])
+  @@index([companyId, year, cycle])
+  @@map("account_reviews")
+}
