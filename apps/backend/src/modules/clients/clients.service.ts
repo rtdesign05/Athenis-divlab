@@ -3,12 +3,9 @@ import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import type { CreateClientInput, UpdateClientInput, ListClientsInput } from './clients.dto.js'
 
-async function computeReliabilityScore(clientId: string): Promise<number> {
-  const invoices = await prisma.invoice.findMany({
-    where: { clientId, status: { in: ['PAID', 'OVERDUE', 'CANCELLED'] } },
-    select: { status: true, dueDate: true, paidAt: true },
-  })
+type InvoiceForScore = { status: string; dueDate: Date; paidAt: Date | null }
 
+function computeReliabilityScoreFromInvoices(invoices: InvoiceForScore[]): number {
   if (invoices.length === 0) return 100
 
   const paid = invoices.filter((i) => i.status === 'PAID')
@@ -19,13 +16,19 @@ async function computeReliabilityScore(clientId: string): Promise<number> {
     return new Date(i.paidAt) <= new Date(i.dueDate)
   }).length
 
-  const lateCount       = paid.length - onTimeCount
-  const overdueCount    = invoices.filter((i) => i.status === 'OVERDUE').length
-  const totalNegative   = lateCount + overdueCount * 2
-  const maxPossible     = paid.length + overdueCount * 2
-  const score           = Math.max(0, Math.round(100 - (totalNegative / maxPossible) * 100))
+  const lateCount     = paid.length - onTimeCount
+  const overdueCount  = invoices.filter((i) => i.status === 'OVERDUE').length
+  const totalNegative = lateCount + overdueCount * 2
+  const maxPossible   = paid.length + overdueCount * 2
+  return Math.max(0, Math.round(100 - (totalNegative / maxPossible) * 100))
+}
 
-  return score
+async function computeReliabilityScore(clientId: string): Promise<number> {
+  const invoices = await prisma.invoice.findMany({
+    where: { clientId, status: { in: ['PAID', 'OVERDUE', 'CANCELLED'] } },
+    select: { status: true, dueDate: true, paidAt: true },
+  })
+  return computeReliabilityScoreFromInvoices(invoices)
 }
 
 export async function listClients(companyId: string, query: ListClientsInput) {
@@ -51,12 +54,22 @@ export async function listClients(companyId: string, query: ListClientsInput) {
     prisma.client.count({ where }),
   ])
 
-  const itemsWithScore = await Promise.all(
-    items.map(async (c) => ({
-      ...c,
-      reliabilityScore: await computeReliabilityScore(c.id),
-    })),
-  )
+  const clientIds = items.map((c) => c.id)
+  const allInvoices = await prisma.invoice.findMany({
+    where: { clientId: { in: clientIds }, status: { in: ['PAID', 'OVERDUE', 'CANCELLED'] } },
+    select: { clientId: true, status: true, dueDate: true, paidAt: true },
+  })
+  const invoicesByClient = new Map<string, typeof allInvoices>()
+  for (const inv of allInvoices) {
+    const list = invoicesByClient.get(inv.clientId) ?? []
+    list.push(inv)
+    invoicesByClient.set(inv.clientId, list)
+  }
+
+  const itemsWithScore = items.map((c) => ({
+    ...c,
+    reliabilityScore: computeReliabilityScoreFromInvoices(invoicesByClient.get(c.id) ?? []),
+  }))
 
   return { items: itemsWithScore, total, page, limit, pages: Math.ceil(total / limit) }
 }

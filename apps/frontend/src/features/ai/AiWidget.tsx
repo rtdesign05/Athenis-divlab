@@ -37,12 +37,18 @@ const SUGGESTED = [
 ]
 
 function MarkdownText({ text }: { text: string }) {
-  const rendered = text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/^• /gm, '&bull; ')
-    .replace(/\n/g, '<br/>')
-  return <span dangerouslySetInnerHTML={{ __html: rendered }} />
+  const nodes: React.ReactNode[] = []
+  text.split('\n').forEach((line, li) => {
+    if (li > 0) nodes.push(<br key={`br-${li}`} />)
+    const display = line.startsWith('• ') ? line : line
+    display.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).forEach((seg, si) => {
+      const key = `${li}-${si}`
+      if (seg.startsWith('**') && seg.endsWith('**')) nodes.push(<strong key={key}>{seg.slice(2, -2)}</strong>)
+      else if (seg.startsWith('*') && seg.endsWith('*')) nodes.push(<em key={key}>{seg.slice(1, -1)}</em>)
+      else nodes.push(<React.Fragment key={key}>{seg}</React.Fragment>)
+    })
+  })
+  return <span>{nodes}</span>
 }
 
 export function AiWidget() {
@@ -62,7 +68,9 @@ export function AiWidget() {
 
   useEffect(() => {
     if (open && view === 'history') {
-      fetchConversations().then(setConvos).catch(() => {})
+      fetchConversations().then(setConvos).catch((err: unknown) => {
+        console.error('Failed to fetch conversations:', err)
+      })
     }
   }, [open, view])
 
@@ -72,7 +80,9 @@ export function AiWidget() {
       setMessages(conv.messages.map(m => ({ ...m, id: m.id ?? Math.random().toString() })))
       setConvId(id)
       setView('chat')
-    } catch {}
+    } catch (err: unknown) {
+      console.error('Failed to load conversation:', err)
+    }
   }
 
   const newConversation = () => {

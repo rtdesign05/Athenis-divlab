@@ -56,8 +56,8 @@ export async function createInvoice(companyId: string, data: CreateInvoiceInput)
   if (!client || client.companyId !== companyId)
     throw new AppError('Client not found', 404, 'NOT_FOUND')
 
-  const taxAmount = new Prisma.Decimal(data.subtotal).mul(data.taxRate).div(100)
-  const total     = new Prisma.Decimal(data.subtotal).add(taxAmount)
+  const taxAmount = new Prisma.Decimal(data.subtotal).mul(data.taxRate).div(100).toDecimalPlaces(2)
+  const total     = new Prisma.Decimal(data.subtotal).add(taxAmount).toDecimalPlaces(2)
   const number    = await nextInvoiceNumber(companyId)
 
   return prisma.invoice.create({
@@ -101,10 +101,16 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
   })
 }
 
+const VALID_INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'] as const
+type InvoiceStatus = (typeof VALID_INVOICE_STATUSES)[number]
+
 export async function updateInvoiceStatus(companyId: string, id: string, status: string) {
+  if (!(VALID_INVOICE_STATUSES as readonly string[]).includes(status)) {
+    throw new AppError(`Statut invalide: ${status}`, 400, 'INVALID_STATUS')
+  }
   await getInvoice(companyId, id)
   const extra = status === 'PAID' ? { paidAt: new Date() } : {}
-  return prisma.invoice.update({ where: { id }, data: { status: status as never, ...extra } })
+  return prisma.invoice.update({ where: { id }, data: { status: status as InvoiceStatus, ...extra } })
 }
 
 export async function deleteInvoice(companyId: string, id: string) {

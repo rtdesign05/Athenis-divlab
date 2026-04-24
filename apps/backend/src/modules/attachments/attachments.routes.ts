@@ -54,7 +54,11 @@ attachmentsRouter.post(
       if (!files?.length) throw new AppError('Aucun fichier reçu', 400, 'NO_FILE')
 
       const results = await Promise.all(files.map(f => {
-        const companySubdir = path.relative(svc.getUploadsDir(), f.destination)
+        const uploadsDir    = svc.getUploadsDir()
+        const companySubdir = path.relative(uploadsDir, f.destination)
+        if (companySubdir.startsWith('..') || path.isAbsolute(companySubdir)) {
+          throw new AppError('Destination de fichier invalide', 400, 'INVALID_PATH')
+        }
         const storageKey    = path.join(companySubdir, f.filename).replace(/\\/g, '/')
         return svc.createAttachment({
           companyId,
@@ -102,7 +106,9 @@ attachmentsRouter.get('/:id/file', async (req, res, next) => {
   try {
     const companyId = getCompanyId(req)
     const att = await svc.getAttachment(req.params.id, companyId)
-    const filePath = path.join(svc.getUploadsDir(), att.storageKey)
+    const uploadsDir = svc.getUploadsDir()
+    const filePath   = path.resolve(uploadsDir, att.storageKey)
+    if (!filePath.startsWith(uploadsDir + path.sep)) throw new AppError('Accès refusé', 403, 'FORBIDDEN')
     if (!fs.existsSync(filePath)) throw new AppError('Fichier introuvable sur le serveur', 404, 'FILE_MISSING')
     res.setHeader('Content-Type', att.mimeType)
     res.setHeader('Content-Length', att.fileSize)
@@ -116,7 +122,9 @@ attachmentsRouter.get('/:id/download', async (req, res, next) => {
   try {
     const companyId = getCompanyId(req)
     const att = await svc.getAttachment(req.params.id, companyId)
-    const filePath = path.join(svc.getUploadsDir(), att.storageKey)
+    const uploadsDir = svc.getUploadsDir()
+    const filePath   = path.resolve(uploadsDir, att.storageKey)
+    if (!filePath.startsWith(uploadsDir + path.sep)) throw new AppError('Accès refusé', 403, 'FORBIDDEN')
     if (!fs.existsSync(filePath)) throw new AppError('Fichier introuvable sur le serveur', 404, 'FILE_MISSING')
     res.setHeader('Content-Disposition', `attachment; filename="${att.fileName}"`)
     res.setHeader('Content-Type', att.mimeType)

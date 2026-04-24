@@ -1,10 +1,19 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import rateLimit from 'express-rate-limit'
 import { authenticate } from '../../middleware/authenticate.js'
 import { validateRequest } from '../../middleware/validateRequest.js'
 import { getCompanyId } from '../../lib/companyContext.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import * as svc from './settings.service.js'
+
+const inviteRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Trop de tentatives d\'invitation. Réessayez dans une heure.', code: 'RATE_LIMITED' },
+})
 
 export const settingsRouter = Router()
 
@@ -115,6 +124,7 @@ settingsRouter.get('/users', async (req, res, next) => {
 
 settingsRouter.post(
   '/users/invite',
+  inviteRateLimit,
   validateRequest({ body: InviteUserSchema }),
   async (req, res, next) => {
     try {
