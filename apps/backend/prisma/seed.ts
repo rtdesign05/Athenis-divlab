@@ -1235,6 +1235,32 @@ async function main() {
   }
   console.log(`  TaxDeclarations UBM: ${taxDecls.length}`)
 
+  // ── AccountReviews UBM (révision comptable 2025) ──────────────────────────
+  await prisma.accountReview.deleteMany({ where: { companyId: companyUbm.id, year: 2025 } })
+  const reviewerCarine = userCarine.email
+  const now2025 = new Date('2025-12-20T09:00:00Z')
+  const accountReviews = [
+    // Cycle 2 — Achats/Fournisseurs
+    { accountNumber: '612', cycle: 2, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: now2025, note: 'Loyers vérifiés, baux à jour' },
+    { accountNumber: '635', cycle: 2, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: now2025 },
+    // Cycle 3 — Trésorerie
+    { accountNumber: '521', cycle: 3, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-18T10:00:00Z'), note: 'Rapprochement Afriland OK' },
+    { accountNumber: '522', cycle: 3, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-18T10:30:00Z'), note: 'Rapprochement BGFI OK' },
+    // Cycle 4 — Paie/Personnel
+    { accountNumber: '661', cycle: 4, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-19T08:00:00Z') },
+    { accountNumber: '664', cycle: 4, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-19T08:00:00Z') },
+    { accountNumber: '421', cycle: 4, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-19T08:30:00Z') },
+    { accountNumber: '431', cycle: 4, status: 'ANOMALY'  as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-19T09:00:00Z'), anomalyNote: 'Solde CNPS ne correspond pas au calcul des cotisations — écart de 128 400 F CFA à investiguer' },
+    // Cycle 8 — Capitaux/Financement
+    { accountNumber: '101', cycle: 8, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-17T14:00:00Z') },
+    { accountNumber: '118', cycle: 8, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-17T14:00:00Z') },
+    { accountNumber: '12',  cycle: 8, status: 'REVIEWED' as const, reviewedBy: reviewerCarine, reviewedAt: new Date('2025-12-17T14:30:00Z') },
+  ]
+  await Promise.all(accountReviews.map(r =>
+    prisma.accountReview.create({ data: { companyId: companyUbm.id, year: 2025, ...r } }),
+  ))
+  console.log(`  AccountReviews UBM 2025: ${accountReviews.length} (dont 1 anomalie)`)
+
   // ── Atanga Commerce — IGS Démo ───────────────────────────────────────────
   const hashIgs = await bcrypt.hash('Demo2026!', BCRYPT_ROUNDS)
 
