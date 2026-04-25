@@ -404,12 +404,10 @@ model User {
 
 model AtheisCounter {
   id         String      @id @default(cuid())
-  type       AccountType
-  year       Int
+  type       AccountType @unique
   lastNumber Int         @default(0)
-  updatedAt  DateTime    @updatedAt @map("updated_at")
+  updatedAt  DateTime    @updatedAt
 
-  @@unique([type, year])
   @@map("athenis_counters")
 }
 

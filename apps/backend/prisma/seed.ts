@@ -111,23 +111,23 @@ async function main() {
   // ── Users — PERSONAL ──────────────────────────────────────────────────────
   const personal = await prisma.user.upsert({
     where: { email: 'marie@personal.demo' },
-    update: { atheisNumber: 'ATH-P-2026-00001' },
+    update: { atheisNumber: 'ATH-P-00001' },
     create: {
       email: 'marie@personal.demo', passwordHash: hash,
       accountType: 'PERSONAL', role: 'ADMIN',
       firstName: 'Marie', lastName: 'Dubois',
-      atheisNumber: 'ATH-P-2026-00001',
+      atheisNumber: 'ATH-P-00001',
     },
   })
   console.log(`  User (PERSONAL): ${personal.email}`)
 
   // ── Users — COMPANY (Démo SA, France) ────────────────────────────────────
   const companyUsersData = [
-    { email: 'admin@demo-sa.demo',     role: 'ADMIN'     as const, firstName: 'Alice',   lastName: 'Martin',  atheisNumber: 'ATH-E-2026-00001' },
-    { email: 'comptable@demo-sa.demo', role: 'COMPTABLE' as const, firstName: 'Bernard', lastName: 'Durand',  atheisNumber: 'ATH-E-2026-00007' },
-    { email: 'rh@demo-sa.demo',        role: 'RH'        as const, firstName: 'Claire',  lastName: 'Petit',   atheisNumber: 'ATH-E-2026-00008' },
-    { email: 'viewer@demo-sa.demo',    role: 'READONLY'  as const, firstName: 'David',   lastName: 'Leroy',   atheisNumber: 'ATH-E-2026-00009' },
-    { email: 'juridique@demo-sa.demo', role: 'JURIDIQUE' as const, firstName: 'Elise',   lastName: 'Bernard', atheisNumber: 'ATH-E-2026-00010' },
+    { email: 'admin@demo-sa.demo',     role: 'ADMIN'     as const, firstName: 'Alice',   lastName: 'Martin',  atheisNumber: 'ATH-E-00001' },
+    { email: 'comptable@demo-sa.demo', role: 'COMPTABLE' as const, firstName: 'Bernard', lastName: 'Durand',  atheisNumber: 'ATH-E-00007' },
+    { email: 'rh@demo-sa.demo',        role: 'RH'        as const, firstName: 'Claire',  lastName: 'Petit',   atheisNumber: 'ATH-E-00008' },
+    { email: 'viewer@demo-sa.demo',    role: 'READONLY'  as const, firstName: 'David',   lastName: 'Leroy',   atheisNumber: 'ATH-E-00009' },
+    { email: 'juridique@demo-sa.demo', role: 'JURIDIQUE' as const, firstName: 'Elise',   lastName: 'Bernard', atheisNumber: 'ATH-E-00010' },
   ]
   for (const u of companyUsersData) {
     const { atheisNumber: aN, ...rest } = u
@@ -142,12 +142,12 @@ async function main() {
   // ── Users — CABINET ───────────────────────────────────────────────────────
   const cabinetUser = await prisma.user.upsert({
     where: { email: 'expert@cabinet.demo' },
-    update: { atheisNumber: 'ATH-C-2026-00001' },
+    update: { atheisNumber: 'ATH-C-00001' },
     create: {
       email: 'expert@cabinet.demo', passwordHash: hash,
       accountType: 'CABINET', role: 'ADMIN',
       firstName: 'François', lastName: 'Expert', cabinetId: cabinet.id,
-      atheisNumber: 'ATH-C-2026-00001',
+      atheisNumber: 'ATH-C-00001',
     },
   })
   console.log(`  User (CABINET): ${cabinetUser.email}`)
@@ -155,12 +155,12 @@ async function main() {
   // ── Users — Sénégal demo ──────────────────────────────────────────────────
   await prisma.user.upsert({
     where: { email: 'demo-senegal@athenis.io' },
-    update: { atheisNumber: 'ATH-E-2026-00003' },
+    update: { atheisNumber: 'ATH-E-00003' },
     create: {
       email: 'demo-senegal@athenis.io', passwordHash: hash2,
       accountType: 'COMPANY', role: 'ADMIN',
       firstName: 'Aminata', lastName: 'Diallo', companyId: companySn.id,
-      atheisNumber: 'ATH-E-2026-00003',
+      atheisNumber: 'ATH-E-00003',
     },
   })
   console.log('  User (OHADA): demo-senegal@athenis.io')
@@ -168,12 +168,12 @@ async function main() {
   // ── Users — USA demo ──────────────────────────────────────────────────────
   await prisma.user.upsert({
     where: { email: 'demo-usa@athenis.io' },
-    update: { atheisNumber: 'ATH-E-2026-00006' },
+    update: { atheisNumber: 'ATH-E-00006' },
     create: {
       email: 'demo-usa@athenis.io', passwordHash: hash2,
       accountType: 'COMPANY', role: 'ADMIN',
       firstName: 'John', lastName: 'Smith', companyId: companyUs.id,
-      atheisNumber: 'ATH-E-2026-00006',
+      atheisNumber: 'ATH-E-00006',
     },
   })
   console.log('  User (IFRS): demo-usa@athenis.io')
@@ -181,12 +181,12 @@ async function main() {
   // ── France demo user (alias) ──────────────────────────────────────────────
   await prisma.user.upsert({
     where: { email: 'demo-france@athenis.io' },
-    update: { atheisNumber: 'ATH-E-2026-00002' },
+    update: { atheisNumber: 'ATH-E-00002' },
     create: {
       email: 'demo-france@athenis.io', passwordHash: hash2,
       accountType: 'COMPANY', role: 'ADMIN',
       firstName: 'Léa', lastName: 'Dupont', companyId: company.id,
-      atheisNumber: 'ATH-E-2026-00002',
+      atheisNumber: 'ATH-E-00002',
     },
   })
   console.log('  User (FRANCE): demo-france@athenis.io')
@@ -493,39 +493,39 @@ async function main() {
   // ── Utilisateurs ──────────────────────────────────────────────────────────
   const userUbm = await prisma.user.upsert({
     where:  { email: 'ubm@comptalia.fr' },
-    update: { atheisNumber: 'ATH-E-2026-00004' },
+    update: { atheisNumber: 'ATH-E-00004' },
     create: {
       email: 'ubm@comptalia.fr', passwordHash: hashUbm,
       accountType: 'COMPANY', role: 'ADMIN',
       firstName: 'Urbain', lastName: 'Bello Moukouri',
       companyId: companyUbm.id, totpEnabled: false,
-      atheisNumber: 'ATH-E-2026-00004',
+      atheisNumber: 'ATH-E-00004',
     },
   })
 
   const hashCarine = await bcrypt.hash('Carine2026!', BCRYPT_ROUNDS)
   const userCarine = await prisma.user.upsert({
     where:  { email: 'carine.ekodeck@ubm.cm' },
-    update: { atheisNumber: 'ATH-E-2026-00011' },
+    update: { atheisNumber: 'ATH-E-00011' },
     create: {
       email: 'carine.ekodeck@ubm.cm', passwordHash: hashCarine,
       accountType: 'COMPANY', role: 'COMPTABLE',
       firstName: 'Carine', lastName: 'Ekodeck',
       companyId: companyUbm.id, totpEnabled: true,
-      atheisNumber: 'ATH-E-2026-00011',
+      atheisNumber: 'ATH-E-00011',
     },
   })
 
   const hashRomuald = await bcrypt.hash('Romuald2026!', BCRYPT_ROUNDS)
   const userRomuald = await prisma.user.upsert({
     where:  { email: 'romuald.essomba@ubm.cm' },
-    update: { atheisNumber: 'ATH-E-2026-00012' },
+    update: { atheisNumber: 'ATH-E-00012' },
     create: {
       email: 'romuald.essomba@ubm.cm', passwordHash: hashRomuald,
       accountType: 'COMPANY', role: 'READONLY',
       firstName: 'Romuald', lastName: 'Essomba',
       companyId: companyUbm.id, totpEnabled: false,
-      atheisNumber: 'ATH-E-2026-00012',
+      atheisNumber: 'ATH-E-00012',
     },
   })
   console.log('  Users UBM: Urbain (ADMIN) · Carine (COMPTABLE) · Romuald (READONLY)')
@@ -1373,13 +1373,13 @@ async function main() {
 
   const userAtanga = await prisma.user.upsert({
     where: { email: 'demo-igs@athenis.io' },
-    update: { atheisNumber: 'ATH-E-2026-00005' },
+    update: { atheisNumber: 'ATH-E-00005' },
     create: {
       email: 'demo-igs@athenis.io', passwordHash: hashIgs,
       accountType: 'COMPANY', role: 'ADMIN',
       firstName: 'Paul', lastName: 'Atanga',
       companyId: companyAtanga.id,
-      atheisNumber: 'ATH-E-2026-00005',
+      atheisNumber: 'ATH-E-00005',
     },
   })
   console.log(`  User IGS: ${userAtanga.email}`)
@@ -1410,21 +1410,21 @@ async function main() {
   })
   console.log('  TaxConfig Atanga: IGS Classe 7 · 120 000 F CFA/an')
 
-  // ── AtheisCounter — initialize with current max per type ─────────────────
+  // ── AtheisCounter — compteur global par type (jamais réinitialisé) ────────
   await prisma.atheisCounter.upsert({
-    where: { type_year: { type: 'PERSONAL', year: 2026 } },
+    where:  { type: 'PERSONAL' },
     update: { lastNumber: 1 },
-    create: { type: 'PERSONAL', year: 2026, lastNumber: 1 },
+    create: { type: 'PERSONAL', lastNumber: 1 },
   })
   await prisma.atheisCounter.upsert({
-    where: { type_year: { type: 'COMPANY', year: 2026 } },
+    where:  { type: 'COMPANY' },
     update: { lastNumber: 12 },
-    create: { type: 'COMPANY', year: 2026, lastNumber: 12 },
+    create: { type: 'COMPANY', lastNumber: 12 },
   })
   await prisma.atheisCounter.upsert({
-    where: { type_year: { type: 'CABINET', year: 2026 } },
+    where:  { type: 'CABINET' },
     update: { lastNumber: 1 },
-    create: { type: 'CABINET', year: 2026, lastNumber: 1 },
+    create: { type: 'CABINET', lastNumber: 1 },
   })
   console.log('  AtheisCounter: PERSONAL=1, COMPANY=12, CABINET=1')
 
