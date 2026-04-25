@@ -8,12 +8,13 @@ import { useFiscalYearGuard } from '@/hooks/useFiscalYear'
 import { settingsApi } from '@/services/settingsApi'
 
 const BASE_TABS: readonly SubTab[] = [
-  { label: 'Tableau de bord', to: '/app/accounting', end: true },
-  { label: 'Journal',         to: '/app/accounting/journal' },
-  { label: 'Grand livre',     to: '/app/accounting/grand-livre' },
-  { label: 'Balance',         to: '/app/accounting/balance' },
-  { label: 'Comptes',         to: '/app/accounting/comptes' },
-  { label: 'Révision',        to: '/app/accounting/revision' },
+  { label: 'Tableau de bord',  to: '/app/accounting', end: true },
+  { label: 'Journal',          to: '/app/accounting/journal' },
+  { label: 'Grand livre',      to: '/app/accounting/grand-livre' },
+  { label: 'Balance',          to: '/app/accounting/balance' },
+  { label: 'Comptes',          to: '/app/accounting/comptes' },
+  { label: 'Immobilisations',  to: '/app/accounting/immobilisations' },
+  { label: 'Révision',         to: '/app/accounting/revision' },
 ]
 
 function etatsFinanciersLabel(zone?: string): string {

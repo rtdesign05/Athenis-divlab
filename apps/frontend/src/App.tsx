@@ -83,6 +83,7 @@ const router = createBrowserRouter([
           { path: 'comptes',    lazy: lz(() => import('@/pages/app/accounting/ComptesPage'),          'ComptesPage') },
           { path: 'etats-financiers', lazy: lz(() => import('@/pages/app/accounting/EtatsFinanciersPage'), 'EtatsFinanciersPage') },
           { path: 'revision',         lazy: lz(() => import('@/pages/app/accounting/RevisionPage'),         'RevisionPage') },
+          { path: 'immobilisations',  lazy: lz(() => import('@/pages/app/accounting/ImmobilisationsPage'), 'ImmobilisationsPage') },
         ],
       },
 

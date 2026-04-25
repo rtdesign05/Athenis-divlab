@@ -1261,6 +1261,80 @@ async function main() {
   ))
   console.log(`  AccountReviews UBM 2025: ${accountReviews.length} (dont 1 anomalie)`)
 
+  // ── Assets UBM (immobilisations) ─────────────────────────────────────────
+  await prisma.asset.deleteMany({ where: { companyId: companyUbm.id } })
+
+  const ubmAssets = [
+    {
+      designation: 'MacBook Pro 14 (Direction)',
+      accountNumber: '2445', category: 'CORPOREL' as const, status: 'IN_SERVICE' as const,
+      acquisitionDate: new Date('2024-01-01'), grossValue: 1_400_000,
+      residualValue: 0, depreciationMode: 'LINEAR' as const, usefulLifeYears: 3,
+      depreciationRate: 0.3333,
+    },
+    {
+      designation: 'MacBook Pro 14 (Comptable)',
+      accountNumber: '2445', category: 'CORPOREL' as const, status: 'IN_SERVICE' as const,
+      acquisitionDate: new Date('2024-01-01'), grossValue: 1_400_000,
+      residualValue: 0, depreciationMode: 'LINEAR' as const, usefulLifeYears: 3,
+      depreciationRate: 0.3333,
+    },
+    {
+      designation: 'Bureau direction',
+      accountNumber: '2446', category: 'CORPOREL' as const, status: 'IN_SERVICE' as const,
+      acquisitionDate: new Date('2024-01-01'), grossValue: 600_000,
+      residualValue: 0, depreciationMode: 'LINEAR' as const, usefulLifeYears: 5,
+      depreciationRate: 0.2,
+    },
+    {
+      designation: 'Chaises de bureau (lot)',
+      accountNumber: '2446', category: 'CORPOREL' as const, status: 'IN_SERVICE' as const,
+      acquisitionDate: new Date('2024-01-01'), grossValue: 350_000,
+      residualValue: 0, depreciationMode: 'LINEAR' as const, usefulLifeYears: 5,
+      depreciationRate: 0.2,
+    },
+    {
+      designation: 'Climatiseur Akwa Palace',
+      accountNumber: '2446', category: 'CORPOREL' as const, status: 'IN_SERVICE' as const,
+      acquisitionDate: new Date('2024-01-01'), grossValue: 250_000,
+      residualValue: 0, depreciationMode: 'LINEAR' as const, usefulLifeYears: 5,
+      depreciationRate: 0.2,
+    },
+  ]
+
+  const createdAssets = await Promise.all(
+    ubmAssets.map(a => prisma.asset.create({ data: { companyId: companyUbm.id, ...a } }))
+  )
+
+  // Depreciation records for 2024 and 2025
+  for (const asset of createdAssets) {
+    const gv = Number(asset.grossValue)
+    const rate = Number(asset.depreciationRate)
+    const annual = Math.round(gv * rate)
+
+    // 2024: full year (acquired Jan 1)
+    await prisma.assetDepreciation.upsert({
+      where: { assetId_year: { assetId: asset.id, year: 2024 } },
+      update: {},
+      create: {
+        assetId: asset.id, fiscalYearId: '', year: 2024,
+        openingValue: gv, depreciationAmt: annual,
+        closingValue: gv - annual, entryGenerated: true,
+      },
+    })
+    // 2025: second year
+    await prisma.assetDepreciation.upsert({
+      where: { assetId_year: { assetId: asset.id, year: 2025 } },
+      update: {},
+      create: {
+        assetId: asset.id, fiscalYearId: '', year: 2025,
+        openingValue: gv - annual, depreciationAmt: annual,
+        closingValue: gv - annual * 2, entryGenerated: true,
+      },
+    })
+  }
+  console.log(`  Assets UBM: ${createdAssets.length} immobilisations + dépréciations 2024-2025`)
+
   // ── Atanga Commerce — IGS Démo ───────────────────────────────────────────
   const hashIgs = await bcrypt.hash('Demo2026!', BCRYPT_ROUNDS)
 

@@ -361,6 +361,7 @@ model Company {
   vatDeclarations   VATDeclaration[]
   taxConfig         TaxConfig?
   taxDeclarations   TaxDeclaration[]
+  assets            Asset[]
 
   @@index([cabinetId])
   @@map("companies")
@@ -1196,4 +1197,76 @@ model AccountReview {
   @@unique([companyId, year, accountNumber])
   @@index([companyId, year, cycle])
   @@map("account_reviews")
+}
+
+// ── Assets / Immobilisations ──────────────────────────────────────────────────
+
+enum AssetCategory {
+  INCORPOREL
+  CORPOREL
+  FINANCIER
+  EN_COURS
+}
+
+enum AssetStatus {
+  IN_SERVICE
+  DISPOSED
+  SCRAPPED
+  IN_PROGRESS
+}
+
+enum DeprecMode {
+  LINEAR
+  DEGRESSIVE
+}
+
+model Asset {
+  id               String      @id @default(cuid())
+  companyId        String      @map("company_id")
+  company          Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fiscalYearId     String?     @map("fiscal_year_id")
+
+  designation      String
+  accountNumber    String      @map("account_number")
+  category         AssetCategory
+  status           AssetStatus @default(IN_SERVICE)
+
+  acquisitionDate  DateTime    @map("acquisition_date")
+  serviceDate      DateTime?   @map("service_date")
+  disposalDate     DateTime?   @map("disposal_date")
+
+  grossValue       Decimal     @map("gross_value")       @db.Decimal(15, 2)
+  residualValue    Decimal     @map("residual_value")    @db.Decimal(15, 2) @default(0)
+  depreciationMode DeprecMode  @map("depreciation_mode") @default(LINEAR)
+  usefulLifeYears  Int         @map("useful_life_years")
+  depreciationRate Decimal     @map("depreciation_rate") @db.Decimal(6, 4)
+
+  supplier         String?
+  serialNumber     String?     @map("serial_number")
+  location         String?
+  notes            String?
+
+  depreciations    AssetDepreciation[]
+
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt      @map("updated_at")
+
+  @@index([companyId])
+  @@map("assets")
+}
+
+model AssetDepreciation {
+  id              String   @id @default(cuid())
+  assetId         String   @map("asset_id")
+  asset           Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  fiscalYearId    String   @map("fiscal_year_id")
+  year            Int
+  openingValue    Decimal  @map("opening_value")    @db.Decimal(15, 2)
+  depreciationAmt Decimal  @map("depreciation_amt") @db.Decimal(15, 2)
+  closingValue    Decimal  @map("closing_value")    @db.Decimal(15, 2)
+  entryGenerated  Boolean  @map("entry_generated")  @default(false)
+  createdAt       DateTime @default(now())           @map("created_at")
+
+  @@unique([assetId, year])
+  @@map("asset_depreciations")
 }

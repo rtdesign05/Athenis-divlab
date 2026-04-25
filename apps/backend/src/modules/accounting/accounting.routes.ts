@@ -10,6 +10,7 @@ import { prisma } from '../../lib/prisma.js'
 import * as svc from './accounting.service.js'
 import * as fsSvc from './financialStatements.service.js'
 import * as rev from './revision.service.js'
+import * as assSvc from './assets.service.js'
 
 export const accountingRouter = Router()
 
@@ -513,6 +514,135 @@ accountingRouter.post(
       const { year } = req.body as { year: number }
       await rev.markAllReviewed(getCompanyId(req), year, req.user?.email ?? 'unknown')
       res.json({ success: true })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Immobilisations / Assets ──────────────────────────────────────────────────
+
+const AssetBody = z.object({
+  designation:      z.string().min(1),
+  accountNumber:    z.string().min(1),
+  category:         z.enum(['INCORPOREL', 'CORPOREL', 'FINANCIER', 'EN_COURS']),
+  acquisitionDate:  z.string(),
+  serviceDate:      z.string().optional(),
+  grossValue:       z.number().positive(),
+  residualValue:    z.number().min(0).optional(),
+  depreciationMode: z.enum(['LINEAR', 'DEGRESSIVE']).default('LINEAR'),
+  usefulLifeYears:  z.number().int().min(1).max(50),
+  supplier:         z.string().optional(),
+  serialNumber:     z.string().optional(),
+  location:         z.string().optional(),
+  notes:            z.string().optional(),
+})
+
+const AssetYearQuery = z.object({
+  year: z.coerce.number().int().min(2000).max(2100).default(new Date().getFullYear()),
+})
+
+// IMPORTANT: specific sub-paths MUST come before /:id
+accountingRouter.get(
+  '/assets/summary',
+  checkModule('comptabilite', 'read'),
+  validateRequest({ query: AssetYearQuery }),
+  async (req, res, next) => {
+    try {
+      const year = Number(req.query['year'])
+      const data = await assSvc.getAssetsSummary(getCompanyId(req), year)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/assets/depreciation-table',
+  checkModule('comptabilite', 'read'),
+  validateRequest({ query: AssetYearQuery }),
+  async (req, res, next) => {
+    try {
+      const year = Number(req.query['year'])
+      const data = await assSvc.getDepreciationTable(getCompanyId(req), year)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/assets/generate-entries',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: z.object({ year: z.number().int().min(2000).max(2100) }) }),
+  async (req, res, next) => {
+    try {
+      const { year } = req.body as { year: number }
+      const data = await assSvc.generateDepreciationEntries(getCompanyId(req), year)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/assets',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const { category, status } = req.query as { category?: string; status?: string }
+      const data = await assSvc.listAssets(
+        getCompanyId(req),
+        {
+          category: category as Parameters<typeof assSvc.listAssets>[1]['category'],
+          status:   status   as Parameters<typeof assSvc.listAssets>[1]['status'],
+        },
+      )
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/assets',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: AssetBody }),
+  async (req, res, next) => {
+    try {
+      const data = await assSvc.createAsset(getCompanyId(req), req.body)
+      res.status(201).json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.put(
+  '/assets/:id',
+  checkModule('comptabilite', 'write'),
+  validateRequest({ body: AssetBody.partial() }),
+  async (req, res, next) => {
+    try {
+      const id = req.params['id'] as string
+      const data = await assSvc.updateAsset(getCompanyId(req), id, req.body)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.delete(
+  '/assets/:id',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const id = req.params['id'] as string
+      await assSvc.deleteAsset(getCompanyId(req), id)
+      res.json({ success: true })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/assets/:id/schedule',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const id = req.params['id'] as string
+      const data = await assSvc.getAssetSchedule(getCompanyId(req), id)
+      res.json({ success: true, data })
     } catch (e) { next(e) }
   },
 )
