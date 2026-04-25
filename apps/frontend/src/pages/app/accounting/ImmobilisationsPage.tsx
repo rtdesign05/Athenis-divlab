@@ -56,7 +56,7 @@ function KpiCard({ label, value, sub }: { label: string; value: string; sub?: st
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
       <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
-      <p className="mt-2 text-2xl font-bold text-gray-900 truncate">{value}</p>
+      <p className="mt-2 text-xl font-bold text-gray-900 leading-tight">{value}</p>
       {sub && <p className="mt-1 text-xs text-gray-400">{sub}</p>}
     </div>
   )
