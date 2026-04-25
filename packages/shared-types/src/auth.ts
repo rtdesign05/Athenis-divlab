@@ -11,6 +11,7 @@ export interface JwtPayload {
   modules: Module[]
   country?: string | null
   currencySymbol?: string | null
+  atheisNumber?: string | null
   iat?: number
   exp?: number
 }

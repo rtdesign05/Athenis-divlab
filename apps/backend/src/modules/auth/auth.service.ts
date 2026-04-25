@@ -9,6 +9,7 @@ import { logger } from '../../lib/logger.js'
 import { env } from '../../config/env.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import { getEffectivePlan, getEffectiveModules, getDefaultModules } from '../../lib/plans.js'
+import { generateAtheisNumber } from '../../lib/atheisNumber.js'
 import type {
   JwtPayload,
   UserProfile,
@@ -79,6 +80,7 @@ function toUserProfile(
     isActive: boolean
     lastLoginAt: Date | null
     createdAt: Date
+    atheisNumber?: string | null
   },
   plan: Plan | null,
   modules: Module[],
@@ -98,6 +100,7 @@ function toUserProfile(
     isActive: user.isActive,
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),
+    atheisNumber: user.atheisNumber ?? null,
   }
 }
 
@@ -150,6 +153,7 @@ export async function register(
     id: true, email: true, firstName: true, lastName: true,
     accountType: true, role: true, companyId: true, cabinetId: true,
     totpEnabled: true, isActive: true, lastLoginAt: true, createdAt: true,
+    atheisNumber: true,
   }
 
   type SelectedUser = {
@@ -157,8 +161,11 @@ export async function register(
     accountType: import('@prisma/client').AccountType; role: import('@prisma/client').Role
     companyId: string | null; cabinetId: string | null
     totpEnabled: boolean; isActive: boolean; lastLoginAt: Date | null; createdAt: Date
+    atheisNumber: string | null
   }
   let dbUser: SelectedUser
+
+  const atheisNumber = await generateAtheisNumber(dto.accountType as import('@prisma/client').AccountType)
 
   if (dto.accountType === 'PERSONAL') {
     dbUser = await prisma.user.create({
@@ -166,6 +173,7 @@ export async function register(
         email: dto.email, passwordHash,
         accountType: 'PERSONAL', role: 'ADMIN',
         firstName: dto.firstName ?? null, lastName: dto.lastName ?? null,
+        atheisNumber,
       },
       select: userSelect,
     })
@@ -193,7 +201,7 @@ export async function register(
           email: dto.email, passwordHash,
           accountType: 'COMPANY', role: 'ADMIN',
           firstName: dto.firstName ?? null, lastName: dto.lastName ?? null,
-          companyId: company.id,
+          companyId: company.id, atheisNumber,
         },
         select: userSelect,
       })
@@ -208,7 +216,7 @@ export async function register(
           email: dto.email, passwordHash,
           accountType: 'CABINET', role: 'ADMIN',
           firstName: dto.firstName ?? null, lastName: dto.lastName ?? null,
-          cabinetId: cabinet.id,
+          cabinetId: cabinet.id, atheisNumber,
         },
         select: userSelect,
       })
@@ -230,6 +238,7 @@ export async function register(
     plan, modules,
     country: companyLocale?.country ?? null,
     currencySymbol: companyLocale?.currencySymbol ?? null,
+    atheisNumber: dbUser.atheisNumber ?? null,
   })
   const refreshToken = await createRefreshToken(dbUser.id)
   await audit('USER_CREATED', dbUser.id, dbUser.companyId, ip, ua)
@@ -252,7 +261,7 @@ export async function login(
       companyId: true, cabinetId: true,
       totpEnabled: true, totpSecret: true, isActive: true,
       failedLoginAttempts: true, lockedUntil: true,
-      lastLoginAt: true, createdAt: true,
+      lastLoginAt: true, createdAt: true, atheisNumber: true,
     },
   })
 
@@ -304,6 +313,7 @@ export async function login(
     plan, modules,
     country: loginLocale?.country ?? null,
     currencySymbol: loginLocale?.currencySymbol ?? null,
+    atheisNumber: user.atheisNumber ?? null,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
@@ -336,7 +346,7 @@ export async function loginVerifyTotp(
       id: true, email: true, firstName: true, lastName: true,
       accountType: true, role: true, companyId: true, cabinetId: true,
       totpEnabled: true, totpSecret: true, isActive: true,
-      lastLoginAt: true, createdAt: true,
+      lastLoginAt: true, createdAt: true, atheisNumber: true,
     },
   })
 
@@ -360,6 +370,7 @@ export async function loginVerifyTotp(
     plan, modules,
     country: totpLocale?.country ?? null,
     currencySymbol: totpLocale?.currencySymbol ?? null,
+    atheisNumber: user.atheisNumber ?? null,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
@@ -378,7 +389,7 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
       user: {
         select: {
           id: true, email: true, accountType: true, role: true,
-          companyId: true, cabinetId: true, isActive: true,
+          companyId: true, cabinetId: true, isActive: true, atheisNumber: true,
         },
       },
     },
@@ -426,6 +437,7 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
       plan, modules,
       country: refreshLocale?.country ?? null,
       currencySymbol: refreshLocale?.currencySymbol ?? null,
+      atheisNumber: u.atheisNumber ?? null,
     }),
   }
 }

@@ -377,6 +377,7 @@ model User {
   role                Role        @default(READONLY)
   firstName           String?     @map("first_name")
   lastName            String?     @map("last_name")
+  atheisNumber        String?     @unique @map("athenis_number")
   isActive            Boolean     @default(true) @map("is_active")
   companyId           String?     @map("company_id")
   company             Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -397,6 +398,19 @@ model User {
   @@index([companyId])
   @@index([cabinetId])
   @@map("users")
+}
+
+// ── AtheisCounter ─────────────────────────────────────────────────────────────
+
+model AtheisCounter {
+  id         String      @id @default(cuid())
+  type       AccountType
+  year       Int
+  lastNumber Int         @default(0)
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  @@unique([type, year])
+  @@map("athenis_counters")
 }
 
 // ── Mandat ────────────────────────────────────────────────────────────────────

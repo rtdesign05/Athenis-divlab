@@ -1,7 +1,9 @@
 import { useDashboardStats, useCashFlow, useReminders } from '@/hooks/useBilling'
 import { useCurrency } from '@/hooks/useCurrency'
 import { Badge } from '@/shared/components/ui/Badge'
+import { AtheisId } from '@/shared/components/ui/AtheisId'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
+import { useAuth } from '@/features/auth/useAuth'
 import type { CashFlowWeek } from '@/services/billingApi'
 
 function trend(growth: number | null) {
@@ -161,15 +163,24 @@ function RemindersPanel() {
 
 export function AppDashboard() {
   const { fmt } = useCurrency()
+  const { user } = useAuth()
   const { data: stats, isLoading: statsLoading } = useDashboardStats()
   const { data: cashFlow, isLoading: cfLoading }  = useCashFlow()
+
+  const firstName = user?.firstName || user?.email?.split('@')[0] || 'vous'
+  const companyName = (user as { companyName?: string } | null)?.companyName ?? null
 
   return (
     <ErrorBoundary>
       <div className="space-y-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Tableau de bord</h2>
-          <p className="mt-1 text-sm text-gray-500">Vue d'ensemble de votre activité</p>
+          <h2 className="text-xl font-semibold text-gray-900">Bonjour, {firstName}</h2>
+          <p className="mt-0.5 text-sm text-gray-400">
+            {user?.atheisNumber && (
+              <><AtheisId number={user.atheisNumber} size="md" />{' · '}</>
+            )}
+            {companyName || 'Vue d\'ensemble de votre activité'}
+          </p>
         </div>
 
         {/* KPIs */}

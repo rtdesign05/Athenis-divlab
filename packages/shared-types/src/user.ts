@@ -25,6 +25,7 @@ export interface UserProfile {
   isActive: boolean
   lastLoginAt: string | null
   createdAt: string
+  atheisNumber: string | null
 }
 
 export interface CompanyProfile {

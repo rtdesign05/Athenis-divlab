@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { settingsApi, type CompanySettings } from '@/services/settingsApi'
+import { useAuth } from '@/features/auth/useAuth'
+import { AtheisId } from '@/shared/components/ui/AtheisId'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -99,6 +101,7 @@ function settingsToForm(s: CompanySettings): FormState {
 }
 
 export function EntreprisePage() {
+  const { user } = useAuth()
   const [form, setForm]       = useState<FormState | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
@@ -186,6 +189,18 @@ export function EntreprisePage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {/* Athenis identity header */}
+      {user?.atheisNumber && (
+        <div className="rounded-xl border border-gray-100 bg-white px-6 py-4">
+          <AtheisId number={user.atheisNumber} size="md" />
+          <p className="mt-0.5 text-2xl font-semibold text-gray-900">{form?.name || '…'}</p>
+          <p className="mt-1 text-sm text-gray-400">
+            Membre depuis le {new Date(user.iat ? user.iat * 1000 : Date.now()).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            {user.plan && ` · ${user.plan}`}
+          </p>
+        </div>
+      )}
+
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Entreprise</h1>
         <p className="mt-1 text-sm text-gray-500">
