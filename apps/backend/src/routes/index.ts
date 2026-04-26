@@ -17,6 +17,7 @@ import { aiRouter } from '../modules/ai/ai.routes.js'
 import { attachmentsRouter } from '../modules/attachments/attachments.routes.js'
 import { settingsRouter } from '../modules/settings/settings.routes.js'
 import { fiscalRouter } from '../modules/fiscal/fiscal.routes.js'
+import { stocksRouter } from '../modules/stocks/stocks.routes.js'
 
 const router = Router()
 
@@ -42,5 +43,6 @@ router.use('/ai', aiRouter)
 router.use('/attachments', attachmentsRouter)
 router.use('/settings', settingsRouter)
 router.use('/fiscal', fiscalRouter)
+router.use('/stocks', stocksRouter)
 
 export { router }

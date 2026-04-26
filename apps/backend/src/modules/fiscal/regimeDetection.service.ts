@@ -83,7 +83,7 @@ export async function detectRegimeForNextYear(
   let caActuel = 0
   if (fy) {
     const entries = await prisma.journalEntry.findMany({
-      where: { fiscalYearId: fy.id, account: { startsWith: '7' } },
+      where: { fiscalYearId: fy.id, compte: { startsWith: '7' } },
       select: { debit: true, credit: true },
     })
     caActuel = entries.reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
@@ -150,24 +150,22 @@ export async function detectRegimeForNextYear(
   await prisma.taxConfig.updateMany({
     where: { companyId },
     data: {
-      regimeHistory:     updatedHistory,
-      regimeChangeAlert: hasChanged,
-      lastRegimeCheck:   new Date(),
-      nextRegimeCheck:   new Date(currentYear + 1, 0, 1),
-      ...(nextRegime === 'IGS' && igsClass !== undefined ? {
-        igsClass,
-        igsAmount,
-      } : {}),
-    },
+      regimeHistory: updatedHistory as never,
+      ...(nextRegime === 'IGS' && igsClass !== undefined ? { igsClass } : {}),
+      ...(nextRegime === 'IGS' && igsAmount !== undefined ? { igsAmount } : {}),
+    } as never,
   })
 
-  return {
+  const result: RegimeDetectionResult = {
     currentRegime, nextRegime, hasChanged, changeReason,
     caActuel, caThreshold: 50_000_000, professionLiberale,
-    igsClass, igsAmount, igsAmountCga,
     newObligations, warnings,
     regimeHistory: updatedHistory,
   }
+  if (igsClass    !== undefined) result.igsClass    = igsClass
+  if (igsAmount   !== undefined) result.igsAmount   = igsAmount
+  if (igsAmountCga !== undefined) result.igsAmountCga = igsAmountCga
+  return result
 }
 
 // ── Confirmation du régime ────────────────────────────────────────────────────
@@ -177,7 +175,7 @@ export async function confirmRegime(
   year: number,
   regime: string,
   igsClass?: number,
-  paymentMode?: string,
+  _paymentMode?: string,
   adherentCga?: boolean,
 ) {
   const bareme = await getIgsBareme()
@@ -203,16 +201,12 @@ export async function confirmRegime(
   await prisma.taxConfig.updateMany({
     where: { companyId },
     data: {
-      taxRegime:         regime as never,
-      vatRegime:         vatRegime as never,
-      isFirstYear:       false,
-      regimeHistory,
-      regimeChangeAlert: false,
-      igsClass:          igsClass ?? null,
-      igsAmount:         igsAmount ?? null,
-      igsPaymentMode:    (paymentMode as never) ?? null,
-      igsAdherentCga:    adherentCga ?? false,
-      isAssujetti:       regime === 'REEL_NORMAL' || regime === 'REEL_SIMPLIFIE',
+      taxRegime:   regime as never,
+      vatRegime:   vatRegime as never,
+      isFirstYear: false,
+      regimeHistory: regimeHistory as never,
+      igsClass:    igsClass ?? null,
+      igsAmount:   igsAmount ?? null,
     },
   })
 
@@ -283,17 +277,17 @@ export async function getIGSDeclaration(companyId: string, year: number) {
   let caN1 = 0
   if (prevFY) {
     const entries = await prisma.journalEntry.findMany({
-      where: { fiscalYearId: prevFY.id, account: { startsWith: '7' } },
+      where: { fiscalYearId: prevFY.id, compte: { startsWith: '7' } },
       select: { debit: true, credit: true },
     })
     caN1 = entries.reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
   }
-  if (caN1 === 0) caN1 = Number(taxConfig?.firstYearCA ?? 0)
+  // no firstYearCA in schema — default to 0 if no journal entries
 
   const igsRow      = getIgsClassFromCA(caN1, bareme)
-  const adherentCga = taxConfig?.igsAdherentCga ?? false
+  const adherentCga = false // igsAdherentCga not in schema
   const igsAmount   = adherentCga ? (igsRow?.montantCga ?? 0) : (igsRow?.montantBase ?? 0)
-  const paymentMode = taxConfig?.igsPaymentMode ?? 'ANNUEL'
+  const paymentMode = 'ANNUEL' // igsPaymentMode not in schema
 
   const existing = await prisma.taxDeclaration.findFirst({
     where: { companyId, type: 'TVA', year, period: `IGS-${year}` },

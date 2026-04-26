@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client'
+import { Prisma, type ExpenseCategory } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import type { CreateExpenseInput, UpdateExpenseInput, ListExpensesInput } from './expenses.dto.js'
@@ -7,7 +7,7 @@ export async function listExpenses(companyId: string, query: ListExpensesInput) 
   const { page, limit, category, from, to } = query
   const where: Prisma.ExpenseWhereInput = {
     companyId,
-    ...(category ? { category } : {}),
+    ...(category ? { category: category as ExpenseCategory } : {}),
     ...(from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
   }
   const [items, total] = await Promise.all([
@@ -29,15 +29,16 @@ export async function getExpense(companyId: string, id: string) {
   return expense
 }
 
-export async function createExpense(companyId: string, data: CreateExpenseInput) {
+export async function createExpense(companyId: string, data: CreateExpenseInput, createdBy: string) {
   return prisma.expense.create({
     data: {
       companyId,
-      category: data.category,
-      description: data.description,
-      date: data.date,
-      amount: new Prisma.Decimal(data.amount),
-      receiptUrl: data.receiptUrl ?? null,
+      category:  data.category as ExpenseCategory,
+      note:      data.description ?? null,
+      date:      data.date,
+      amount:    new Prisma.Decimal(data.amount),
+      reference: `EXP-${Date.now()}`,
+      createdBy,
     },
   })
 }
@@ -47,11 +48,10 @@ export async function updateExpense(companyId: string, id: string, data: UpdateE
   return prisma.expense.update({
     where: { id },
     data: {
-      ...(data.category !== undefined ? { category: data.category } : {}),
-      ...(data.description !== undefined ? { description: data.description } : {}),
-      ...(data.date !== undefined ? { date: data.date } : {}),
-      ...(data.amount != null ? { amount: new Prisma.Decimal(data.amount) } : {}),
-      ...(data.receiptUrl !== undefined ? { receiptUrl: data.receiptUrl ?? null } : {}),
+      ...(data.category    !== undefined ? { category: data.category as ExpenseCategory } : {}),
+      ...(data.description !== undefined ? { note: data.description ?? null }       : {}),
+      ...(data.date        !== undefined ? { date: data.date }                      : {}),
+      ...(data.amount      != null       ? { amount: new Prisma.Decimal(data.amount) } : {}),
     },
   })
 }

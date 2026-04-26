@@ -60,16 +60,17 @@ attachmentsRouter.post(
           throw new AppError('Destination de fichier invalide', 400, 'INVALID_PATH')
         }
         const storageKey    = path.join(companySubdir, f.filename).replace(/\\/g, '/')
-        return svc.createAttachment({
+        const attData: Parameters<typeof svc.createAttachment>[0] = {
           companyId,
           uploadedBy,
           fileName:   f.originalname,
           fileSize:   f.size,
           mimeType:   f.mimetype,
           storageKey,
-          invoiceId,
-          expenseId,
-        })
+        }
+        if (invoiceId) attData.invoiceId = invoiceId
+        if (expenseId) attData.expenseId = expenseId
+        return svc.createAttachment(attData)
       }))
 
       res.status(201).json({ success: true, data: results.map(a => ({

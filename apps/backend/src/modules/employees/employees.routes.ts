@@ -101,10 +101,10 @@ employeesRouter.get(
       const month = (req.query.month as string) ?? new Date().toISOString().slice(0, 7)
       const emp = await prisma.employee.findFirst({ where: { id: req.params.id!, companyId } })
       if (!emp) return res.status(404).json({ success: false, error: 'Employee not found' })
-      const gross = Number(emp.grossSalary)
+      const gross = Number(emp.salaireBrut)
       const payslip = computePayslip(
         gross,
-        { firstName: emp.firstName, lastName: emp.lastName, email: emp.email ?? '', employmentType: emp.employmentType },
+        { firstName: emp.prenom ?? '', lastName: emp.nom, email: emp.email ?? '', employmentType: emp.contrat },
         month,
         true,
       )

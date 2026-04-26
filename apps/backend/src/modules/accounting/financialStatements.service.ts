@@ -11,14 +11,14 @@ async function aggregateAccounts(
 ): Promise<Map<string, { debit: number; credit: number }>> {
   const entries = await prisma.journalEntry.findMany({
     where: { companyId, fiscalYearId },
-    select: { account: true, debit: true, credit: true },
+    select: { compte: true, debit: true, credit: true },
   })
   const totals = new Map<string, { debit: number; credit: number }>()
   for (const e of entries) {
-    const cur = totals.get(e.account) ?? { debit: 0, credit: 0 }
+    const cur = totals.get(e.compte) ?? { debit: 0, credit: 0 }
     cur.debit  += Number(e.debit)
     cur.credit += Number(e.credit)
-    totals.set(e.account, cur)
+    totals.set(e.compte, cur)
   }
   return totals
 }

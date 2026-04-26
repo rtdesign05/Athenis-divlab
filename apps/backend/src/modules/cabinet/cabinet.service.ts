@@ -8,12 +8,12 @@ function toNum(d: Prisma.Decimal | null | undefined): number {
 
 export async function getPortfolio(cabinetId: string) {
   const mandats = await prisma.mandat.findMany({
-    where: { cabinetId, actif: true },
+    where: { cabinetId, isActive: true },
     include: {
       company: {
         select: {
           id: true,
-          name: true,
+          nom: true,
           siren: true,
           secteur: true,
           taille: true,
@@ -22,7 +22,7 @@ export async function getPortfolio(cabinetId: string) {
         },
       },
     },
-    orderBy: { company: { name: 'asc' } },
+    orderBy: { company: { nom: 'asc' } },
   })
 
   const portfolioWithKpis = await Promise.all(
@@ -30,7 +30,7 @@ export async function getPortfolio(cabinetId: string) {
       const [invoiceAgg, expenseAgg, employeeCount] = await Promise.all([
         prisma.invoice.aggregate({
           where: { companyId: company.id },
-          _sum: { total: true },
+          _sum: { amountTTC: true },
           _count: true,
         }),
         prisma.expense.aggregate({
@@ -38,7 +38,7 @@ export async function getPortfolio(cabinetId: string) {
           _sum: { amount: true },
           _count: true,
         }),
-        prisma.employee.count({ where: { companyId: company.id, endDate: null } }),
+        prisma.employee.count({ where: { companyId: company.id, dateFinContrat: null } }),
       ])
 
       const overdueCount = await prisma.invoice.count({
@@ -49,10 +49,10 @@ export async function getPortfolio(cabinetId: string) {
         company,
         mandat: { type, modules, since: createdAt },
         kpis: {
-          totalFacture: toNum(invoiceAgg._sum.total),
-          invoiceCount: invoiceAgg._count,
+          totalFacture:    toNum(invoiceAgg._sum?.amountTTC),
+          invoiceCount:    invoiceAgg._count,
           overdueInvoices: overdueCount,
-          totalDepenses: toNum(expenseAgg._sum.amount),
+          totalDepenses:   toNum(expenseAgg._sum?.amount),
           activeEmployees: employeeCount,
         },
       }
@@ -66,7 +66,7 @@ export async function getCabinetDashboard(cabinetId: string) {
   const [portfolio, totalMandats, activeMandats] = await Promise.all([
     getPortfolio(cabinetId),
     prisma.mandat.count({ where: { cabinetId } }),
-    prisma.mandat.count({ where: { cabinetId, actif: true } }),
+    prisma.mandat.count({ where: { cabinetId, isActive: true } }),
   ])
 
   const totalFacture = portfolio.reduce((sum, p) => sum + p.kpis.totalFacture, 0)
@@ -88,9 +88,9 @@ export async function getMandats(cabinetId: string) {
   return prisma.mandat.findMany({
     where: { cabinetId },
     include: {
-      company: { select: { id: true, name: true, siren: true, plan: true } },
+      company: { select: { id: true, nom: true, siren: true, plan: true } },
     },
-    orderBy: [{ actif: 'desc' }, { company: { name: 'asc' } }],
+    orderBy: [{ isActive: 'desc' }, { company: { nom: 'asc' } }],
   })
 }
 
@@ -107,6 +107,6 @@ export async function toggleMandat(cabinetId: string, companyId: string) {
   const mandat = await getMandat(cabinetId, companyId)
   return prisma.mandat.update({
     where: { cabinetId_companyId: { cabinetId, companyId } },
-    data: { actif: !mandat.actif },
+    data: { isActive: !mandat.isActive },
   })
 }

@@ -33,9 +33,9 @@ export async function getTaxConfig(companyId: string) {
   const config = await prisma.taxConfig.findUnique({ where: { companyId } })
   const company = await prisma.company.findUnique({
     where: { id: companyId },
-    select: { country: true, vatNumber: true, siren: true, siret: true },
+    select: { pays: true, siren: true, siret: true },
   })
-  return { ...config, country: company?.country ?? 'CM' }
+  return { ...config, country: company?.pays ?? 'CM' }
 }
 
 export async function upsertTaxConfig(companyId: string, data: {
@@ -43,12 +43,12 @@ export async function upsertTaxConfig(companyId: string, data: {
   rccm?: string; codeActivite?: string; cnpsRate?: number; isAssujetti?: boolean
 }) {
   const company = await prisma.company.findUnique({
-    where: { id: companyId }, select: { country: true },
+    where: { id: companyId }, select: { pays: true },
   })
   return prisma.taxConfig.upsert({
     where:  { companyId },
-    update: { ...data as never },
-    create: { companyId, country: company?.country ?? 'CM', ...data as never },
+    update: data as never,
+    create: { companyId, country: company?.pays ?? 'CM', ...(data as object) } as never,
   })
 }
 
@@ -56,9 +56,9 @@ export async function upsertTaxConfig(companyId: string, data: {
 
 export async function getFiscalDashboard(companyId: string, year: number) {
   const company = await prisma.company.findUnique({
-    where: { id: companyId }, select: { country: true },
+    where: { id: companyId }, select: { pays: true },
   })
-  const country = company?.country ?? 'CM'
+  const country = company?.pays ?? 'CM'
   const now = new Date()
   const currentMonth = now.getMonth() + 1
 
@@ -74,10 +74,10 @@ export async function getFiscalDashboard(companyId: string, year: number) {
   if (fy) {
     const entries = await prisma.journalEntry.findMany({
       where: { fiscalYearId: fy.id },
-      select: { account: true, credit: true, debit: true },
+      select: { compte: true, credit: true, debit: true },
     })
-    const produits = entries.filter(e => e.account.startsWith('7')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
-    const charges  = entries.filter(e => e.account.startsWith('6')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    const produits = entries.filter(e => e.compte.startsWith('7')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
+    const charges  = entries.filter(e => e.compte.startsWith('6')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
     const resultat = produits - charges
     if (country === 'CM') {
       isPrevisionnel = Math.max(resultat * CM_TAX.isRate, produits * CM_TAX.isMinimumAnnualRate)
@@ -144,32 +144,31 @@ async function getMonthlyChargesChart(companyId: string, year: number) {
 
 export async function getTVADeclaration(companyId: string, year: number, month: number) {
   const company = await prisma.company.findUnique({
-    where: { id: companyId }, select: { country: true },
+    where: { id: companyId }, select: { pays: true },
   })
   const start = new Date(year, month - 1, 1)
   const end   = new Date(year, month, 0, 23, 59, 59)
 
   const invoices = await prisma.invoice.findMany({
-    where: { companyId, issueDate: { gte: start, lte: end }, status: { not: 'CANCELLED' } },
-    select: { id: true, number: true, subtotal: true, taxRate: true, taxAmount: true },
-    include: { client: { select: { name: true } } },
+    where: { companyId, issuedAt: { gte: start, lte: end }, status: { not: 'CANCELLED' } },
+    include: { client: { select: { nom: true } } },
   })
   const collectee = invoices.map(inv => ({
-    reference: inv.number,
-    label: (inv as never as { client: { name: string } }).client?.name ?? inv.number,
-    baseHT: Number(inv.subtotal),
-    taux:   Number(inv.taxRate),
-    tva:    Number(inv.taxAmount),
+    reference: inv.reference,
+    label: inv.client?.nom ?? inv.reference,
+    baseHT: Number(inv.amountHT),
+    taux:   Number(inv.vatRate) * 100,
+    tva:    Number(inv.amountTTC) - Number(inv.amountHT),
   }))
   const totalCollectee = collectee.reduce((s, r) => s + r.tva, 0)
 
-  const vatRate = company?.country === 'CM' ? CM_TAX.vatRate : 0.20
+  const vatRate = company?.pays === 'CM' ? CM_TAX.vatRate : 0.20
   const expenses = await prisma.expense.findMany({
     where: { companyId, date: { gte: start, lte: end } },
-    select: { id: true, description: true, amount: true, category: true },
+    select: { id: true, note: true, amount: true, category: true },
   })
   const deductible = expenses.map(exp => ({
-    label:  exp.description,
+    label:  exp.note ?? '',
     baseHT: Number(exp.amount),
     taux:   vatRate * 100,
     tva:    Math.round(Number(exp.amount) * vatRate * 100) / 100,
@@ -190,7 +189,7 @@ export async function getTVADeclaration(companyId: string, year: number, month: 
     tvaNette:        Math.round(tvaNette),
     creditReporte:   0,
     tvaExigible:     Math.round(Math.max(tvaNette, 0)),
-    country:         company?.country ?? 'CM',
+    country:         company?.pays ?? 'CM',
     vatRate:         vatRate * 100,
   }
 }
@@ -220,8 +219,8 @@ export async function getTVAHistory(companyId: string, year: number) {
 export async function getDSF(companyId: string, year: number) {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
-    select: { name: true, vatNumber: true, siret: true, country: true, secteur: true,
-              address: true, city: true, phone: true, contactEmail: true, legalForm: true, capital: true },
+    select: { nom: true, siret: true, pays: true, secteur: true,
+              adresse: true, ville: true, telephone: true, email: true, formeJuridique: true, capital: true },
   })
   const taxConfig = await prisma.taxConfig.findUnique({ where: { companyId } })
   const fy = await prisma.fiscalYear.findFirst({
@@ -235,20 +234,20 @@ export async function getDSF(companyId: string, year: number) {
 
   if (fy) {
     const entries = await prisma.journalEntry.findMany({
-      where: { fiscalYearId: fy.id }, select: { account: true, debit: true, credit: true },
+      where: { fiscalYearId: fy.id }, select: { compte: true, debit: true, credit: true },
     })
-    caVentes       = entries.filter(e => e.account.startsWith('701')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
-    caPrestations  = entries.filter(e => e.account.startsWith('706')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
-    autresProduits = entries.filter(e => e.account.startsWith('7') && !e.account.startsWith('701') && !e.account.startsWith('706')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
-    caHT           = entries.filter(e => e.account.startsWith('7')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
-    achats         = entries.filter(e => e.account.startsWith('60')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
-    transports     = entries.filter(e => e.account.startsWith('61')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
-    servicesExt    = entries.filter(e => e.account.startsWith('62')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
-    impotsTaxes    = entries.filter(e => e.account.startsWith('63')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
-    chargesPersonnel= entries.filter(e => e.account.startsWith('66')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
-    dotationsAmort = entries.filter(e => e.account.startsWith('68')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
-    chargesFinancieres = entries.filter(e => e.account.startsWith('67')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
-    chargesTotal   = entries.filter(e => e.account.startsWith('6')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    caVentes       = entries.filter(e => e.compte.startsWith('701')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
+    caPrestations  = entries.filter(e => e.compte.startsWith('706')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
+    autresProduits = entries.filter(e => e.compte.startsWith('7') && !e.compte.startsWith('701') && !e.compte.startsWith('706')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
+    caHT           = entries.filter(e => e.compte.startsWith('7')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
+    achats         = entries.filter(e => e.compte.startsWith('60')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    transports     = entries.filter(e => e.compte.startsWith('61')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    servicesExt    = entries.filter(e => e.compte.startsWith('62')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    impotsTaxes    = entries.filter(e => e.compte.startsWith('63')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    chargesPersonnel= entries.filter(e => e.compte.startsWith('66')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    dotationsAmort = entries.filter(e => e.compte.startsWith('68')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    chargesFinancieres = entries.filter(e => e.compte.startsWith('67')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    chargesTotal   = entries.filter(e => e.compte.startsWith('6')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
   }
 
   const resultatNet  = caHT - chargesTotal
@@ -256,8 +255,8 @@ export async function getDSF(companyId: string, year: number) {
   const isMin        = caHT * CM_TAX.isMinimumAnnualRate
   const isPaye       = Math.max(isCalc, isMin)
 
-  const employees    = await prisma.employee.findMany({ where: { companyId }, select: { grossSalary: true } })
-  const masseSal     = employees.reduce((s, e) => s + Number(e.grossSalary) * 12, 0)
+  const employees    = await prisma.employee.findMany({ where: { companyId }, select: { salaireBrut: true } })
+  const masseSal     = employees.reduce((s, e) => s + Number(e.salaireBrut) * 12, 0)
   const cnpsPatronal = Math.round(masseSal * CM_TAX.cnpsPatronalRate)
   const fdfpPatronal = Math.round(masseSal * CM_TAX.fdfpPatronalRate)
 
@@ -281,19 +280,19 @@ export async function getDSF(companyId: string, year: number) {
   return {
     year, dueDate, status: dsfDecl?.status ?? (isLate ? 'LATE' : 'PENDING'), isLate,
     identification: {
-      raisonSociale: company?.name ?? '',
-      niu:           taxConfig?.niu ?? company?.vatNumber ?? '',
+      raisonSociale: company?.nom ?? '',
+      niu:           taxConfig?.niu ?? '',
       rccm:          taxConfig?.rccm ?? company?.siret ?? '',
       activite:      company?.secteur ?? '',
-      codeActivite:  taxConfig?.codeActivite ?? '7020Z',
+      codeActivite:  '7020Z',
       regimeFiscal:  taxConfig?.taxRegime === 'REEL_SIMPLIFIE' ? 'Réel Simplifié' : 'Réel Normal',
       centreImpots:  taxConfig?.centerImpots ?? '',
       exercice:      fy ? `${fmtDate(fy.startDate)} — ${fmtDate(fy.endDate)}` : `01/01/${year} — 31/12/${year}`,
-      adresse:       company?.address ?? '',
-      ville:         company?.city ?? '',
-      telephone:     company?.phone ?? '',
-      email:         company?.contactEmail ?? '',
-      formeJuridique: company?.legalForm ?? 'SARL',
+      adresse:       company?.adresse ?? '',
+      ville:         company?.ville ?? '',
+      telephone:     company?.telephone ?? '',
+      email:         company?.email ?? '',
+      formeJuridique: company?.formeJuridique ?? 'SARL',
       capital:       Number(company?.capital ?? 0),
     },
     compteResultat: {
@@ -361,10 +360,10 @@ export async function getIS(companyId: string, year: number) {
   let ca = 0, charges = 0
   if (fy) {
     const entries = await prisma.journalEntry.findMany({
-      where: { fiscalYearId: fy.id }, select: { account: true, debit: true, credit: true },
+      where: { fiscalYearId: fy.id }, select: { compte: true, debit: true, credit: true },
     })
-    ca      = entries.filter(e => e.account.startsWith('7')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
-    charges = entries.filter(e => e.account.startsWith('6')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
+    ca      = entries.filter(e => e.compte.startsWith('7')).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
+    charges = entries.filter(e => e.compte.startsWith('6')).reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
   }
 
   const resultat       = ca - charges
@@ -381,8 +380,8 @@ export async function getIS(companyId: string, year: number) {
   })
   const prevYearIS = prevYearDecl ? Number(prevYearDecl.taxAmount) : 7_656_000
 
-  const acomp1 = await prisma.taxDeclaration.findFirst({ where: { companyId, type: 'IS_ACOMPTE', year, quarter: 1 } })
-  const acomp2 = await prisma.taxDeclaration.findFirst({ where: { companyId, type: 'IS_ACOMPTE', year, quarter: 2 } })
+  const acomp1 = await prisma.taxDeclaration.findFirst({ where: { companyId, type: 'IS_ACOMPTE', year, month: 2 } })
+  const acomp2 = await prisma.taxDeclaration.findFirst({ where: { companyId, type: 'IS_ACOMPTE', year, month: 8 } })
 
   return {
     year, caAnnuel: Math.round(ca), chargesAnnuelles: Math.round(charges),
@@ -411,7 +410,7 @@ export async function getPatente(companyId: string, year: number) {
   let prevCA = 0
   if (prevFY) {
     const entries = await prisma.journalEntry.findMany({
-      where: { fiscalYearId: prevFY.id, account: { startsWith: '7' } },
+      where: { fiscalYearId: prevFY.id, compte: { startsWith: '7' } },
       select: { credit: true, debit: true },
     })
     prevCA = entries.reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0)
@@ -474,15 +473,15 @@ export async function getCNPS(companyId: string, year: number, month: number) {
   const taxConfig = await prisma.taxConfig.findUnique({ where: { companyId } })
   const employees = await prisma.employee.findMany({
     where: { companyId },
-    select: { id: true, firstName: true, lastName: true, grossSalary: true, position: true },
-    orderBy: { lastName: 'asc' },
+    select: { id: true, nom: true, prenom: true, salaireBrut: true, poste: true },
+    orderBy: { nom: 'asc' },
   })
 
   const rows = employees.map(emp => {
-    const salaire = Number(emp.grossSalary)
+    const salaire = Number(emp.salaireBrut)
     return {
-      nom:         `${emp.firstName ?? ''} ${emp.lastName ?? ''}`.trim(),
-      poste:       (emp as never as { position?: string }).position ?? '',
+      nom:         `${emp.prenom ?? ''} ${emp.nom}`.trim(),
+      poste:       emp.poste ?? '',
       salaireBrut: salaire,
       cnpsPatronal: Math.round(salaire * CM_TAX.cnpsPatronalRate),
       cnpsSalarial: Math.round(salaire * CM_TAX.cnpsSalarialRate),
@@ -526,7 +525,7 @@ export async function getCalendrier(companyId: string, year: number) {
   const decls  = await prisma.taxDeclaration.findMany({ where: { companyId, year } })
 
   return events.map(ev => {
-    const decl = decls.find(d => d.type === ev.type && d.month === ev.month && d.quarter === ev.quarter)
+    const decl = decls.find(d => d.type === ev.type && d.month === (ev.month ?? null))
     let status: 'done' | 'urgent' | 'pending' | 'late' = 'pending'
     if (decl?.status === 'PAID' || decl?.status === 'DECLARED') status = 'done'
     else if (ev.dueDate < now) status = 'late'
@@ -536,7 +535,7 @@ export async function getCalendrier(companyId: string, year: number) {
 }
 
 function buildCMCalendrier(year: number) {
-  const events: Array<{ date: string; dueDate: Date; label: string; type: string; month?: number; quarter?: number }> = []
+  const events: Array<{ date: string; dueDate: Date; label: string; type: string; month?: number }> = []
   for (let m = 1; m <= 12; m++) {
     const nm = m + 1 > 12 ? 1 : m + 1; const ny = m + 1 > 12 ? year + 1 : year
     const d15 = new Date(ny, nm - 1, 15)

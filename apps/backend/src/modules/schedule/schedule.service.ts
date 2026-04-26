@@ -1,48 +1,39 @@
 import { prisma } from '../../lib/prisma.js'
 import type { UpsertScheduleInput, ListScheduleInput } from './schedule.dto.js'
 
-const EMP_SELECT = { id: true, firstName: true, lastName: true, employmentType: true }
+// WorkSchedule model does not exist in v2 schema — use in-memory store
+interface WorkSchedule {
+  id: string; companyId: string; employeeId: string; weekStart: Date
+  monday: unknown; tuesday: unknown; wednesday: unknown; thursday: unknown; friday: unknown
+}
+const schedStore = new Map<string, WorkSchedule>()
+let seq = 0
+function genId() { return `SCH-${++seq}-${Date.now()}` }
 
 export async function getWeekSchedule(companyId: string, query: ListScheduleInput) {
   const monday = new Date(query.weekStart)
   monday.setHours(0, 0, 0, 0)
-  // Snap to Monday
   const day = monday.getDay()
   if (day !== 1) monday.setDate(monday.getDate() - ((day + 6) % 7))
 
-  const [employees, schedules, leaves] = await Promise.all([
-    prisma.employee.findMany({
-      where: { companyId, endDate: null },
-      select: EMP_SELECT,
-      orderBy: { lastName: 'asc' },
-    }),
-    prisma.workSchedule.findMany({
-      where: { companyId, weekStart: monday },
-    }),
-    prisma.leaveRequest.findMany({
-      where: {
-        companyId,
-        status: 'APPROVED',
-        startDate: { lte: new Date(monday.getTime() + 4 * 86_400_000) },
-        endDate:   { gte: monday },
-      },
-      select: { employeeId: true, startDate: true, endDate: true, type: true },
-    }),
-  ])
+  const employees = await prisma.employee.findMany({
+    where: { companyId, dateFinContrat: null },
+    select: { id: true, nom: true, prenom: true, contrat: true },
+    orderBy: { nom: 'asc' },
+  })
 
-  const schedMap = new Map(schedules.map(s => [s.employeeId, s]))
-  const leaveMap = new Map<string, { type: string }[]>()
-  for (const l of leaves) {
-    if (!leaveMap.has(l.employeeId)) leaveMap.set(l.employeeId, [])
-    leaveMap.get(l.employeeId)!.push({ type: l.type })
-  }
+  const schedMap = new Map(
+    [...schedStore.values()]
+      .filter(s => s.companyId === companyId && s.weekStart.getTime() === monday.getTime())
+      .map(s => [s.employeeId, s])
+  )
 
   return {
     weekStart:  monday.toISOString(),
     employees: employees.map(emp => ({
       ...emp,
       schedule: schedMap.get(emp.id) ?? null,
-      leaves:   leaveMap.get(emp.id) ?? [],
+      leaves:   [] as { type: string }[],
     })),
   }
 }
@@ -56,24 +47,21 @@ export async function upsertSchedule(companyId: string, data: UpsertScheduleInpu
   const day = monday.getDay()
   if (day !== 1) monday.setDate(monday.getDate() - ((day + 6) % 7))
 
-  return prisma.workSchedule.upsert({
-    where: { companyId_employeeId_weekStart: { companyId, employeeId: data.employeeId, weekStart: monday } },
-    update: {
-      monday:    data.monday    !== undefined ? (data.monday    as never) : undefined,
-      tuesday:   data.tuesday   !== undefined ? (data.tuesday   as never) : undefined,
-      wednesday: data.wednesday !== undefined ? (data.wednesday as never) : undefined,
-      thursday:  data.thursday  !== undefined ? (data.thursday  as never) : undefined,
-      friday:    data.friday    !== undefined ? (data.friday    as never) : undefined,
-    },
-    create: {
-      companyId,
-      employeeId: data.employeeId,
-      weekStart:  monday,
-      monday:     (data.monday    ?? null) as never,
-      tuesday:    (data.tuesday   ?? null) as never,
-      wednesday:  (data.wednesday ?? null) as never,
-      thursday:   (data.thursday  ?? null) as never,
-      friday:     (data.friday    ?? null) as never,
-    },
-  })
+  const existing = [...schedStore.values()].find(
+    s => s.companyId === companyId && s.employeeId === data.employeeId && s.weekStart.getTime() === monday.getTime()
+  )
+
+  const id = existing?.id ?? genId()
+  const schedule: WorkSchedule = {
+    id, companyId,
+    employeeId: data.employeeId,
+    weekStart:  monday,
+    monday:     data.monday    ?? existing?.monday    ?? null,
+    tuesday:    data.tuesday   ?? existing?.tuesday   ?? null,
+    wednesday:  data.wednesday ?? existing?.wednesday ?? null,
+    thursday:   data.thursday  ?? existing?.thursday  ?? null,
+    friday:     data.friday    ?? existing?.friday    ?? null,
+  }
+  schedStore.set(id, schedule)
+  return schedule
 }

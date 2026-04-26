@@ -16,7 +16,7 @@ legalRouter.use(authenticate)
 // ── Contracts ─────────────────────────────────────────────────────────────────
 legalRouter.get('/contracts',           checkModule('juridique', 'read'),   validateRequest({ query: ListContractsDto }), async (req, res, next) => { try { res.json({ success: true, data: await svc.listContracts(getCompanyId(req), req.query as never) }) } catch (e) { next(e) } })
 legalRouter.get('/contracts/:id',       checkModule('juridique', 'read'),   async (req, res, next) => { try { res.json({ success: true, data: await svc.getContract(getCompanyId(req), req.params.id!) }) } catch (e) { next(e) } })
-legalRouter.post('/contracts',          checkModule('juridique', 'write'),  validateRequest({ body: CreateContractDto }), async (req, res, next) => { try { res.status(201).json({ success: true, data: await svc.createContract(getCompanyId(req), req.body) }) } catch (e) { next(e) } })
+legalRouter.post('/contracts',          checkModule('juridique', 'write'),  validateRequest({ body: CreateContractDto }), async (req, res, next) => { try { res.status(201).json({ success: true, data: await svc.createContract(getCompanyId(req), req.body, req.user?.sub ?? 'unknown') }) } catch (e) { next(e) } })
 legalRouter.patch('/contracts/:id',     checkModule('juridique', 'write'),  validateRequest({ body: UpdateContractDto }), async (req, res, next) => { try { res.json({ success: true, data: await svc.updateContract(getCompanyId(req), req.params.id!, req.body) }) } catch (e) { next(e) } })
 legalRouter.delete('/contracts/:id',    checkModule('juridique', 'delete'), async (req, res, next) => { try { await svc.deleteContract(getCompanyId(req), req.params.id!); res.json({ success: true, data: null }) } catch (e) { next(e) } })
 

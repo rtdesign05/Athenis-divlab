@@ -92,15 +92,14 @@ export const CYCLES: CycleDef[] = [
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ReviewedAccount extends StaticAccount {
-  solde:              number
-  cycle:              number
-  status:             'PENDING' | 'REVIEWED' | 'ANOMALY'
-  reviewedBy?:        string
-  reviewedAt?:        Date
-  note?:              string
-  anomalyNote?:       string
-  anomalyResolvedAt?: Date
-  resolutionNote?:    string
+  solde:        number
+  cycle:        number
+  status:       'PENDING' | 'REVIEWED' | 'ANOMALY'
+  reviewedBy?:  string
+  reviewedAt?:  Date
+  note?:        string
+  anomalyNote?: string
+  isAnomaly:    boolean
 }
 
 export interface ReviewCycle {
@@ -126,8 +125,8 @@ export interface RevisionProgress {
 
 // ── Service functions ─────────────────────────────────────────────────────────
 
-export async function getCyclesWithAccounts(companyId: string, year: number): Promise<ReviewCycle[]> {
-  const reviews = await prisma.accountReview.findMany({ where: { companyId, year } })
+export async function getCyclesWithAccounts(companyId: string, fiscalYearId: string): Promise<ReviewCycle[]> {
+  const reviews = await prisma.accountReview.findMany({ where: { companyId, fiscalYearId } })
   const reviewMap = new Map(reviews.map(r => [r.accountNumber, r]))
 
   return CYCLES.map((cycle) => {
@@ -141,18 +140,18 @@ export async function getCyclesWithAccounts(companyId: string, year: number): Pr
 
     const accounts: ReviewedAccount[] = cycle.accounts.map((acct) => {
       const rev = reviewMap.get(acct.number)
-      return {
+      const base: ReviewedAccount = {
         ...acct,
-        solde:              acct.debit - acct.credit,
-        cycle:              cycle.id,
-        status:             (rev?.status ?? 'PENDING') as 'PENDING' | 'REVIEWED' | 'ANOMALY',
-        reviewedBy:         rev?.reviewedBy ?? undefined,
-        reviewedAt:         rev?.reviewedAt ?? undefined,
-        note:               rev?.note ?? undefined,
-        anomalyNote:        rev?.anomalyNote ?? undefined,
-        anomalyResolvedAt:  rev?.anomalyResolvedAt ?? undefined,
-        resolutionNote:     rev?.resolutionNote ?? undefined,
+        solde:     acct.debit - acct.credit,
+        cycle:     cycle.id,
+        status:    (rev?.status ?? 'PENDING') as 'PENDING' | 'REVIEWED' | 'ANOMALY',
+        isAnomaly: rev?.isAnomaly ?? false,
       }
+      if (rev?.reviewedBy) base.reviewedBy = rev.reviewedBy
+      if (rev?.reviewedAt) base.reviewedAt = rev.reviewedAt
+      if (rev?.note) base.note = rev.note
+      if (rev?.anomalyNote) base.anomalyNote = rev.anomalyNote
+      return base
     })
 
     const totalAccounts = accounts.length
@@ -169,8 +168,8 @@ export async function getCyclesWithAccounts(companyId: string, year: number): Pr
   })
 }
 
-export async function getRevisionProgress(companyId: string, year: number): Promise<RevisionProgress> {
-  const cycles = await getCyclesWithAccounts(companyId, year)
+export async function getRevisionProgress(companyId: string, fiscalYearId: string): Promise<RevisionProgress> {
+  const cycles = await getCyclesWithAccounts(companyId, fiscalYearId)
   const activeCycles = cycles.filter(c => !c.isNA)
 
   const total      = activeCycles.reduce((s, c) => s + c.totalAccounts, 0)
@@ -187,7 +186,7 @@ export async function getRevisionProgress(companyId: string, year: number): Prom
   }
 
   const unresolvedAnomalies = await prisma.accountReview.count({
-    where: { companyId, year, status: 'ANOMALY', anomalyResolvedAt: null },
+    where: { companyId, fiscalYearId, status: 'ANOMALY', isAnomaly: true },
   })
   if (unresolvedAnomalies > 0) {
     blockingReasons.push(`${unresolvedAnomalies} anomalie${unresolvedAnomalies > 1 ? 's' : ''} non résolue${unresolvedAnomalies > 1 ? 's' : ''}`)
@@ -206,10 +205,10 @@ export async function getRevisionProgress(companyId: string, year: number): Prom
 }
 
 export async function reviewAccount(
-  companyId: string, year: number, accountNumber: string, cycle: number, reviewedBy: string, note?: string,
+  companyId: string, fiscalYearId: string, accountNumber: string, cycle: number, reviewedBy: string, note?: string,
 ): Promise<void> {
   if (cycle === 9) {
-    const cycles = await getCyclesWithAccounts(companyId, year)
+    const cycles = await getCyclesWithAccounts(companyId, fiscalYearId)
     const otherIncomplete = cycles.filter(c => !c.isNA && c.id !== 9 && c.cycleStatus !== 'complete')
     if (otherIncomplete.length > 0) {
       throw new AppError(
@@ -221,59 +220,59 @@ export async function reviewAccount(
   }
 
   await prisma.accountReview.upsert({
-    where:  { companyId_year_accountNumber: { companyId, year, accountNumber } },
-    update: { status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), note: note ?? null, cycle },
-    create: { companyId, year, accountNumber, cycle, status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), note: note ?? null },
+    where:  { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber } },
+    update: { status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), note: note ?? null, cycle, isAnomaly: false },
+    create: { companyId, fiscalYearId, accountNumber, cycle, status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), note: note ?? null },
   })
 }
 
-export async function unreviewAccount(companyId: string, year: number, accountNumber: string): Promise<void> {
+export async function unreviewAccount(companyId: string, fiscalYearId: string, accountNumber: string): Promise<void> {
   await prisma.accountReview.upsert({
-    where:  { companyId_year_accountNumber: { companyId, year, accountNumber } },
-    update: { status: 'PENDING', reviewedBy: null, reviewedAt: null, note: null },
-    create: { companyId, year, accountNumber, cycle: 0, status: 'PENDING' },
+    where:  { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber } },
+    update: { status: 'PENDING', reviewedBy: null, reviewedAt: null, note: null, isAnomaly: false },
+    create: { companyId, fiscalYearId, accountNumber, cycle: 0, status: 'PENDING' },
   })
 }
 
 export async function markAnomaly(
-  companyId: string, year: number, accountNumber: string, cycle: number, reviewedBy: string, anomalyNote: string,
+  companyId: string, fiscalYearId: string, accountNumber: string, cycle: number, reviewedBy: string, anomalyNote: string,
 ): Promise<void> {
   if (!anomalyNote.trim()) throw new AppError('La note d\'anomalie est obligatoire', 400, 'NOTE_REQUIRED')
 
   await prisma.accountReview.upsert({
-    where:  { companyId_year_accountNumber: { companyId, year, accountNumber } },
-    update: { status: 'ANOMALY', reviewedBy, reviewedAt: new Date(), anomalyNote, anomalyResolvedAt: null, resolutionNote: null, cycle },
-    create: { companyId, year, accountNumber, cycle, status: 'ANOMALY', reviewedBy, reviewedAt: new Date(), anomalyNote },
+    where:  { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber } },
+    update: { status: 'ANOMALY', reviewedBy, reviewedAt: new Date(), anomalyNote, isAnomaly: true, cycle },
+    create: { companyId, fiscalYearId, accountNumber, cycle, status: 'ANOMALY', reviewedBy, reviewedAt: new Date(), anomalyNote, isAnomaly: true },
   })
 }
 
 export async function resolveAnomaly(
-  companyId: string, year: number, accountNumber: string, reviewedBy: string, resolutionNote: string,
+  companyId: string, fiscalYearId: string, accountNumber: string, reviewedBy: string, resolutionNote: string,
 ): Promise<void> {
   if (!resolutionNote.trim()) throw new AppError('La note de résolution est obligatoire', 400, 'NOTE_REQUIRED')
 
   const existing = await prisma.accountReview.findUnique({
-    where: { companyId_year_accountNumber: { companyId, year, accountNumber } },
+    where: { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber } },
   })
   if (!existing || existing.status !== 'ANOMALY') {
     throw new AppError('Compte non marqué en anomalie', 400, 'NOT_ANOMALY')
   }
 
   await prisma.accountReview.update({
-    where: { companyId_year_accountNumber: { companyId, year, accountNumber } },
-    data:  { status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), anomalyResolvedAt: new Date(), resolutionNote },
+    where: { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber } },
+    data:  { status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), isAnomaly: false, note: resolutionNote },
   })
 }
 
-export async function markAllReviewed(companyId: string, year: number, reviewedBy: string): Promise<void> {
+export async function markAllReviewed(companyId: string, fiscalYearId: string, reviewedBy: string): Promise<void> {
   const now = new Date()
   const allAccounts = CYCLES.flatMap(c => c.isNA ? [] : c.accounts.map(a => ({ ...a, cycle: c.id })))
 
   await Promise.all(allAccounts.map(a =>
     prisma.accountReview.upsert({
-      where:  { companyId_year_accountNumber: { companyId, year, accountNumber: a.number } },
+      where:  { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber: a.number } },
       update: { status: 'REVIEWED', reviewedBy, reviewedAt: now },
-      create: { companyId, year, accountNumber: a.number, cycle: a.cycle, status: 'REVIEWED', reviewedBy, reviewedAt: now },
+      create: { companyId, fiscalYearId, accountNumber: a.number, cycle: a.cycle, status: 'REVIEWED', reviewedBy, reviewedAt: now },
     }),
   ))
 }

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-const ExpenseCategory = z.enum(['SOFTWARE', 'TRAVEL', 'EQUIPMENT', 'MARKETING', 'CONSULTING', 'SALARY', 'RENT', 'OTHER'])
+const ExpenseCategory = z.enum(['LOYER', 'LOGICIELS', 'TRANSPORT', 'MARKETING', 'FOURNITURES', 'SALAIRES', 'AUTRES'])
 
 export const CreateExpenseDto = z.object({
   category: ExpenseCategory,

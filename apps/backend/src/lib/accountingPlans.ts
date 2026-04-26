@@ -1,10 +1,10 @@
-import type { AccountingZone, ChartAccountType } from '@prisma/client'
+import type { AccountingZone, AccountPlanType } from '@prisma/client'
 
 export interface PlanEntry {
   numero: string
   intitule: string
   classe: number
-  type: ChartAccountType
+  type: AccountPlanType
 }
 
 // ── PCG France ────────────────────────────────────────────────────────────────

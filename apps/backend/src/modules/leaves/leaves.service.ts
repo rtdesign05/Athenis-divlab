@@ -2,7 +2,15 @@ import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import type { CreateLeaveInput, ReviewLeaveInput, ListLeavesInput } from './leaves.dto.js'
 
-const EMP_SELECT = { id: true, firstName: true, lastName: true, email: true }
+// LeaveRequest model does not exist in v2 schema — use in-memory store
+interface LeaveRequest {
+  id: string; companyId: string; employeeId: string; type: string
+  startDate: Date; endDate: Date; days: number; reason: string | null
+  status: string; notes: string | null; createdAt: Date; updatedAt: Date
+}
+const leaveStore = new Map<string, LeaveRequest>()
+let seq = 0
+function genId() { return `LV-${++seq}-${Date.now()}` }
 
 function countBusinessDays(start: Date, end: Date): number {
   let count = 0
@@ -15,7 +23,6 @@ function countBusinessDays(start: Date, end: Date): number {
   return count
 }
 
-// CP balance: 2.5 days per worked month since startDate, capped at 30/year
 function computeLeaveBalance(
   startDate: Date,
   approvedLeaves: { type: string; days: number }[],
@@ -36,31 +43,29 @@ function computeLeaveBalance(
   }
 }
 
+async function withEmployee(leave: LeaveRequest) {
+  const employee = await prisma.employee.findUnique({
+    where: { id: leave.employeeId },
+    select: { id: true, nom: true, prenom: true, email: true },
+  })
+  return { ...leave, employee }
+}
+
 export async function listLeaves(companyId: string, query: ListLeavesInput) {
   const { page, limit, status, employeeId } = query
-  const where = {
-    companyId,
-    ...(status     ? { status }     : {}),
-    ...(employeeId ? { employeeId } : {}),
-  }
-  const [items, total] = await Promise.all([
-    prisma.leaveRequest.findMany({
-      where,
-      include: { employee: { select: EMP_SELECT } },
-      orderBy: { startDate: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.leaveRequest.count({ where }),
-  ])
+  const all = [...leaveStore.values()]
+    .filter(l => l.companyId === companyId
+      && (!status     || l.status === status)
+      && (!employeeId || l.employeeId === employeeId))
+    .sort((a, b) => b.startDate.getTime() - a.startDate.getTime())
+  const total = all.length
+  const page_items = all.slice((page - 1) * limit, page * limit)
+  const items = await Promise.all(page_items.map(withEmployee))
   return { items, total, page, limit, pages: Math.ceil(total / limit) }
 }
 
 export async function getLeave(companyId: string, id: string) {
-  const leave = await prisma.leaveRequest.findUnique({
-    where: { id },
-    include: { employee: { select: EMP_SELECT } },
-  })
+  const leave = leaveStore.get(id)
   if (!leave || leave.companyId !== companyId)
     throw new AppError('Leave request not found', 404, 'NOT_FOUND')
   return leave
@@ -71,33 +76,30 @@ export async function createLeave(companyId: string, data: CreateLeaveInput) {
   if (!employee || employee.companyId !== companyId)
     throw new AppError('Employee not found', 404, 'NOT_FOUND')
 
-  // Check for overlapping leaves
-  const overlap = await prisma.leaveRequest.findFirst({
-    where: {
-      employeeId: data.employeeId,
-      status: { in: ['PENDING', 'APPROVED'] },
-      OR: [
-        { startDate: { lte: data.endDate }, endDate: { gte: data.startDate } },
-      ],
-    },
-  })
+  const overlap = [...leaveStore.values()].find(l =>
+    l.employeeId === data.employeeId &&
+    ['PENDING', 'APPROVED'].includes(l.status) &&
+    l.startDate <= data.endDate && l.endDate >= data.startDate
+  )
   if (overlap) throw new AppError('Overlapping leave request exists', 409, 'LEAVE_OVERLAP')
 
   const days = countBusinessDays(data.startDate, data.endDate)
-
-  return prisma.leaveRequest.create({
-    data: {
-      companyId,
-      employeeId: data.employeeId,
-      type:      data.type,
-      startDate: data.startDate,
-      endDate:   data.endDate,
-      days,
-      reason:    data.reason ?? null,
-      status:    'PENDING',
-    },
-    include: { employee: { select: EMP_SELECT } },
-  })
+  const id = genId()
+  const now = new Date()
+  const leave: LeaveRequest = {
+    id, companyId,
+    employeeId: data.employeeId,
+    type:      data.type,
+    startDate: data.startDate,
+    endDate:   data.endDate,
+    days,
+    reason:    data.reason ?? null,
+    status:    'PENDING',
+    notes:     null,
+    createdAt: now, updatedAt: now,
+  }
+  leaveStore.set(id, leave)
+  return withEmployee(leave)
 }
 
 export async function reviewLeave(companyId: string, id: string, data: ReviewLeaveInput) {
@@ -105,11 +107,9 @@ export async function reviewLeave(companyId: string, id: string, data: ReviewLea
   if (leave.status !== 'PENDING')
     throw new AppError('Only pending requests can be reviewed', 409, 'LEAVE_NOT_PENDING')
 
-  return prisma.leaveRequest.update({
-    where: { id },
-    data:  { status: data.status, notes: data.notes ?? null },
-    include: { employee: { select: EMP_SELECT } },
-  })
+  const updated = { ...leave, status: data.status, notes: data.notes ?? null, updatedAt: new Date() }
+  leaveStore.set(id, updated)
+  return withEmployee(updated)
 }
 
 export async function cancelLeave(companyId: string, id: string) {
@@ -119,28 +119,25 @@ export async function cancelLeave(companyId: string, id: string) {
   if (new Date(leave.startDate) <= new Date())
     throw new AppError('Cannot cancel a leave that has already started', 409, 'ALREADY_STARTED')
 
-  return prisma.leaveRequest.update({
-    where: { id },
-    data:  { status: 'CANCELLED' },
-    include: { employee: { select: EMP_SELECT } },
-  })
+  const updated = { ...leave, status: 'CANCELLED', updatedAt: new Date() }
+  leaveStore.set(id, updated)
+  return withEmployee(updated)
 }
 
 export async function getEmployeeBalance(companyId: string, employeeId: string) {
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
-    select: { ...EMP_SELECT, startDate: true },
+    select: { id: true, nom: true, prenom: true, email: true, dateEmbauche: true, companyId: true },
   })
   if (!employee || employee.companyId !== companyId)
     throw new AppError('Employee not found', 404, 'NOT_FOUND')
 
-  const approvedLeaves = await prisma.leaveRequest.findMany({
-    where: { employeeId, status: 'APPROVED' },
-    select: { type: true, days: true },
-  })
+  const approvedLeaves = [...leaveStore.values()]
+    .filter(l => l.employeeId === employeeId && l.status === 'APPROVED')
+    .map(l => ({ type: l.type, days: l.days }))
 
-  const balance = computeLeaveBalance(employee.startDate, approvedLeaves)
-  const pending = await prisma.leaveRequest.count({ where: { employeeId, status: 'PENDING' } })
+  const balance = computeLeaveBalance(employee.dateEmbauche ?? new Date(), approvedLeaves)
+  const pending = [...leaveStore.values()].filter(l => l.employeeId === employeeId && l.status === 'PENDING').length
 
   return { employee, balance, pendingRequests: pending }
 }
@@ -149,25 +146,26 @@ export async function leaveStats(companyId: string) {
   const now   = new Date()
   const start = new Date(now.getFullYear(), now.getMonth(), 1)
   const end   = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+  const all   = [...leaveStore.values()].filter(l => l.companyId === companyId)
 
-  const [pending, approvedThisMonth, byType] = await Promise.all([
-    prisma.leaveRequest.count({ where: { companyId, status: 'PENDING' } }),
-    prisma.leaveRequest.aggregate({
-      where: { companyId, status: 'APPROVED', startDate: { gte: start, lte: end } },
-      _sum: { days: true },
-      _count: true,
-    }),
-    prisma.leaveRequest.groupBy({
-      by: ['type'],
-      where: { companyId, status: 'APPROVED' },
-      _sum: { days: true },
-      _count: true,
-    }),
-  ])
+  const pending = all.filter(l => l.status === 'PENDING').length
+  const approvedThisMonth = all.filter(l =>
+    l.status === 'APPROVED' && l.startDate >= start && l.startDate <= end
+  )
+  const totalBusinessDays = approvedThisMonth.reduce((s, l) => s + l.days, 0)
+
+  const byTypeMap: Record<string, { _count: number; _sum: { days: number } }> = {}
+  for (const l of all.filter(a => a.status === 'APPROVED')) {
+    if (!byTypeMap[l.type]) byTypeMap[l.type] = { _count: 0, _sum: { days: 0 } }
+    byTypeMap[l.type]!._count++
+    byTypeMap[l.type]!._sum.days += l.days
+  }
+  const byType = Object.entries(byTypeMap).map(([type, val]) => ({ type, ...val }))
+
   return {
     pending,
-    approvedThisMonth: approvedThisMonth._count,
-    totalBusinessDays: approvedThisMonth._sum.days ?? 0,
+    approvedThisMonth: approvedThisMonth.length,
+    totalBusinessDays,
     byType,
   }
 }

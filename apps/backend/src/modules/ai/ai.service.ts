@@ -3,6 +3,15 @@ import { prisma } from '../../lib/prisma.js'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+// In-memory conversation store (aiConversation/aiMessage models don't exist in v2 schema)
+interface Message { role: 'user' | 'assistant'; content: string; createdAt: Date }
+interface Conversation { id: string; companyId: string; title: string; messages: Message[]; createdAt: Date; updatedAt: Date }
+const conversationStore = new Map<string, Conversation>()
+
+function genId(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
 // ── Company context builder ───────────────────────────────────────────────────
 async function buildContext(companyId: string): Promise<string> {
   const now   = new Date()
@@ -11,62 +20,37 @@ async function buildContext(companyId: string): Promise<string> {
   const start = new Date(y, m, 1)
   const end   = new Date(y, m + 1, 0)
 
-  const [company, invoices, overdueInvoices, pendingLeaves, openAlerts, employees, esgData] =
+  const [company, invoices, overdueInvoices, employees] =
     await Promise.all([
-      prisma.company.findUnique({ where: { id: companyId }, select: { name: true, secteur: true, taille: true } }),
+      prisma.company.findUnique({ where: { id: companyId }, select: { nom: true, secteur: true, taille: true } }),
       prisma.invoice.aggregate({
-        where: { companyId, issueDate: { gte: start, lte: end }, status: { not: 'CANCELLED' } },
-        _sum: { total: true }, _count: true,
+        where: { companyId, issuedAt: { gte: start, lte: end }, status: { not: 'CANCELLED' } },
+        _sum: { amountTTC: true }, _count: true,
       }),
       prisma.invoice.findMany({
         where: { companyId, status: 'OVERDUE' },
-        select: { number: true, total: true, dueDate: true },
-        orderBy: { dueDate: 'asc' }, take: 5,
+        select: { reference: true, amountTTC: true, dueAt: true },
+        orderBy: { dueAt: 'asc' }, take: 5,
       }),
-      prisma.leaveRequest.count({ where: { companyId, status: 'PENDING' } }),
-      prisma.legalAlert.findMany({
-        where: { companyId, status: 'OPEN' },
-        select: { title: true, severity: true },
-        orderBy: { severity: 'desc' }, take: 5,
-      }),
-      prisma.employee.count({ where: { companyId, endDate: null } }),
-      prisma.eSGData.findFirst({ where: { companyId }, orderBy: { year: 'desc' }, select: { year: true, scope1Total: true, scope2Total: true, scope3Total: true } }),
+      prisma.employee.count({ where: { companyId, dateFinContrat: null } }),
     ])
 
-  const caMonth  = Number(invoices._sum.total ?? 0)
+  const caMonth  = Number(invoices._sum?.amountTTC ?? 0)
   const overdueTxt = overdueInvoices.length
-    ? overdueInvoices.map((i: { number: string; total: unknown; dueDate: Date }) =>
-        `  • ${i.number} — ${Number(i.total).toFixed(2)} € (échue le ${new Date(i.dueDate).toLocaleDateString('fr-FR')})`).join('\n')
+    ? overdueInvoices.map((i) =>
+        `  • ${i.reference} — ${Number(i.amountTTC).toFixed(2)} (échue le ${i.dueAt ? new Date(i.dueAt).toLocaleDateString('fr-FR') : 'N/A'})`).join('\n')
     : '  Aucune facture en retard'
-
-  const alertsTxt = openAlerts.length
-    ? openAlerts.map((a: { severity: string; title: string }) => `  • [${a.severity}] ${a.title}`).join('\n')
-    : '  Aucune alerte ouverte'
-
-  const co2 = esgData
-    ? `${(Number(esgData.scope1Total ?? 0) + Number(esgData.scope2Total ?? 0) + Number(esgData.scope3Total ?? 0)).toFixed(1)} tCO2e (${esgData.year})`
-    : 'Non renseigné'
 
   return `
 === CONTEXTE ENTREPRISE ===
-Nom : ${company?.name ?? 'N/A'}
+Nom : ${company?.nom ?? 'N/A'}
 Secteur : ${company?.secteur ?? 'N/A'} | Taille : ${company?.taille ?? 'N/A'}
 Employés actifs : ${employees}
 
 === GESTION / FACTURATION ===
-CA mois en cours (${now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}) : ${caMonth.toFixed(2)} € (${invoices._count} factures)
+CA mois en cours (${now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}) : ${caMonth.toFixed(2)} (${invoices._count} factures)
 Factures en retard (${overdueInvoices.length}) :
 ${overdueTxt}
-
-=== RH ===
-Demandes de congés en attente : ${pendingLeaves}
-
-=== JURIDIQUE ===
-Alertes juridiques ouvertes (${openAlerts.length}) :
-${alertsTxt}
-
-=== ESG ===
-Empreinte carbone totale : ${co2}
 ===========================`
 }
 
@@ -87,30 +71,29 @@ Règles :
 ${context}`
 }
 
-// ── Conversation CRUD ─────────────────────────────────────────────────────────
+// ── Conversation CRUD (in-memory) ─────────────────────────────────────────────
 export async function listConversations(companyId: string) {
-  return prisma.aiConversation.findMany({
-    where: { companyId },
-    select: {
-      id: true, title: true, createdAt: true, updatedAt: true,
-      _count: { select: { messages: true } },
-    },
-    orderBy: { updatedAt: 'desc' },
-    take: 20,
-  })
+  const convs = [...conversationStore.values()]
+    .filter(c => c.companyId === companyId)
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+    .slice(0, 20)
+  return convs.map(c => ({
+    id: c.id, title: c.title, createdAt: c.createdAt, updatedAt: c.updatedAt,
+    _count: { messages: c.messages.length },
+  }))
 }
 
 export async function getConversation(companyId: string, id: string) {
-  return prisma.aiConversation.findFirst({
-    where: { id, companyId },
-    include: { messages: { orderBy: { createdAt: 'asc' } } },
-  })
+  const conv = conversationStore.get(id)
+  if (!conv || conv.companyId !== companyId) return null
+  return conv
 }
 
 export async function deleteConversation(companyId: string, id: string) {
-  const existing = await prisma.aiConversation.findFirst({ where: { id, companyId } })
-  if (!existing) return null
-  return prisma.aiConversation.delete({ where: { id } })
+  const conv = conversationStore.get(id)
+  if (!conv || conv.companyId !== companyId) return null
+  conversationStore.delete(id)
+  return conv
 }
 
 // ── Chat (streaming) ──────────────────────────────────────────────────────────
@@ -121,30 +104,28 @@ export async function streamChat(
   onToken: (token: string) => void,
 ): Promise<{ conversationId: string; inputTokens: number; outputTokens: number }> {
   // Get or create conversation
-  let conv = conversationId
-    ? await prisma.aiConversation.findFirst({ where: { id: conversationId, companyId }, include: { messages: { orderBy: { createdAt: 'asc' }, take: 20 } } })
-    : null
-
-  if (!conv) {
-    conv = await prisma.aiConversation.create({
-      data: {
-        companyId,
-        title: userMessage.slice(0, 60) + (userMessage.length > 60 ? '…' : ''),
-      },
-      include: { messages: true },
-    })
+  let conv: Conversation | undefined = conversationId ? conversationStore.get(conversationId) : undefined
+  if (!conv || conv.companyId !== companyId) {
+    conv = {
+      id:        genId(),
+      companyId,
+      title:     userMessage.slice(0, 60) + (userMessage.length > 60 ? '…' : ''),
+      messages:  [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+    conversationStore.set(conv.id, conv)
   }
 
   // Build message history for API
-  const history = (conv.messages ?? []).map((m: { role: string; content: string }) => ({
-    role: m.role as 'user' | 'assistant',
+  const history = conv.messages.slice(-20).map((m) => ({
+    role:    m.role as 'user' | 'assistant',
     content: m.content,
   }))
 
   // Save user message
-  await prisma.aiMessage.create({
-    data: { conversationId: conv.id, role: 'user', content: userMessage },
-  })
+  conv.messages.push({ role: 'user', content: userMessage, createdAt: new Date() })
+  conv.updatedAt = new Date()
 
   // Build context and system prompt
   const context = await buildContext(companyId)
@@ -179,23 +160,8 @@ export async function streamChat(
   }
 
   // Save assistant response
-  await prisma.aiMessage.create({
-    data: {
-      conversationId: conv.id,
-      role:         'assistant',
-      content:      fullResponse,
-      inputTokens,
-      outputTokens,
-    },
-  })
-
-  // Update conversation title from first exchange if still default
-  if (conv.title === 'Nouvelle conversation' || (conv.messages ?? []).length === 0) {
-    await prisma.aiConversation.update({
-      where: { id: conv.id },
-      data:  { title: userMessage.slice(0, 60) + (userMessage.length > 60 ? '…' : '') },
-    })
-  }
+  conv.messages.push({ role: 'assistant', content: fullResponse, createdAt: new Date() })
+  conv.updatedAt = new Date()
 
   return { conversationId: conv.id, inputTokens, outputTokens }
 }

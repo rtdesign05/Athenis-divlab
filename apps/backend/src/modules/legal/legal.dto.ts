@@ -2,16 +2,10 @@ import { z } from 'zod'
 
 // ── Contracts ─────────────────────────────────────────────────────────────────
 
-const PartySchema = z.object({
-  name:  z.string().min(1),
-  email: z.string().email(),
-  role:  z.string().optional(),
-})
-
 export const CreateContractDto = z.object({
   title:     z.string().min(1),
-  type:      z.enum(['EMPLOYMENT','SERVICE','NDA','PARTNERSHIP','LEASE','SUPPLIER','CLIENT','OTHER']),
-  parties:   z.array(PartySchema).min(1),
+  type:      z.enum(['PRESTATION','CDI','CDD','BAIL','NDA','CGV','CGU','STATUTS','AUTRE']),
+  parties:   z.array(z.string()).min(1),
   content:   z.string().optional(),
   fileUrl:   z.string().url().optional(),
   expiresAt: z.coerce.date().optional(),
@@ -20,8 +14,8 @@ export const CreateContractDto = z.object({
 
 export const UpdateContractDto = z.object({
   title:        z.string().min(1).optional(),
-  status:       z.enum(['DRAFT','PENDING_SIGNATURE','SIGNED','EXPIRED','TERMINATED']).optional(),
-  parties:      z.array(PartySchema).optional(),
+  status:       z.enum(['DRAFT','SENT','SIGNED','EXPIRED','CANCELLED']).optional(),
+  parties:      z.array(z.string()).optional(),
   content:      z.string().optional(),
   fileUrl:      z.string().url().optional(),
   expiresAt:    z.coerce.date().optional(),
@@ -30,8 +24,8 @@ export const UpdateContractDto = z.object({
 })
 
 export const ListContractsDto = z.object({
-  type:   z.enum(['EMPLOYMENT','SERVICE','NDA','PARTNERSHIP','LEASE','SUPPLIER','CLIENT','OTHER']).optional(),
-  status: z.enum(['DRAFT','PENDING_SIGNATURE','SIGNED','EXPIRED','TERMINATED']).optional(),
+  type:   z.enum(['PRESTATION','CDI','CDD','BAIL','NDA','CGV','CGU','STATUTS','AUTRE']).optional(),
+  status: z.enum(['DRAFT','SENT','SIGNED','EXPIRED','CANCELLED']).optional(),
 })
 
 export const SendSignatureDto = z.object({

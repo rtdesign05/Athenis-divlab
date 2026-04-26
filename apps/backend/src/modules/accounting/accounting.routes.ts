@@ -413,6 +413,12 @@ accountingRouter.get(
 
 // ── Révision comptable ────────────────────────────────────────────────────────
 
+async function getFiscalYearId(companyId: string, year: number): Promise<string> {
+  const fy = await prisma.fiscalYear.findFirst({ where: { companyId, year }, select: { id: true } })
+  if (!fy) throw new AppError(`Exercice fiscal ${year} introuvable`, 404, 'NOT_FOUND')
+  return fy.id
+}
+
 const RevisionQuery = z.object({ year: z.coerce.number().int().min(2000).max(2100).default(new Date().getFullYear()) })
 const ReviewBody    = z.object({ year: z.coerce.number().int(), note: z.string().optional() })
 const AnomalyBody   = z.object({ year: z.coerce.number().int(), anomalyNote: z.string().min(1) })
@@ -426,7 +432,8 @@ accountingRouter.get(
   async (req, res, next) => {
     try {
       const year = Number(req.query['year'])
-      const data = await rev.getCyclesWithAccounts(getCompanyId(req), year)
+      const fiscalYearId = await getFiscalYearId(getCompanyId(req), year)
+      const data = await rev.getCyclesWithAccounts(getCompanyId(req), fiscalYearId)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -439,7 +446,8 @@ accountingRouter.get(
   async (req, res, next) => {
     try {
       const year = Number(req.query['year'])
-      const data = await rev.getRevisionProgress(getCompanyId(req), year)
+      const fiscalYearId = await getFiscalYearId(getCompanyId(req), year)
+      const data = await rev.getRevisionProgress(getCompanyId(req), fiscalYearId)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -453,9 +461,10 @@ accountingRouter.post(
     try {
       const { accountNumber } = req.params as { accountNumber: string }
       const { year, note } = req.body as { year: number; note?: string }
-      const cycles = await rev.getCyclesWithAccounts(getCompanyId(req), year)
+      const fiscalYearId = await getFiscalYearId(getCompanyId(req), year)
+      const cycles = await rev.getCyclesWithAccounts(getCompanyId(req), fiscalYearId)
       const cycleId = cycles.find(c => c.accounts.some(a => a.number === accountNumber))?.id ?? 0
-      await rev.reviewAccount(getCompanyId(req), year, accountNumber, cycleId, req.user?.email ?? 'unknown', note)
+      await rev.reviewAccount(getCompanyId(req), fiscalYearId, accountNumber, cycleId, req.user?.email ?? 'unknown', note)
       res.json({ success: true })
     } catch (e) { next(e) }
   },
@@ -469,7 +478,8 @@ accountingRouter.delete(
     try {
       const { accountNumber } = req.params as { accountNumber: string }
       const { year } = req.body as { year: number }
-      await rev.unreviewAccount(getCompanyId(req), year, accountNumber)
+      const fiscalYearId = await getFiscalYearId(getCompanyId(req), year)
+      await rev.unreviewAccount(getCompanyId(req), fiscalYearId, accountNumber)
       res.json({ success: true })
     } catch (e) { next(e) }
   },
@@ -483,9 +493,10 @@ accountingRouter.post(
     try {
       const { accountNumber } = req.params as { accountNumber: string }
       const { year, anomalyNote } = req.body as { year: number; anomalyNote: string }
-      const cycles = await rev.getCyclesWithAccounts(getCompanyId(req), year)
+      const fiscalYearId = await getFiscalYearId(getCompanyId(req), year)
+      const cycles = await rev.getCyclesWithAccounts(getCompanyId(req), fiscalYearId)
       const cycleId = cycles.find(c => c.accounts.some(a => a.number === accountNumber))?.id ?? 0
-      await rev.markAnomaly(getCompanyId(req), year, accountNumber, cycleId, req.user?.email ?? 'unknown', anomalyNote)
+      await rev.markAnomaly(getCompanyId(req), fiscalYearId, accountNumber, cycleId, req.user?.email ?? 'unknown', anomalyNote)
       res.json({ success: true })
     } catch (e) { next(e) }
   },
@@ -499,7 +510,8 @@ accountingRouter.post(
     try {
       const { accountNumber } = req.params as { accountNumber: string }
       const { year, resolutionNote } = req.body as { year: number; resolutionNote: string }
-      await rev.resolveAnomaly(getCompanyId(req), year, accountNumber, req.user?.email ?? 'unknown', resolutionNote)
+      const fiscalYearId = await getFiscalYearId(getCompanyId(req), year)
+      await rev.resolveAnomaly(getCompanyId(req), fiscalYearId, accountNumber, req.user?.email ?? 'unknown', resolutionNote)
       res.json({ success: true })
     } catch (e) { next(e) }
   },
@@ -512,7 +524,8 @@ accountingRouter.post(
   async (req, res, next) => {
     try {
       const { year } = req.body as { year: number }
-      await rev.markAllReviewed(getCompanyId(req), year, req.user?.email ?? 'unknown')
+      const fiscalYearId = await getFiscalYearId(getCompanyId(req), year)
+      await rev.markAllReviewed(getCompanyId(req), fiscalYearId, req.user?.email ?? 'unknown')
       res.json({ success: true })
     } catch (e) { next(e) }
   },
@@ -586,13 +599,10 @@ accountingRouter.get(
   async (req, res, next) => {
     try {
       const { category, status } = req.query as { category?: string; status?: string }
-      const data = await assSvc.listAssets(
-        getCompanyId(req),
-        {
-          category: category as Parameters<typeof assSvc.listAssets>[1]['category'],
-          status:   status   as Parameters<typeof assSvc.listAssets>[1]['status'],
-        },
-      )
+      const filter: { category?: import('@prisma/client').AssetCategory; status?: import('@prisma/client').AssetStatus } = {}
+      if (category) filter.category = category as import('@prisma/client').AssetCategory
+      if (status)   filter.status   = status   as import('@prisma/client').AssetStatus
+      const data = await assSvc.listAssets(getCompanyId(req), filter)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },

@@ -13,7 +13,7 @@ fiscalRouter.use(authenticate)
 
 const YearQuery   = z.object({ year:  z.coerce.number().int().min(2000).max(2100).default(new Date().getFullYear()) })
 const MonthQuery  = z.object({ year:  z.coerce.number().int().min(2000).max(2100).default(new Date().getFullYear()), month: z.coerce.number().int().min(1).max(12).default(new Date().getMonth() + 1) })
-const YearParams  = z.object({ year:  z.coerce.number().int().min(2000).max(2100) })
+// const YearParams = z.object({ year:  z.coerce.number().int().min(2000).max(2100) }) // unused
 const MonthParams = z.object({ year:  z.coerce.number().int().min(2000).max(2100), month: z.coerce.number().int().min(1).max(12) })
 
 const TaxConfigBody = z.object({
@@ -276,7 +276,7 @@ fiscalRouter.post(
 fiscalRouter.get(
   '/igs-bareme',
   checkModule('fiscalite', 'read'),
-  async (req, res, next) => {
+  async (_req, res, next) => {
     try {
       const data = await regime.getIgsBareme()
       res.json({ success: true, data })

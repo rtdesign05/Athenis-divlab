@@ -7,7 +7,51 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ── Enums ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────
+// UTILISATEURS
+// ─────────────────────────────────────────
+
+model User {
+  id             String       @id @default(cuid())
+  atheisNumber   String?      @unique @map("athenis_number")
+
+  // Identité
+  nom            String
+  prenom         String?
+  email          String       @unique
+  passwordHash   String       @map("password_hash")
+  telephone      String?
+  avatarUrl      String?      @map("avatar_url")
+
+  // Auth
+  twoFASecret    String?      @map("two_fa_secret")
+  twoFAEnabled   Boolean      @default(false) @map("two_fa_enabled")
+  failedAttempts Int          @default(0) @map("failed_attempts")
+  lockedUntil    DateTime?    @map("locked_until")
+  lastLoginAt    DateTime?    @map("last_login_at")
+  isActive       Boolean      @default(true) @map("is_active")
+
+  // Type de compte
+  accountType    AccountType  @map("account_type")
+
+  // Rôle global sur la plateforme
+  platformRole   PlatformRole @default(USER) @map("platform_role")
+
+  // Lien selon le type (un seul sera non-null)
+  personalProfile PersonalProfile?
+  companyMember   CompanyMember?
+  cabinetMember   CabinetMember?
+
+  // Tokens & logs
+  refreshTokens  RefreshToken[]
+  auditLogs      AuditLog[]
+
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@index([accountType])
+  @@map("users")
+}
 
 enum AccountType {
   PERSONAL
@@ -15,19 +59,192 @@ enum AccountType {
   CABINET
 }
 
-enum Role {
-  ADMIN
-  COMPTABLE
-  READONLY
-  RH
-  JURIDIQUE
+enum PlatformRole {
+  SUPER_ADMIN
+  USER
 }
 
-enum Plan {
-  FREE
-  STARTER
-  PRO
-  PREMIUM
+model RefreshToken {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────
+// COMPTEUR NUMÉROS ATHENIS
+// ─────────────────────────────────────────
+
+model AtheisCounter {
+  id         String      @id @default(cuid())
+  type       AccountType @unique
+  lastNumber Int         @default(0) @map("last_number")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  @@map("athenis_counters")
+}
+
+// ─────────────────────────────────────────
+// PROFIL PERSONNEL
+// ─────────────────────────────────────────
+
+model PersonalProfile {
+  id        String    @id @default(cuid())
+  userId    String    @unique @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  revenus    PersonalRevenu[]
+  depenses   PersonalDepense[]
+  comptesBanc PersonalCompte[]
+  objectifs  PersonalObjectif[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("personal_profiles")
+}
+
+model PersonalRevenu {
+  id        String          @id @default(cuid())
+  profileId String          @map("profile_id")
+  profile   PersonalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  libelle   String
+  montant   Decimal         @db.Decimal(15, 2)
+  categorie String
+  date      DateTime
+  recurrent Boolean         @default(false)
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@index([profileId])
+  @@map("personal_revenus")
+}
+
+model PersonalDepense {
+  id        String          @id @default(cuid())
+  profileId String          @map("profile_id")
+  profile   PersonalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  libelle   String
+  montant   Decimal         @db.Decimal(15, 2)
+  categorie String
+  date      DateTime
+  recurrent Boolean         @default(false)
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@index([profileId])
+  @@map("personal_depenses")
+}
+
+model PersonalCompte {
+  id        String          @id @default(cuid())
+  profileId String          @map("profile_id")
+  profile   PersonalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  nom       String
+  type      String
+  solde     Decimal         @db.Decimal(15, 2) @default(0)
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@index([profileId])
+  @@map("personal_comptes")
+}
+
+model PersonalObjectif {
+  id            String          @id @default(cuid())
+  profileId     String          @map("profile_id")
+  profile       PersonalProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  nom           String
+  montantCible  Decimal         @db.Decimal(15, 2) @map("montant_cible")
+  montantActuel Decimal         @db.Decimal(15, 2) @default(0) @map("montant_actuel")
+  dateEcheance  DateTime?       @map("date_echeance")
+  createdAt     DateTime        @default(now()) @map("created_at")
+
+  @@index([profileId])
+  @@map("personal_objectifs")
+}
+
+// ─────────────────────────────────────────
+// ENTREPRISE
+// ─────────────────────────────────────────
+
+model Company {
+  id             String         @id @default(cuid())
+  atheisNumber   String?        @unique @map("athenis_number")
+
+  // Identité légale
+  nom            String
+  nomCommercial  String?        @map("nom_commercial")
+  formeJuridique String?        @map("forme_juridique")
+  siren          String?
+  siret          String?
+  rccm           String?
+  niu            String?
+  capital        Decimal?       @db.Decimal(15, 2)
+  secteur        String?
+  taille         CompanySize    @default(PME)
+  logoUrl        String?        @map("logo_url")
+
+  // Localisation
+  adresse        String?
+  ville          String?
+  codePostal     String?        @map("code_postal")
+  pays           String         @default("CM")
+  telephone      String?
+  email          String?
+  siteWeb        String?        @map("site_web")
+
+  // Configuration comptable & locale
+  currency       String         @default("XAF")
+  currencySymbol String         @default("F CFA") @map("currency_symbol")
+  accountingZone AccountingZone @default(OHADA) @map("accounting_zone")
+  accountingPlan String         @default("SYSCOHADA") @map("accounting_plan")
+  locale         String         @default("fr-CM")
+  timezone       String         @default("Africa/Douala")
+  vatRate        Decimal        @db.Decimal(5, 4) @default(0.1925) @map("vat_rate")
+  fiscalYearStart Int           @default(1) @map("fiscal_year_start")
+
+  // Plan et abonnement
+  plan           Plan           @default(FREE)
+  planExpiresAt  DateTime?      @map("plan_expires_at")
+
+  // Modules activés
+  modules        String[]       @default(["gestion"])
+
+  // Cabinet gestionnaire (optionnel)
+  cabinetId      String?        @map("cabinet_id")
+  cabinet        Cabinet?       @relation(fields: [cabinetId], references: [id])
+
+  // Relations
+  agences        Agence[]
+  members        CompanyMember[]
+  mandats        Mandat[]
+  clients        Client[]
+  invoices       Invoice[]
+  expenses       Expense[]
+  employees      Employee[]
+  esgData        ESGData[]
+  assets         Asset[]
+  articles       Article[]
+  stockFamilies  StockFamily[]
+  fiscalYears    FiscalYear[]
+  journalEntries JournalEntry[]
+  accountPlans   AccountPlan[]
+  accountReviews AccountReview[]
+  taxDeclarations TaxDeclaration[]
+  taxConfig      TaxConfig?
+  contracts      Contract[]
+  attachments    Attachment[]
+
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@index([cabinetId])
+  @@map("companies")
 }
 
 enum CompanySize {
@@ -37,381 +254,222 @@ enum CompanySize {
   GE
 }
 
-enum MandatType {
-  COMPLET
-  COMPTABILITE
-  GESTION
-  DECLARATIONS
-}
-
 enum AccountingZone {
   FRANCE
   OHADA
   IFRS
 }
 
-enum ChartAccountType {
-  ACTIF
-  PASSIF
-  CHARGE
-  PRODUIT
+enum Plan {
+  FREE
+  STARTER
+  PRO
+  PREMIUM
 }
 
-enum InvoiceStatus {
-  DRAFT
-  SENT
-  PAID
-  OVERDUE
-  CANCELLED
+// ─────────────────────────────────────────
+// AGENCES
+// ─────────────────────────────────────────
+
+model Agence {
+  id        String   @id @default(cuid())
+  companyId String   @map("company_id")
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  code      String
+  nom       String
+  adresse   String?
+  ville     String?
+  telephone String?
+  email     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  isSiege   Boolean  @default(false) @map("is_siege")
+
+  members   AgenceMember[]
+  invoices  Invoice[]
+  expenses  Expense[]
+  caisses   Caisse[]
+  clients   Client[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@map("agences")
 }
 
-enum QuoteStatus {
-  DRAFT
-  SENT
-  ACCEPTED
-  REJECTED
-  CONVERTED
+model Caisse {
+  id        String   @id @default(cuid())
+  agenceId  String   @map("agence_id")
+  agence    Agence   @relation(fields: [agenceId], references: [id], onDelete: Cascade)
+  companyId String   @map("company_id")
+  nom       String
+  solde     Decimal  @db.Decimal(15, 2) @default(0)
+  devise    String   @default("XAF")
+  isActive  Boolean  @default(true) @map("is_active")
+
+  mouvements CaisseMouvement[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([agenceId])
+  @@index([companyId])
+  @@map("caisses")
 }
 
-enum RecurringFrequency {
-  MONTHLY
-  QUARTERLY
-  ANNUAL
+model CaisseMouvement {
+  id         String   @id @default(cuid())
+  caisseId   String   @map("caisse_id")
+  caisse     Caisse   @relation(fields: [caisseId], references: [id], onDelete: Cascade)
+  type       String   // ENTREE | SORTIE
+  montant    Decimal  @db.Decimal(15, 2)
+  libelle    String
+  reference  String?
+  soldeApres Decimal  @db.Decimal(15, 2) @map("solde_apres")
+  createdBy  String   @map("created_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([caisseId])
+  @@map("caisse_mouvements")
 }
 
-enum LeaveType {
-  CP
-  RTT
-  SICK
-  MATERNITY
-  UNPAID
+// ─────────────────────────────────────────
+// MEMBRES D'UNE ENTREPRISE
+// ─────────────────────────────────────────
+
+model CompanyMember {
+  id          String       @id @default(cuid())
+  userId      String       @unique @map("user_id")
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId   String       @map("company_id")
+  company     Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  role        CompanyRole  @default(READONLY)
+
+  // Permissions par module
+  // Ex: { "gestion": "write", "accounting": "read", "hr": "none" }
+  permissions Json         @default("{}")
+
+  status      MemberStatus @default(ACTIVE)
+  invitedBy   String?      @map("invited_by")
+  invitedAt   DateTime?    @map("invited_at")
+  joinedAt    DateTime?    @map("joined_at")
+
+  // Agences rattachées (vide = accès à toutes)
+  agences     AgenceMember[]
+
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@map("company_members")
 }
 
-enum LeaveStatus {
-  PENDING
-  APPROVED
-  REJECTED
-  CANCELLED
+model AgenceMember {
+  id              String        @id @default(cuid())
+  companyMemberId String        @map("company_member_id")
+  companyMember   CompanyMember @relation(fields: [companyMemberId], references: [id], onDelete: Cascade)
+  agenceId        String        @map("agence_id")
+  agence          Agence        @relation(fields: [agenceId], references: [id], onDelete: Cascade)
+
+  // true → l'utilisateur ne voit QUE cette agence
+  isRestricted    Boolean       @default(true) @map("is_restricted")
+
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  @@unique([companyMemberId, agenceId])
+  @@index([agenceId])
+  @@map("agence_members")
 }
 
-enum ReviewStatus {
-  DRAFT
-  SCHEDULED
-  COMPLETED
-  CANCELLED
+enum CompanyRole {
+  OWNER       // Propriétaire (1 seul par company)
+  ADMIN       // Administrateur complet
+  MANAGER     // Gestionnaire
+  ACCOUNTANT  // Comptable
+  HR          // Responsable RH
+  SALES       // Commercial
+  READONLY    // Lecture seule
+  CUSTOM      // Rôle personnalisé
 }
 
-enum BankTxType {
-  CREDIT
-  DEBIT
-}
-
-enum ReconciliationStatus {
-  UNMATCHED
-  MATCHED
-  IGNORED
-}
-
-enum ExpenseCategory {
-  TRAVEL
-  EQUIPMENT
-  SOFTWARE
-  SALARY
-  RENT
-  MARKETING
-  CONSULTING
-  OTHER
-}
-
-enum EmploymentType {
-  FULL_TIME
-  PART_TIME
-  CONTRACT
-  INTERN
-}
-
-enum ContractType {
-  EMPLOYMENT
-  SERVICE
-  NDA
-  PARTNERSHIP
-  LEASE
-  SUPPLIER
-  CLIENT
-  OTHER
-}
-
-enum ContractStatus {
-  DRAFT
-  PENDING_SIGNATURE
-  SIGNED
-  EXPIRED
-  TERMINATED
-}
-
-enum SignatureStatus {
-  PENDING
-  SIGNED
-  REFUSED
-}
-
-enum GdprLegalBasis {
-  CONSENT
-  CONTRACT
-  LEGAL_OBLIGATION
-  VITAL_INTEREST
-  PUBLIC_TASK
-  LEGITIMATE_INTEREST
-}
-
-enum GdprRiskLevel {
-  LOW
-  MEDIUM
-  HIGH
-}
-
-enum AlertSeverity {
-  INFO
-  WARNING
-  CRITICAL
-}
-
-enum AlertStatus {
-  OPEN
-  DISMISSED
-  RESOLVED
-}
-
-enum AuditAction {
-  LOGIN
-  LOGOUT
-  LOGIN_FAILED
-  TOTP_ENABLED
-  TOTP_DISABLED
-  TOTP_FAILED
-  PASSWORD_CHANGED
-  ACCOUNT_LOCKED
-  TOKEN_REFRESHED
-  TOKEN_REVOKED
-  USER_CREATED
-  USER_UPDATED
-  USER_DELETED
-  INVOICE_CREATED
-  INVOICE_UPDATED
-  INVOICE_DELETED
-  EXPENSE_CREATED
-  EXPENSE_UPDATED
-  CLIENT_CREATED
-  CLIENT_UPDATED
-  EMPLOYEE_CREATED
-  DATA_EXPORTED
-  CABINET_ACCESS
-  MANDAT_CREATED
-  MANDAT_REVOKED
-  COMPANY_INVITED
-}
-
-enum UserStatus {
+enum MemberStatus {
   ACTIVE
   INACTIVE
   SUSPENDED
   INVITED
 }
 
-enum FiscalYearStatus {
-  DRAFT
-  OPEN
-  LOCKED
-  CLOSED
+model Invitation {
+  id          String      @id @default(cuid())
+  companyId   String      @map("company_id")
+  email       String
+  role        CompanyRole @default(READONLY)
+  permissions Json        @default("{}")
+  agenceIds   String[]    @map("agence_ids")
+  token       String      @unique
+  expiresAt   DateTime    @map("expires_at")
+  acceptedAt  DateTime?   @map("accepted_at")
+  createdBy   String      @map("created_by")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  @@index([token])
+  @@index([companyId])
+  @@map("invitations")
 }
 
-enum TaxRegime {
-  IGS               // Impôt Général Synthétique (CA < 50M, libératoire)
-  REEL_NORMAL       // CA ≥ 50M ou profession libérale
-  REEL_SIMPLIFIE    // CA 10M–50M (option)
-  FORFAIT_BIENNAL   // Legacy (< 2025)
-  MICRO_ENTREPRISE  // Legacy
-  LIBERATOIRE       // Ancien régime (< 2025)
-}
-
-enum VatRegime {
-  MENSUEL
-  TRIMESTRIEL
-  NON_ASSUJETTI
-}
-
-enum IgsPayment {
-  ANNUEL
-  TRIMESTRIEL
-}
-
-enum TaxType {
-  TVA
-  IS
-  IS_ACOMPTE
-  PATENTE
-  RAS
-  CNPS
-  FDFP
-  DSF
-}
-
-enum TaxDeclStatus {
-  PENDING
-  DECLARED
-  PAID
-  LATE
-  EXEMPTED
-}
-
-// ── Cabinet ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────
+// CABINET COMPTABLE
+// ─────────────────────────────────────────
 
 model Cabinet {
-  id        String   @id @default(cuid())
-  name      String
-  siret     String?  @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id           String          @id @default(cuid())
+  atheisNumber String?         @unique @map("athenis_number")
 
-  users   User[]
-  clients Company[]
-  mandats Mandat[]
+  nom          String
+  siret        String?
+  rccm         String?
+  adresse      String?
+  ville        String?
+  pays         String          @default("CM")
+  telephone    String?
+  email        String?
+
+  plan         Plan            @default(PREMIUM)
+
+  members      CabinetMember[]
+  companies    Company[]
+  mandats      Mandat[]
+
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
 
   @@map("cabinets")
 }
 
-// ── Company ───────────────────────────────────────────────────────────────────
-
-model Company {
+model CabinetMember {
   id        String      @id @default(cuid())
-  name      String
-  siren     String?     @unique
-  secteur   String?
-  taille    CompanySize @default(PME)
-  plan           Plan           @default(FREE)
-  modules        String[]       @default([])
-  country        String         @default("FR")
-  currency       String         @default("EUR")
-  currencySymbol String         @default("€")          @map("currency_symbol")
-  accountingZone AccountingZone @default(FRANCE)       @map("accounting_zone")
-  accountingPlan String         @default("PCG")        @map("accounting_plan")
-  vatRates       Json?          @map("vat_rates")
-  locale         String         @default("fr-FR")
-  timezone       String         @default("Europe/Paris")
-  cabinetId      String?        @map("cabinet_id")
-  cabinet   Cabinet?    @relation(fields: [cabinetId], references: [id])
+  userId    String      @unique @map("user_id")
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cabinetId String      @map("cabinet_id")
+  cabinet   Cabinet     @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
 
-  // ── Identity & legal ──────────────────────────────────────────────────────
-  logo           String?
-  legalForm      String?   @map("legal_form")
-  siret          String?
-  naf            String?
-  vatNumber      String?   @map("vat_number")
-  capital        Decimal?  @db.Decimal(18, 2)
-  address        String?
-  postalCode     String?   @map("postal_code")
-  city           String?
-  phone          String?
-  contactEmail   String?   @map("contact_email")
-  website        String?
-
-  // ── Appearance ────────────────────────────────────────────────────────────
-  primaryColor   String?   @map("primary_color")
-  secondaryColor String?   @map("secondary_color")
-  font           String?
-
-  // ── Invoice defaults ──────────────────────────────────────────────────────
-  invoiceMentions   String?   @map("invoice_mentions") @db.Text
-  paymentTerms      Int?      @map("payment_terms")
-  lateInterestRate  Decimal?  @map("late_interest_rate") @db.Decimal(6, 4)
-  discountRate      Decimal?  @map("discount_rate") @db.Decimal(6, 4)
-
-  // ── Security policy ───────────────────────────────────────────────────────
-  securityPolicy Json?  @map("security_policy")
+  role      CabinetRole @default(COLLABORATEUR)
+  isActive  Boolean     @default(true) @map("is_active")
 
   createdAt DateTime    @default(now()) @map("created_at")
-  updatedAt DateTime    @updatedAt @map("updated_at")
-
-  users             User[]
-  clients           Client[]
-  invoices          Invoice[]
-  expenses          Expense[]
-  employees         Employee[]
-  esgData           ESGData[]
-  mandats           Mandat[]
-  quotes            Quote[]
-  recurringInvoices RecurringInvoice[]
-  bankTransactions  BankTransaction[]
-  fiscalYearCloses  FiscalYearClose[]
-  leaveRequests     LeaveRequest[]
-  annualReviews     AnnualReview[]
-  workSchedules     WorkSchedule[]
-  legalContracts    LegalContract[]
-  gdprEntries       GdprEntry[]
-  legalAlerts       LegalAlert[]
-  esgActions        EsgAction[]
-  aiConversations   AiConversation[]
-  accountPlans      AccountPlan[]
-  attachments       Attachment[]
-  companyRoles      CompanyRole[]
-  companyUsers      CompanyUser[]
-  invitations       Invitation[]
-  fiscalYears       FiscalYear[]
-  journalEntries    JournalEntry[]
-  vatDeclarations   VATDeclaration[]
-  taxConfig         TaxConfig?
-  taxDeclarations   TaxDeclaration[]
-  assets            Asset[]
 
   @@index([cabinetId])
-  @@map("companies")
+  @@map("cabinet_members")
 }
 
-// ── User ──────────────────────────────────────────────────────────────────────
-
-model User {
-  id                  String      @id @default(cuid())
-  email               String      @unique
-  passwordHash        String      @map("password_hash")
-  accountType         AccountType @map("account_type")
-  role                Role        @default(READONLY)
-  firstName           String?     @map("first_name")
-  lastName            String?     @map("last_name")
-  atheisNumber        String?     @unique @map("athenis_number")
-  isActive            Boolean     @default(true) @map("is_active")
-  companyId           String?     @map("company_id")
-  company             Company?    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  cabinetId           String?     @map("cabinet_id")
-  cabinet             Cabinet?    @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
-  totpSecret          String?     @map("totp_secret")
-  totpEnabled         Boolean     @default(false) @map("totp_enabled")
-  failedLoginAttempts Int         @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime?   @map("locked_until")
-  lastLoginAt         DateTime?   @map("last_login_at")
-  createdAt           DateTime    @default(now()) @map("created_at")
-  updatedAt           DateTime    @updatedAt @map("updated_at")
-
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
-  companyUsers  CompanyUser[]
-
-  @@index([companyId])
-  @@index([cabinetId])
-  @@map("users")
+enum CabinetRole {
+  EXPERT_COMPTABLE
+  COLLABORATEUR
+  STAGIAIRE
 }
-
-// ── AtheisCounter ─────────────────────────────────────────────────────────────
-
-model AtheisCounter {
-  id         String      @id @default(cuid())
-  type       AccountType @unique
-  lastNumber Int         @default(0)
-  updatedAt  DateTime    @updatedAt
-
-  @@map("athenis_counters")
-}
-
-// ── Mandat ────────────────────────────────────────────────────────────────────
 
 model Mandat {
   id        String     @id @default(cuid())
@@ -419,9 +477,15 @@ model Mandat {
   cabinet   Cabinet    @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
   companyId String     @map("company_id")
   company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  type      MandatType
-  modules   String[]
-  actif     Boolean    @default(true)
+
+  type      MandatType @default(COMPLET)
+  modules   String[]   @default([])
+
+  isActive  Boolean    @default(true) @map("is_active")
+  dateDebut DateTime   @default(now()) @map("date_debut")
+  dateFin   DateTime?  @map("date_fin")
+  notes     String?
+
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
 
@@ -431,607 +495,18 @@ model Mandat {
   @@map("mandats")
 }
 
-// ── RefreshToken ──────────────────────────────────────────────────────────────
-
-model RefreshToken {
-  id             String    @id @default(cuid())
-  tokenHash      String    @unique @map("token_hash")
-  userId         String    @map("user_id")
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt      DateTime  @map("expires_at")
-  revokedAt      DateTime? @map("revoked_at")
-  replacedByHash String?   @map("replaced_by_hash")
-  createdAt      DateTime  @default(now()) @map("created_at")
-
-  @@index([userId])
-  @@index([expiresAt])
-  @@map("refresh_tokens")
+enum MandatType {
+  COMPLET
+  COMPTABILITE
+  GESTION
+  FISCAL
+  DECLARATIONS
+  PARTIEL
 }
 
-// ── Business models ───────────────────────────────────────────────────────────
-
-model Client {
-  id        String   @id @default(cuid())
-  companyId String   @map("company_id")
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name      String
-  email     String?
-  phone     String?
-  address   String?
-  siren     String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  invoices          Invoice[]
-  quotes            Quote[]
-  recurringInvoices RecurringInvoice[]
-
-  @@index([companyId])
-  @@map("clients")
-}
-
-model Invoice {
-  id        String        @id @default(cuid())
-  number    String
-  companyId String        @map("company_id")
-  company   Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  clientId  String        @map("client_id")
-  client    Client        @relation(fields: [clientId], references: [id])
-  status    InvoiceStatus @default(DRAFT)
-  issueDate DateTime      @map("issue_date")
-  dueDate   DateTime      @map("due_date")
-  subtotal  Decimal       @db.Decimal(12, 2)
-  taxRate   Decimal       @default(20) @map("tax_rate") @db.Decimal(5, 2)
-  taxAmount Decimal       @map("tax_amount") @db.Decimal(12, 2)
-  total     Decimal       @db.Decimal(12, 2)
-  notes                String?
-  quoteId              String?           @unique @map("quote_id")
-  quote                Quote?            @relation(fields: [quoteId], references: [id])
-  recurringInvoiceId   String?           @map("recurring_invoice_id")
-  recurringInvoice     RecurringInvoice? @relation(fields: [recurringInvoiceId], references: [id])
-  paidAt               DateTime?         @map("paid_at")
-  fiscalYearId         String?           @map("fiscal_year_id")
-  fiscalYear           FiscalYear?       @relation(fields: [fiscalYearId], references: [id])
-  createdAt            DateTime          @default(now()) @map("created_at")
-  updatedAt            DateTime          @updatedAt @map("updated_at")
-
-  bankTransactions BankTransaction[]
-  attachments      Attachment[]
-
-  @@unique([companyId, number])
-  @@index([companyId])
-  @@index([clientId])
-  @@index([status])
-  @@index([fiscalYearId])
-  @@map("invoices")
-}
-
-model Quote {
-  id         String      @id @default(cuid())
-  number     String
-  companyId  String      @map("company_id")
-  company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  clientId   String      @map("client_id")
-  client     Client      @relation(fields: [clientId], references: [id])
-  status     QuoteStatus @default(DRAFT)
-  issueDate  DateTime    @map("issue_date")
-  validUntil DateTime    @map("valid_until")
-  subtotal   Decimal     @db.Decimal(12, 2)
-  taxRate    Decimal     @default(20) @map("tax_rate") @db.Decimal(5, 2)
-  taxAmount  Decimal     @map("tax_amount") @db.Decimal(12, 2)
-  total      Decimal     @db.Decimal(12, 2)
-  notes      String?
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-
-  invoice    Invoice?
-
-  @@unique([companyId, number])
-  @@index([companyId])
-  @@index([clientId])
-  @@map("quotes")
-}
-
-model RecurringInvoice {
-  id          String             @id @default(cuid())
-  companyId   String             @map("company_id")
-  company     Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  clientId    String             @map("client_id")
-  client      Client             @relation(fields: [clientId], references: [id])
-  frequency   RecurringFrequency
-  subtotal    Decimal            @db.Decimal(12, 2)
-  taxRate     Decimal            @default(20) @map("tax_rate") @db.Decimal(5, 2)
-  notes       String?
-  active      Boolean            @default(true)
-  nextDueDate DateTime           @map("next_due_date")
-  createdAt   DateTime           @default(now()) @map("created_at")
-  updatedAt   DateTime           @updatedAt @map("updated_at")
-
-  invoices Invoice[]
-
-  @@index([companyId])
-  @@index([clientId])
-  @@map("recurring_invoices")
-}
-
-model Expense {
-  id          String          @id @default(cuid())
-  companyId   String          @map("company_id")
-  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  category    ExpenseCategory
-  amount      Decimal         @db.Decimal(12, 2)
-  description String
-  date        DateTime
-  receiptUrl   String?         @map("receipt_url")
-  fiscalYearId String?         @map("fiscal_year_id")
-  fiscalYear   FiscalYear?     @relation(fields: [fiscalYearId], references: [id])
-  createdAt    DateTime        @default(now()) @map("created_at")
-  updatedAt    DateTime        @updatedAt @map("updated_at")
-
-  bankTransactions BankTransaction[]
-  attachments      Attachment[]
-
-  @@index([companyId])
-  @@index([date])
-  @@index([fiscalYearId])
-  @@map("expenses")
-}
-
-model Employee {
-  id             String         @id @default(cuid())
-  companyId      String         @map("company_id")
-  company        Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  firstName      String         @map("first_name")
-  lastName       String         @map("last_name")
-  email          String
-  employmentType EmploymentType @map("employment_type")
-  grossSalary    Decimal        @map("gross_salary") @db.Decimal(12, 2)
-  startDate      DateTime       @map("start_date")
-  endDate        DateTime?      @map("end_date")
-  createdAt      DateTime       @default(now()) @map("created_at")
-  updatedAt      DateTime       @updatedAt @map("updated_at")
-
-  leaveRequests LeaveRequest[]
-  annualReviews AnnualReview[]
-  workSchedules WorkSchedule[]
-
-  @@index([companyId])
-  @@map("employees")
-}
-
-model LeaveRequest {
-  id         String      @id @default(cuid())
-  companyId  String      @map("company_id")
-  company    Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employeeId String      @map("employee_id")
-  employee   Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  type       LeaveType
-  startDate  DateTime    @map("start_date")
-  endDate    DateTime    @map("end_date")
-  days       Int
-  status     LeaveStatus @default(PENDING)
-  reason     String?
-  notes      String?
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-
-  @@index([companyId])
-  @@index([employeeId])
-  @@index([status])
-  @@map("leave_requests")
-}
-
-model AnnualReview {
-  id           String       @id @default(cuid())
-  companyId    String       @map("company_id")
-  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employeeId   String       @map("employee_id")
-  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  year         Int
-  rating       Int?
-  strengths    String?
-  improvements String?
-  objectives   Json?
-  status       ReviewStatus @default(DRAFT)
-  scheduledAt  DateTime?    @map("scheduled_at")
-  completedAt  DateTime?    @map("completed_at")
-  reviewerId   String?      @map("reviewer_id")
-  notes        String?
-  reviewedAt   DateTime?    @map("reviewed_at")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
-
-  @@unique([companyId, employeeId, year])
-  @@index([companyId])
-  @@index([employeeId])
-  @@map("annual_reviews")
-}
-
-model WorkSchedule {
-  id         String   @id @default(cuid())
-  companyId  String   @map("company_id")
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employeeId String   @map("employee_id")
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  weekStart  DateTime @map("week_start")
-  monday     Json?
-  tuesday    Json?
-  wednesday  Json?
-  thursday   Json?
-  friday     Json?
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
-
-  @@unique([companyId, employeeId, weekStart])
-  @@index([companyId])
-  @@index([employeeId])
-  @@map("work_schedules")
-}
-
-enum EsgActionStatus {
-  TODO
-  IN_PROGRESS
-  DONE
-  CANCELLED
-}
-
-enum EsgActionPriority {
-  LOW
-  MEDIUM
-  HIGH
-  CRITICAL
-}
-
-enum EsgPilier {
-  E
-  S
-  G
-}
-
-model ESGData {
-  id            String   @id @default(cuid())
-  companyId     String   @map("company_id")
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  year          Int
-  // Scope 1 — direct emissions (tCO2e)
-  scope1Total   Decimal? @map("scope1_total") @db.Decimal(10, 2)
-  scope1Details Json?    @map("scope1_details") // { naturalGas, fuelOil, vehicles, process }
-  // Scope 2 — purchased electricity (tCO2e)
-  scope2Total   Decimal? @map("scope2_total") @db.Decimal(10, 2)
-  scope2Kwh     Decimal? @map("scope2_kwh") @db.Decimal(12, 2)
-  // Scope 3 — value chain (tCO2e)
-  scope3Total   Decimal? @map("scope3_total") @db.Decimal(10, 2)
-  scope3Details Json?    @map("scope3_details") // { businessTravel, freight, waste, purchasedGoods }
-  // Social
-  energyKwh     Decimal? @map("energy_kwh") @db.Decimal(12, 2)
-  wasteKg       Decimal? @map("waste_kg") @db.Decimal(10, 2)
-  renewableRatio Decimal? @map("renewable_ratio") @db.Decimal(5, 2)
-  genderPayGap  Decimal? @map("gender_pay_gap") @db.Decimal(5, 2)
-  trainingHours Decimal? @map("training_hours") @db.Decimal(8, 2)
-  absenteeismRate Decimal? @map("absenteeism_rate") @db.Decimal(5, 2)
-  workplaceAccidents Int? @map("workplace_accidents")
-  // Governance
-  boardFemaleRatio Decimal? @map("board_female_ratio") @db.Decimal(5, 2)
-  hasEthicsCode    Boolean  @default(false) @map("has_ethics_code")
-  hasAnticorruption Boolean @default(false) @map("has_anticorruption")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  @@unique([companyId, year])
-  @@index([companyId])
-  @@map("esg_data")
-}
-
-model EsgAction {
-  id          String            @id @default(cuid())
-  companyId   String            @map("company_id")
-  company     Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  title       String
-  description String?
-  pilier      EsgPilier
-  priority    EsgActionPriority @default(MEDIUM)
-  status      EsgActionStatus   @default(TODO)
-  targetYear  Int               @map("target_year")
-  deadline    DateTime?
-  owner       String?
-  kpiTarget   String?           @map("kpi_target")
-  kpiCurrent  String?           @map("kpi_current")
-  co2Saving   Decimal?          @map("co2_saving") @db.Decimal(10, 2)
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
-
-  @@index([companyId])
-  @@index([status])
-  @@map("esg_actions")
-}
-
-// ── Bank / Accounting ─────────────────────────────────────────────────────────
-
-model BankTransaction {
-  id         String               @id @default(cuid())
-  companyId  String               @map("company_id")
-  company    Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  date       DateTime
-  label      String
-  amount     Decimal              @db.Decimal(12, 2)
-  type       BankTxType
-  reference  String?
-  status     ReconciliationStatus @default(UNMATCHED)
-  lettrage   String?
-  invoiceId  String?              @map("invoice_id")
-  invoice    Invoice?             @relation(fields: [invoiceId], references: [id])
-  expenseId  String?              @map("expense_id")
-  expense    Expense?             @relation(fields: [expenseId], references: [id])
-  importedAt DateTime             @default(now()) @map("imported_at")
-  createdAt  DateTime             @default(now()) @map("created_at")
-
-  @@index([companyId])
-  @@index([date])
-  @@index([status])
-  @@map("bank_transactions")
-}
-
-model FiscalYearClose {
-  id          String   @id @default(cuid())
-  companyId   String   @map("company_id")
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  year        Int
-  resultNet   Decimal  @map("result_net") @db.Decimal(12, 2)
-  notes       String?
-  closedBy    String?  @map("closed_by")
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  @@unique([companyId, year])
-  @@index([companyId])
-  @@map("fiscal_year_closes")
-}
-
-// ── Juridique ─────────────────────────────────────────────────────────────────
-
-model LegalContract {
-  id          String         @id @default(cuid())
-  companyId   String         @map("company_id")
-  company     Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  title       String
-  type        ContractType
-  status      ContractStatus @default(DRAFT)
-  parties     Json           // [{ name, email, role }]
-  content     String?        @db.Text
-  fileUrl     String?        @map("file_url")
-  signedAt    DateTime?      @map("signed_at")
-  expiresAt   DateTime?      @map("expires_at")
-  terminatedAt DateTime?     @map("terminated_at")
-  notes       String?
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
-
-  signatures  ContractSignature[]
-  alerts      LegalAlert[]
-
-  @@index([companyId])
-  @@index([status])
-  @@index([type])
-  @@map("legal_contracts")
-}
-
-model ContractSignature {
-  id         String          @id @default(cuid())
-  contractId String          @map("contract_id")
-  contract   LegalContract   @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  signerName  String         @map("signer_name")
-  signerEmail String         @map("signer_email")
-  signerRole  String?        @map("signer_role")
-  status      SignatureStatus @default(PENDING)
-  token       String         @unique
-  signedAt    DateTime?      @map("signed_at")
-  refusedAt   DateTime?      @map("refused_at")
-  refusedNote String?        @map("refused_note")
-  createdAt   DateTime       @default(now()) @map("created_at")
-
-  @@index([contractId])
-  @@index([token])
-  @@map("contract_signatures")
-}
-
-model GdprEntry {
-  id               String         @id @default(cuid())
-  companyId        String         @map("company_id")
-  company          Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  treatmentName    String         @map("treatment_name")
-  purpose          String
-  legalBasis       GdprLegalBasis @map("legal_basis")
-  dataCategories   String[]       @map("data_categories")
-  dataSubjects     String[]       @map("data_subjects")
-  retentionMonths  Int            @map("retention_months")
-  responsible      String
-  subcontractors   String[]
-  securityMeasures String[]       @map("security_measures")
-  riskLevel        GdprRiskLevel  @default(LOW) @map("risk_level")
-  dpiaRequired     Boolean        @default(false) @map("dpia_required")
-  lastReviewedAt   DateTime?      @map("last_reviewed_at")
-  notes            String?
-  createdAt        DateTime       @default(now()) @map("created_at")
-  updatedAt        DateTime       @updatedAt @map("updated_at")
-
-  @@index([companyId])
-  @@map("gdpr_entries")
-}
-
-model LegalAlert {
-  id          String        @id @default(cuid())
-  companyId   String        @map("company_id")
-  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  contractId  String?       @map("contract_id")
-  contract    LegalContract? @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  title       String
-  message     String
-  severity    AlertSeverity @default(INFO)
-  status      AlertStatus   @default(OPEN)
-  dueDate     DateTime?     @map("due_date")
-  dismissedAt DateTime?     @map("dismissed_at")
-  resolvedAt  DateTime?     @map("resolved_at")
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
-
-  @@index([companyId])
-  @@index([status])
-  @@index([severity])
-  @@map("legal_alerts")
-}
-
-// ── AI Assistant ─────────────────────────────────────────────────────────────
-
-model AiConversation {
-  id        String      @id @default(cuid())
-  companyId String      @map("company_id")
-  company   Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  title     String      @default("Nouvelle conversation")
-  createdAt DateTime    @default(now()) @map("created_at")
-  updatedAt DateTime    @updatedAt @map("updated_at")
-
-  messages  AiMessage[]
-
-  @@index([companyId])
-  @@map("ai_conversations")
-}
-
-model AiMessage {
-  id             String         @id @default(cuid())
-  conversationId String         @map("conversation_id")
-  conversation   AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  role           String         // "user" | "assistant"
-  content        String         @db.Text
-  inputTokens    Int?           @map("input_tokens")
-  outputTokens   Int?           @map("output_tokens")
-  createdAt      DateTime       @default(now()) @map("created_at")
-
-  @@index([conversationId])
-  @@map("ai_messages")
-}
-
-// ── Plan comptable ────────────────────────────────────────────────────────────
-
-model AccountPlan {
-  id        String           @id @default(cuid())
-  companyId String           @map("company_id")
-  company   Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  numero    String
-  intitule  String
-  classe    Int
-  type      ChartAccountType
-  zone      AccountingZone
-  isSystem  Boolean          @default(true) @map("is_system")
-  isActive  Boolean          @default(true) @map("is_active")
-  createdAt DateTime         @default(now()) @map("created_at")
-
-  @@unique([companyId, numero])
-  @@index([companyId, classe])
-  @@map("account_plans")
-}
-
-// ── Attachments ───────────────────────────────────────────────────────────────
-
-model Attachment {
-  id          String   @id @default(cuid())
-  companyId   String   @map("company_id")
-  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  fileName    String   @map("file_name")
-  fileSize    Int      @map("file_size")
-  mimeType    String   @map("mime_type")
-  storageKey  String   @unique @map("storage_key")
-  uploadedBy  String   @map("uploaded_by")
-  uploadedAt  DateTime @default(now()) @map("uploaded_at")
-
-  invoiceId   String?  @map("invoice_id")
-  invoice     Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  expenseId   String?  @map("expense_id")
-  expense     Expense? @relation(fields: [expenseId], references: [id], onDelete: Cascade)
-
-  @@index([invoiceId])
-  @@index([expenseId])
-  @@index([companyId])
-  @@map("attachments")
-}
-
-// ── AuditLog ──────────────────────────────────────────────────────────────────
-
-model AuditLog {
-  id            String      @id @default(cuid())
-  userId        String?     @map("user_id")
-  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
-  cabinetUserId String?     @map("cabinet_user_id")
-  companyId     String?     @map("company_id")
-  action        AuditAction
-  resource      String?
-  resourceId    String?     @map("resource_id")
-  ipAddress     String?     @map("ip_address")
-  userAgent     String?     @map("user_agent")
-  metadata      Json?
-  createdAt     DateTime    @default(now()) @map("created_at")
-
-  @@index([userId])
-  @@index([companyId])
-  @@index([action])
-  @@index([createdAt])
-  @@map("audit_logs")
-}
-
-// ── Settings — Roles & Users ───────────────────────────────────────────────────
-
-model CompanyRole {
-  id          String        @id @default(cuid())
-  companyId   String        @map("company_id")
-  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  name        String
-  description String?
-  isSystem    Boolean       @default(false) @map("is_system")
-  permissions Json
-  createdAt   DateTime      @default(now()) @map("created_at")
-
-  users       CompanyUser[]
-
-  @@unique([companyId, name])
-  @@index([companyId])
-  @@map("company_roles")
-}
-
-model CompanyUser {
-  id          String      @id @default(cuid())
-  companyId   String      @map("company_id")
-  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  userId      String      @map("user_id")
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  roleId      String      @map("role_id")
-  role        CompanyRole @relation(fields: [roleId], references: [id])
-  status      UserStatus  @default(ACTIVE)
-  invitedBy   String?     @map("invited_by")
-  invitedAt   DateTime?   @map("invited_at")
-  joinedAt    DateTime?   @map("joined_at")
-  createdAt   DateTime    @default(now()) @map("created_at")
-
-  @@unique([companyId, userId])
-  @@index([companyId])
-  @@map("company_users")
-}
-
-model Invitation {
-  id          String    @id @default(cuid())
-  companyId   String    @map("company_id")
-  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  email       String
-  roleId      String    @map("role_id")
-  token       String    @unique
-  expiresAt   DateTime  @map("expires_at")
-  acceptedAt  DateTime? @map("accepted_at")
-  createdBy   String    @map("created_by")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  @@index([token])
-  @@index([companyId])
-  @@map("invitations")
-}
-
-// ── Exercices comptables ───────────────────────────────────────────────────────
+// ─────────────────────────────────────────
+// EXERCICES COMPTABLES
+// ─────────────────────────────────────────
 
 model FiscalYear {
   id             String           @id @default(cuid())
@@ -1041,23 +516,203 @@ model FiscalYear {
   startDate      DateTime         @map("start_date")
   endDate        DateTime         @map("end_date")
   status         FiscalYearStatus @default(OPEN)
-  openingBalance Json?            @map("opening_balance")
-  closingBalance Json?            @map("closing_balance")
-  createdBy      String           @map("created_by")
   closedBy       String?          @map("closed_by")
   closedAt       DateTime?        @map("closed_at")
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
+  openingBalance Json?            @map("opening_balance")
+  closingBalance Json?            @map("closing_balance")
 
-  entries         JournalEntry[]
-  vatDeclarations VATDeclaration[]
-  invoices        Invoice[]
-  expenses        Expense[]
+  journalEntries  JournalEntry[]
+  taxDeclarations TaxDeclaration[]
+  accountReviews  AccountReview[]
+  depreciations   AssetDepreciation[]
+
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
 
   @@unique([companyId, year])
   @@index([companyId, status])
   @@map("fiscal_years")
 }
+
+enum FiscalYearStatus {
+  DRAFT
+  OPEN
+  LOCKED
+  CLOSED
+}
+
+// ─────────────────────────────────────────
+// CLIENTS
+// ─────────────────────────────────────────
+
+model Client {
+  id        String     @id @default(cuid())
+  companyId String     @map("company_id")
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId  String?    @map("agence_id")
+  agence    Agence?    @relation(fields: [agenceId], references: [id])
+
+  nom       String
+  type      ClientType @default(ENTREPRISE)
+  email     String?
+  telephone String?
+  adresse   String?
+  solde     Decimal    @db.Decimal(15, 2) @default(0)
+  isActive  Boolean    @default(true) @map("is_active")
+
+  invoices  Invoice[]
+
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([agenceId])
+  @@map("clients")
+}
+
+enum ClientType {
+  ENTREPRISE
+  PARTICULIER
+  FREELANCE
+}
+
+// ─────────────────────────────────────────
+// FACTURES
+// ─────────────────────────────────────────
+
+model Invoice {
+  id          String        @id @default(cuid())
+  companyId   String        @map("company_id")
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId    String?       @map("agence_id")
+  agence      Agence?       @relation(fields: [agenceId], references: [id])
+  clientId    String        @map("client_id")
+  client      Client        @relation(fields: [clientId], references: [id])
+
+  reference   String        @unique
+  type        InvoiceType   @default(FACTURE)
+  status      InvoiceStatus @default(PENDING)
+  amountHT    Decimal       @db.Decimal(15, 2) @map("amount_ht")
+  vatRate     Decimal       @db.Decimal(5, 4) @default(0.1925) @map("vat_rate")
+  amountTTC   Decimal       @db.Decimal(15, 2) @map("amount_ttc")
+  issuedAt    DateTime      @map("issued_at")
+  dueAt       DateTime?     @map("due_at")
+  paidAt      DateTime?     @map("paid_at")
+  description String?
+
+  createdBy   String        @map("created_by")
+  attachments Attachment[]
+
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@index([companyId, status])
+  @@index([agenceId])
+  @@index([clientId])
+  @@map("invoices")
+}
+
+enum InvoiceType {
+  FACTURE
+  DEVIS
+  AVOIR
+  FACTURE_RECURRENTE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// ─────────────────────────────────────────
+// DÉPENSES
+// ─────────────────────────────────────────
+
+model Expense {
+  id        String          @id @default(cuid())
+  companyId String          @map("company_id")
+  company   Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId  String?         @map("agence_id")
+  agence    Agence?         @relation(fields: [agenceId], references: [id])
+
+  reference String          @unique
+  category  ExpenseCategory
+  amount    Decimal         @db.Decimal(15, 2)
+  date      DateTime
+  note      String?
+  createdBy String          @map("created_by")
+
+  attachments Attachment[]
+
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  @@index([companyId, date])
+  @@index([agenceId])
+  @@map("expenses")
+}
+
+enum ExpenseCategory {
+  LOYER
+  LOGICIELS
+  TRANSPORT
+  MARKETING
+  FOURNITURES
+  SALAIRES
+  AUTRES
+}
+
+// ─────────────────────────────────────────
+// RH — EMPLOYÉS
+// ─────────────────────────────────────────
+
+model Employee {
+  id              String         @id @default(cuid())
+  companyId       String         @map("company_id")
+  company         Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId        String?        @map("agence_id")
+
+  nom             String
+  prenom          String?
+  poste           String
+  contrat         ContractType
+  salaireNet      Decimal        @db.Decimal(15, 2) @map("salaire_net")
+  salaireBrut     Decimal?       @db.Decimal(15, 2) @map("salaire_brut")
+  email           String?
+  telephone       String?
+  dateEmbauche    DateTime?      @map("date_embauche")
+  dateFinContrat  DateTime?      @map("date_fin_contrat")
+  status          EmployeeStatus @default(ACTIF)
+  cnpsNumber      String?        @map("cnps_number")
+
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([agenceId])
+  @@map("employees")
+}
+
+enum ContractType {
+  CDI
+  CDD
+  FREELANCE
+  STAGE
+  ALTERNANCE
+}
+
+enum EmployeeStatus {
+  ACTIF
+  INACTIF
+  SUSPENDU
+}
+
+// ─────────────────────────────────────────
+// COMPTABILITÉ — JOURNAL
+// ─────────────────────────────────────────
 
 model JournalEntry {
   id           String     @id @default(cuid())
@@ -1065,153 +720,135 @@ model JournalEntry {
   company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   fiscalYearId String     @map("fiscal_year_id")
   fiscalYear   FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+
   date         DateTime
-  account      String
-  label        String
-  debit        Decimal    @default(0) @db.Decimal(12, 2)
-  credit       Decimal    @default(0) @db.Decimal(12, 2)
+  journal      String
+  compte       String
+  libelle      String
+  debit        Decimal    @db.Decimal(15, 2) @default(0)
+  credit       Decimal    @db.Decimal(15, 2) @default(0)
   reference    String?
-  journalCode  String     @default("OD") @map("journal_code")
-  invoiceId    String?    @map("invoice_id")
-  expenseId    String?    @map("expense_id")
+  lettrage     String?
+  createdBy    String     @map("created_by")
+
   createdAt    DateTime   @default(now()) @map("created_at")
 
-  @@index([fiscalYearId])
-  @@index([companyId])
-  @@index([account])
+  @@index([companyId, fiscalYearId])
+  @@index([compte])
   @@map("journal_entries")
 }
 
-model VATDeclaration {
-  id            String     @id @default(cuid())
-  companyId     String     @map("company_id")
-  company       Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  fiscalYearId  String     @map("fiscal_year_id")
-  fiscalYear    FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
-  quarter       Int
-  year          Int
-  tvaCollectee  Decimal    @db.Decimal(12, 2) @map("tva_collectee")
-  tvaDeductible Decimal    @db.Decimal(12, 2) @map("tva_deductible")
-  tvaNette      Decimal    @db.Decimal(12, 2) @map("tva_nette")
-  status        String     @default("DRAFT")
-  filedAt       DateTime?  @map("filed_at")
-  createdAt     DateTime   @default(now()) @map("created_at")
+// ─────────────────────────────────────────
+// COMPTABILITÉ — PLAN COMPTABLE
+// ─────────────────────────────────────────
 
-  @@unique([companyId, year, quarter])
-  @@index([fiscalYearId])
-  @@map("vat_declarations")
+model AccountPlan {
+  id        String         @id @default(cuid())
+  companyId String         @map("company_id")
+  company   Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  numero    String
+  intitule  String
+  classe    Int
+  type      AccountPlanType
+  zone      AccountingZone
+  isSystem  Boolean        @default(true) @map("is_system")
+  isActive  Boolean        @default(true) @map("is_active")
+
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  @@unique([companyId, numero])
+  @@index([companyId, classe])
+  @@map("account_plans")
 }
 
-// ── Fiscalité ─────────────────────────────────────────────────────────────────
-
-model TaxConfig {
-  id                String     @id @default(cuid())
-  companyId         String     @unique @map("company_id")
-  company           Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  country           String     @default("CM")
-
-  // Régime fiscal
-  taxRegime         TaxRegime  @default(REEL_NORMAL) @map("tax_regime")
-  vatRegime         VatRegime  @default(MENSUEL) @map("vat_regime")
-  isFirstYear       Boolean    @default(true) @map("is_first_year")
-  firstYearCA       Decimal?   @db.Decimal(15, 2) @map("first_year_ca")
-
-  // IGS spécifique
-  igsClass          Int?       @map("igs_class")
-  igsAmount         Decimal?   @db.Decimal(15, 2) @map("igs_amount")
-  igsPaymentMode    IgsPayment? @map("igs_payment_mode")
-  igsAdherentCga    Boolean    @default(false) @map("igs_adherent_cga")
-
-  // Historique et alertes
-  regimeHistory     Json?      @map("regime_history")
-  regimeChangeAlert Boolean    @default(false) @map("regime_change_alert")
-  lastRegimeCheck   DateTime?  @map("last_regime_check")
-  nextRegimeCheck   DateTime?  @map("next_regime_check")
-
-  // Identification fiscale
-  centerImpots      String?    @map("center_impots")
-  niu               String?
-  rccm              String?
-  codeActivite      String?    @map("code_activite")
-  professionLiberale Boolean   @default(false) @map("profession_liberale")
-
-  // Taux
-  cnpsRate          Decimal    @default(0.172) @map("cnps_rate") @db.Decimal(6, 4)
-  isRate            Decimal    @default(0.33) @map("is_rate") @db.Decimal(6, 4)
-  vatRate           Decimal    @default(0.1925) @map("vat_rate") @db.Decimal(6, 4)
-  isAssujetti       Boolean    @default(true) @map("is_assujetti")
-
-  createdAt         DateTime   @default(now()) @map("created_at")
-  updatedAt         DateTime   @updatedAt @map("updated_at")
-
-  @@map("tax_configs")
+enum AccountPlanType {
+  ACTIF
+  PASSIF
+  CHARGE
+  PRODUIT
 }
 
-model IgsBareme {
-  id          String   @id @default(cuid())
-  classe      Int      @unique
-  caMin       Decimal  @db.Decimal(15, 2) @map("ca_min")
-  caMax       Decimal  @db.Decimal(15, 2) @map("ca_max")
-  montantBase Decimal  @db.Decimal(15, 2) @map("montant_base")
-  montantCga  Decimal  @db.Decimal(15, 2) @map("montant_cga")
-  year        Int      @default(2026)
+// ─────────────────────────────────────────
+// COMPTABILITÉ — RÉVISION
+// ─────────────────────────────────────────
 
-  @@map("igs_baremes")
+model AccountReview {
+  id            String       @id @default(cuid())
+  companyId     String       @map("company_id")
+  company       Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fiscalYearId  String       @map("fiscal_year_id")
+  fiscalYear    FiscalYear   @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  accountNumber String       @map("account_number")
+  cycle         Int
+  status        ReviewStatus @default(PENDING)
+  reviewedBy    String?      @map("reviewed_by")
+  reviewedAt    DateTime?    @map("reviewed_at")
+  note          String?
+  isAnomaly     Boolean      @default(false) @map("is_anomaly")
+  anomalyNote   String?      @map("anomaly_note")
+
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  @@unique([companyId, fiscalYearId, accountNumber])
+  @@index([companyId])
+  @@map("account_reviews")
 }
 
-model TaxDeclaration {
-  id            String        @id @default(cuid())
-  companyId     String        @map("company_id")
-  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  type          TaxType
-  period        String
-  year          Int
-  month         Int?
-  quarter       Int?
-  baseAmount    Decimal       @map("base_amount") @db.Decimal(14, 2)
-  taxAmount     Decimal       @map("tax_amount") @db.Decimal(14, 2)
-  status        TaxDeclStatus @default(PENDING)
-  dueDate       DateTime      @map("due_date")
-  declaredAt    DateTime?     @map("declared_at")
-  paidAt        DateTime?     @map("paid_at")
-  penaltyAmount Decimal       @default(0) @map("penalty_amount") @db.Decimal(14, 2)
-  reference     String?
-  createdAt     DateTime      @default(now()) @map("created_at")
-
-  @@index([companyId, type, year])
-  @@map("tax_declarations")
-}
-
-// ── AccountReview ─────────────────────────────────────────────────────────────
-
-enum AccountReviewStatus {
+enum ReviewStatus {
   PENDING
   REVIEWED
   ANOMALY
 }
 
-model AccountReview {
-  id                String              @id @default(cuid())
-  companyId         String              @map("company_id")
-  year              Int
-  accountNumber     String              @map("account_number")
-  cycle             Int
-  status            AccountReviewStatus @default(PENDING)
-  reviewedBy        String?             @map("reviewed_by")
-  reviewedAt        DateTime?           @map("reviewed_at")
-  note              String?
-  anomalyNote       String?             @map("anomaly_note")
-  anomalyResolvedAt DateTime?           @map("anomaly_resolved_at")
-  resolutionNote    String?             @map("resolution_note")
-  createdAt         DateTime            @default(now()) @map("created_at")
-  updatedAt         DateTime            @updatedAt @map("updated_at")
+// ─────────────────────────────────────────
+// IMMOBILISATIONS
+// ─────────────────────────────────────────
 
-  @@unique([companyId, year, accountNumber])
-  @@index([companyId, year, cycle])
-  @@map("account_reviews")
+model Asset {
+  id               String        @id @default(cuid())
+  companyId        String        @map("company_id")
+  company          Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  designation      String
+  accountNumber    String        @map("account_number")
+  category         AssetCategory
+  status           AssetStatus   @default(IN_SERVICE)
+  acquisitionDate  DateTime      @map("acquisition_date")
+  grossValue       Decimal       @db.Decimal(15, 2) @map("gross_value")
+  residualValue    Decimal       @db.Decimal(15, 2) @default(0) @map("residual_value")
+  depreciationMode DeprecMode    @default(LINEAR) @map("depreciation_mode")
+  usefulLifeYears  Int           @map("useful_life_years")
+  depreciationRate Decimal       @db.Decimal(6, 4) @map("depreciation_rate")
+  supplier         String?
+  location         String?
+
+  depreciations    AssetDepreciation[]
+
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@map("assets")
 }
 
-// ── Assets / Immobilisations ──────────────────────────────────────────────────
+model AssetDepreciation {
+  id              String     @id @default(cuid())
+  assetId         String     @map("asset_id")
+  asset           Asset      @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  fiscalYearId    String     @map("fiscal_year_id")
+  fiscalYear      FiscalYear @relation(fields: [fiscalYearId], references: [id], onDelete: Cascade)
+  year            Int
+  openingValue    Decimal    @db.Decimal(15, 2) @map("opening_value")
+  depreciationAmt Decimal    @db.Decimal(15, 2) @map("depreciation_amt")
+  closingValue    Decimal    @db.Decimal(15, 2) @map("closing_value")
+  entryGenerated  Boolean    @default(false) @map("entry_generated")
+
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  @@unique([assetId, year])
+  @@map("asset_depreciations")
+}
 
 enum AssetCategory {
   INCORPOREL
@@ -1232,53 +869,352 @@ enum DeprecMode {
   DEGRESSIVE
 }
 
-model Asset {
-  id               String      @id @default(cuid())
-  companyId        String      @map("company_id")
-  company          Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  fiscalYearId     String?     @map("fiscal_year_id")
+// ─────────────────────────────────────────
+// STOCKS
+// ─────────────────────────────────────────
 
-  designation      String
-  accountNumber    String      @map("account_number")
-  category         AssetCategory
-  status           AssetStatus @default(IN_SERVICE)
+model StockFamily {
+  id          String    @id @default(cuid())
+  companyId   String    @map("company_id")
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  code        String
+  nom         String
+  description String?
+  articles    Article[]
 
-  acquisitionDate  DateTime    @map("acquisition_date")
-  serviceDate      DateTime?   @map("service_date")
-  disposalDate     DateTime?   @map("disposal_date")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  grossValue       Decimal     @map("gross_value")       @db.Decimal(15, 2)
-  residualValue    Decimal     @map("residual_value")    @db.Decimal(15, 2) @default(0)
-  depreciationMode DeprecMode  @map("depreciation_mode") @default(LINEAR)
-  usefulLifeYears  Int         @map("useful_life_years")
-  depreciationRate Decimal     @map("depreciation_rate") @db.Decimal(6, 4)
-
-  supplier         String?
-  serialNumber     String?     @map("serial_number")
-  location         String?
-  notes            String?
-
-  depreciations    AssetDepreciation[]
-
-  createdAt        DateTime    @default(now()) @map("created_at")
-  updatedAt        DateTime    @updatedAt      @map("updated_at")
-
+  @@unique([companyId, code])
   @@index([companyId])
-  @@map("assets")
+  @@map("stock_families")
 }
 
-model AssetDepreciation {
-  id              String   @id @default(cuid())
-  assetId         String   @map("asset_id")
-  asset           Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  fiscalYearId    String   @map("fiscal_year_id")
-  year            Int
-  openingValue    Decimal  @map("opening_value")    @db.Decimal(15, 2)
-  depreciationAmt Decimal  @map("depreciation_amt") @db.Decimal(15, 2)
-  closingValue    Decimal  @map("closing_value")    @db.Decimal(15, 2)
-  entryGenerated  Boolean  @map("entry_generated")  @default(false)
-  createdAt       DateTime @default(now())           @map("created_at")
+model Article {
+  id               String       @id @default(cuid())
+  companyId        String       @map("company_id")
+  company          Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  familleId        String?      @map("famille_id")
+  famille          StockFamily? @relation(fields: [familleId], references: [id])
 
-  @@unique([assetId, year])
-  @@map("asset_depreciations")
+  reference        String
+  designation      String
+  unite            String       @default("unité")
+  prixAchat        Decimal      @db.Decimal(15, 4) @map("prix_achat")
+  prixVente        Decimal      @db.Decimal(15, 4) @map("prix_vente")
+  stockActuel      Decimal      @db.Decimal(15, 4) @default(0) @map("stock_actuel")
+  stockMin         Decimal      @db.Decimal(15, 4) @default(0) @map("stock_min")
+  stockMax         Decimal?     @db.Decimal(15, 4) @map("stock_max")
+  valeurCmup       Decimal      @db.Decimal(15, 4) @default(0) @map("valeur_cmup")
+  methodeValuation StockMethod  @default(CMUP) @map("methode_valuation")
+  isActive         Boolean      @default(true) @map("is_active")
+  compteAchat      String?      @map("compte_achat")
+  compteVente      String?      @map("compte_vente")
+
+  mouvements       StockMouvement[]
+  lotsFifo         StockLot[]
+
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@unique([companyId, reference])
+  @@index([companyId])
+  @@index([familleId])
+  @@map("articles")
+}
+
+model StockMouvement {
+  id           String   @id @default(cuid())
+  companyId    String   @map("company_id")
+  articleId    String   @map("article_id")
+  article      Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  type         MouvType
+  quantite     Decimal  @db.Decimal(15, 4)
+  prixUnitaire Decimal  @db.Decimal(15, 4) @map("prix_unitaire")
+  prixTotal    Decimal  @db.Decimal(15, 4) @map("prix_total")
+  stockAvant   Decimal  @db.Decimal(15, 4) @map("stock_avant")
+  stockApres   Decimal  @db.Decimal(15, 4) @map("stock_apres")
+  cmupAvant    Decimal  @db.Decimal(15, 4) @map("cmup_avant")
+  cmupApres    Decimal  @db.Decimal(15, 4) @map("cmup_apres")
+  reference    String?
+  description  String?
+  createdBy    String   @map("created_by")
+
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([companyId, articleId])
+  @@index([createdAt])
+  @@map("stock_mouvements")
+}
+
+model StockLot {
+  id               String   @id @default(cuid())
+  articleId        String   @map("article_id")
+  article          Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  quantiteInitiale Decimal  @db.Decimal(15, 4) @map("quantite_initiale")
+  quantiteRestante Decimal  @db.Decimal(15, 4) @map("quantite_restante")
+  prixUnitaire     Decimal  @db.Decimal(15, 4) @map("prix_unitaire")
+  dateEntree       DateTime @map("date_entree")
+  reference        String?
+  isEpuise         Boolean  @default(false) @map("is_epuise")
+
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([articleId, isEpuise])
+  @@map("stock_lots")
+}
+
+enum StockMethod {
+  CMUP
+  FIFO
+}
+
+enum MouvType {
+  ENTREE_ACHAT
+  ENTREE_RETOUR
+  ENTREE_INVENTAIRE
+  SORTIE_VENTE
+  SORTIE_CASSE
+  SORTIE_INVENTAIRE
+  AJUSTEMENT
+}
+
+// ─────────────────────────────────────────
+// ESG
+// ─────────────────────────────────────────
+
+model ESGData {
+  id          String    @id @default(cuid())
+  companyId   String    @map("company_id")
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  pillar      ESGPillar
+  indicatorId String    @map("indicator_id")
+  value       Decimal   @db.Decimal(15, 4)
+  target      Decimal   @db.Decimal(15, 4)
+  unit        String
+  year        Int
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@unique([companyId, indicatorId, year])
+  @@index([companyId, year])
+  @@map("esg_data")
+}
+
+enum ESGPillar {
+  E
+  S
+  G
+}
+
+// ─────────────────────────────────────────
+// JURIDIQUE
+// ─────────────────────────────────────────
+
+model Contract {
+  id            String          @id @default(cuid())
+  companyId     String          @map("company_id")
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  reference     String          @unique
+  titre         String
+  type          ContractDocType
+  status        ContractStatus  @default(DRAFT)
+  parties       String[]
+  dateSignature DateTime?       @map("date_signature")
+  dateDebut     DateTime?       @map("date_debut")
+  dateFin       DateTime?       @map("date_fin")
+  montant       Decimal?        @db.Decimal(15, 2)
+  notes         String?
+  createdBy     String          @map("created_by")
+
+  attachments   Attachment[]
+
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@map("contracts")
+}
+
+enum ContractDocType {
+  PRESTATION
+  CDI
+  CDD
+  BAIL
+  NDA
+  CGV
+  CGU
+  STATUTS
+  AUTRE
+}
+
+enum ContractStatus {
+  DRAFT
+  SENT
+  SIGNED
+  EXPIRED
+  CANCELLED
+}
+
+// ─────────────────────────────────────────
+// FISCALITÉ
+// ─────────────────────────────────────────
+
+model TaxConfig {
+  id                 String    @id @default(cuid())
+  companyId          String    @unique @map("company_id")
+  company            Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  country            String    @default("CM")
+  taxRegime          TaxRegime @default(REEL_NORMAL) @map("tax_regime")
+  vatRegime          VatRegime @default(MENSUEL) @map("vat_regime")
+  isFirstYear        Boolean   @default(true) @map("is_first_year")
+  centerImpots       String?   @map("center_impots")
+  niu                String?
+  rccm               String?
+  professionLiberale Boolean   @default(false) @map("profession_liberale")
+  cnpsRate           Decimal   @db.Decimal(6, 4) @default(0.162) @map("cnps_rate")
+  igsClass           Int?      @map("igs_class")
+  igsAmount          Decimal?  @db.Decimal(15, 2) @map("igs_amount")
+  regimeHistory      Json?     @map("regime_history")
+
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@map("tax_configs")
+}
+
+model TaxDeclaration {
+  id            String        @id @default(cuid())
+  companyId     String        @map("company_id")
+  company       Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fiscalYearId  String?       @map("fiscal_year_id")
+  fiscalYear    FiscalYear?   @relation(fields: [fiscalYearId], references: [id])
+
+  type          TaxType
+  period        String
+  year          Int
+  month         Int?
+  baseAmount    Decimal       @db.Decimal(15, 2) @map("base_amount")
+  taxAmount     Decimal       @db.Decimal(15, 2) @map("tax_amount")
+  status        TaxDeclStatus @default(PENDING)
+  dueDate       DateTime      @map("due_date")
+  declaredAt    DateTime?     @map("declared_at")
+  paidAt        DateTime?     @map("paid_at")
+  penaltyAmount Decimal       @db.Decimal(15, 2) @default(0) @map("penalty_amount")
+  reference     String?
+
+  createdAt     DateTime      @default(now()) @map("created_at")
+
+  @@index([companyId, type, year])
+  @@map("tax_declarations")
+}
+
+enum TaxRegime {
+  IGS
+  REEL_NORMAL
+  REEL_SIMPLIFIE
+}
+
+enum VatRegime {
+  MENSUEL
+  TRIMESTRIEL
+  NON_ASSUJETTI
+}
+
+enum TaxType {
+  TVA
+  IS
+  IS_ACOMPTE
+  PATENTE
+  RAS
+  CNPS
+  FDFP
+  DSF
+  IGS
+}
+
+enum TaxDeclStatus {
+  PENDING
+  DECLARED
+  PAID
+  LATE
+  EXEMPTED
+}
+
+// ─────────────────────────────────────────
+// PIÈCES JUSTIFICATIVES
+// ─────────────────────────────────────────
+
+model Attachment {
+  id         String    @id @default(cuid())
+  companyId  String    @map("company_id")
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  fileName   String    @map("file_name")
+  fileSize   Int       @map("file_size")
+  mimeType   String    @map("mime_type")
+  storageKey String    @unique @map("storage_key")
+  uploadedBy String    @map("uploaded_by")
+
+  invoiceId  String?   @map("invoice_id")
+  invoice    Invoice?  @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  expenseId  String?   @map("expense_id")
+  expense    Expense?  @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  contractId String?   @map("contract_id")
+  contract   Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+
+  uploadedAt DateTime  @default(now()) @map("uploaded_at")
+
+  @@index([companyId])
+  @@index([invoiceId])
+  @@index([expenseId])
+  @@map("attachments")
+}
+
+// ─────────────────────────────────────────
+// AUDIT LOG
+// ─────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  companyId  String?  @map("company_id")
+  agenceId   String?  @map("agence_id")
+  action     String
+  resource   String
+  resourceId String?  @map("resource_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  success    Boolean  @default(true)
+
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────
+// BARÈME IGS
+// ─────────────────────────────────────────
+
+model IgsBareme {
+  id          String  @id @default(cuid())
+  classe      Int     @unique
+  caMin       Decimal @db.Decimal(15, 2) @map("ca_min")
+  caMax       Decimal @db.Decimal(15, 2) @map("ca_max")
+  montantBase Decimal @db.Decimal(15, 2) @map("montant_base")
+  montantCga  Decimal @db.Decimal(15, 2) @map("montant_cga")
+  year        Int     @default(2026)
+
+  @@map("igs_baremes")
 }

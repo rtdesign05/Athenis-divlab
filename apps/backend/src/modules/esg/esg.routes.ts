@@ -16,7 +16,7 @@ const YearQo = z.object({ year: z.coerce.number().int().min(2000).max(2100).opti
 // ── Data ──────────────────────────────────────────────────────────────────────
 esgRouter.get('/years',      checkModule('esg', 'read'),  async (req, res, next) => { try { res.json({ success: true, data: await svc.listEsgYears(getCompanyId(req)) }) } catch (e) { next(e) } })
 esgRouter.get('/data',       checkModule('esg', 'read'),  validateRequest({ query: YearQ }), async (req, res, next) => { try { res.json({ success: true, data: await svc.getEsgData(getCompanyId(req), Number(req.query.year)) }) } catch (e) { next(e) } })
-esgRouter.put('/data',       checkModule('esg', 'write'), validateRequest({ body: UpsertEsgDto }), async (req, res, next) => { try { res.json({ success: true, data: await svc.upsertEsgData(getCompanyId(req), req.body) }) } catch (e) { next(e) } })
+esgRouter.put('/data',       checkModule('esg', 'write'), validateRequest({ body: UpsertEsgDto }), async (req, res, next) => { try { res.json({ success: true, data: await svc.upsertEsgIndicator(getCompanyId(req), req.body) }) } catch (e) { next(e) } })
 
 // ── Score & reports ───────────────────────────────────────────────────────────
 esgRouter.get('/score',      checkModule('esg', 'read'),  validateRequest({ query: YearQ }), async (req, res, next) => { try { res.json({ success: true, data: await svc.getEsgScore(getCompanyId(req), Number(req.query.year)) }) } catch (e) { next(e) } })

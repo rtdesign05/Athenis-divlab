@@ -3,7 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import type { CreateClientInput, UpdateClientInput, ListClientsInput } from './clients.dto.js'
 
-type InvoiceForScore = { status: string; dueDate: Date; paidAt: Date | null }
+type InvoiceForScore = { status: string; dueAt: Date | null; paidAt: Date | null }
 
 function computeReliabilityScoreFromInvoices(invoices: InvoiceForScore[]): number {
   if (invoices.length === 0) return 100
@@ -12,8 +12,8 @@ function computeReliabilityScoreFromInvoices(invoices: InvoiceForScore[]): numbe
   if (paid.length === 0) return 0
 
   const onTimeCount = paid.filter((i) => {
-    if (!i.paidAt) return false
-    return new Date(i.paidAt) <= new Date(i.dueDate)
+    if (!i.paidAt || !i.dueAt) return false
+    return new Date(i.paidAt) <= new Date(i.dueAt)
   }).length
 
   const lateCount     = paid.length - onTimeCount
@@ -26,7 +26,7 @@ function computeReliabilityScoreFromInvoices(invoices: InvoiceForScore[]): numbe
 async function computeReliabilityScore(clientId: string): Promise<number> {
   const invoices = await prisma.invoice.findMany({
     where: { clientId, status: { in: ['PAID', 'OVERDUE', 'CANCELLED'] } },
-    select: { status: true, dueDate: true, paidAt: true },
+    select: { status: true, dueAt: true, paidAt: true },
   })
   return computeReliabilityScoreFromInvoices(invoices)
 }
@@ -38,7 +38,7 @@ export async function listClients(companyId: string, query: ListClientsInput) {
     ...(search
       ? {
           OR: [
-            { name: { contains: search, mode: 'insensitive' } },
+            { nom: { contains: search, mode: 'insensitive' } },
             { email: { contains: search, mode: 'insensitive' } },
           ],
         }
@@ -47,7 +47,7 @@ export async function listClients(companyId: string, query: ListClientsInput) {
   const [items, total] = await Promise.all([
     prisma.client.findMany({
       where,
-      orderBy: { name: 'asc' },
+      orderBy: { nom: 'asc' },
       skip: (page - 1) * limit,
       take: limit,
     }),
@@ -57,7 +57,7 @@ export async function listClients(companyId: string, query: ListClientsInput) {
   const clientIds = items.map((c) => c.id)
   const allInvoices = await prisma.invoice.findMany({
     where: { clientId: { in: clientIds }, status: { in: ['PAID', 'OVERDUE', 'CANCELLED'] } },
-    select: { clientId: true, status: true, dueDate: true, paidAt: true },
+    select: { clientId: true, status: true, dueAt: true, paidAt: true },
   })
   const invoicesByClient = new Map<string, typeof allInvoices>()
   for (const inv of allInvoices) {
@@ -83,10 +83,10 @@ export async function getClient(companyId: string, id: string) {
   const invoiceStats = await prisma.invoice.aggregate({
     where: { clientId: id },
     _count: true,
-    _sum:  { total: true },
+    _sum:  { amountTTC: true },
   })
 
-  return { ...client, reliabilityScore, invoiceCount: invoiceStats._count, invoiceTotal: invoiceStats._sum.total }
+  return { ...client, reliabilityScore, invoiceCount: invoiceStats._count, invoiceTotal: invoiceStats._sum?.amountTTC }
 }
 
 export async function createClient(companyId: string, data: CreateClientInput) {
@@ -97,11 +97,10 @@ export async function createClient(companyId: string, data: CreateClientInput) {
   return prisma.client.create({
     data: {
       companyId,
-      name:    data.name,
-      email:   data.email   ?? null,
-      siren:   data.siren   ?? null,
-      phone:   data.phone   ?? null,
-      address: data.address ?? null,
+      nom:       data.name,
+      email:     data.email     ?? null,
+      telephone: data.phone     ?? null,
+      adresse:   data.address   ?? null,
     },
   })
 }
@@ -117,11 +116,10 @@ export async function updateClient(companyId: string, id: string, data: UpdateCl
   return prisma.client.update({
     where: { id },
     data: {
-      ...(data.name    !== undefined ? { name: data.name }            : {}),
-      ...(data.email   !== undefined ? { email: data.email ?? null }  : {}),
-      ...(data.siren   !== undefined ? { siren: data.siren ?? null }  : {}),
-      ...(data.phone   !== undefined ? { phone: data.phone ?? null }  : {}),
-      ...(data.address !== undefined ? { address: data.address ?? null } : {}),
+      ...(data.name    !== undefined ? { nom: data.name }                   : {}),
+      ...(data.email   !== undefined ? { email: data.email ?? null }        : {}),
+      ...(data.phone   !== undefined ? { telephone: data.phone ?? null }    : {}),
+      ...(data.address !== undefined ? { adresse: data.address ?? null }    : {}),
     },
   })
 }

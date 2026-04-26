@@ -26,6 +26,8 @@ export interface UserProfile {
   lastLoginAt: string | null
   createdAt: string
   atheisNumber: string | null
+  agenceId: string | null
+  agenceNom: string | null
 }
 
 export interface CompanyProfile {

@@ -7,7 +7,7 @@ async function seedAccountPlans() {
   console.log('🌱 Seeding account plans for all companies…')
 
   const companies = await prisma.company.findMany({
-    select: { id: true, name: true, accountingZone: true },
+    select: { id: true, nom: true, accountingZone: true },
   })
 
   for (const company of companies) {
@@ -34,7 +34,7 @@ async function seedAccountPlans() {
       })
       added++
     }
-    console.log(`  ${company.name} (${zone}): ${added} comptes importés`)
+    console.log(`  ${company.nom} (${zone}): ${added} comptes importés`)
   }
 
   await prisma.$disconnect()

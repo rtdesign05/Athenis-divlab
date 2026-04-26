@@ -31,6 +31,7 @@ import type {
   TotpDisableDto,
   ChangePasswordDto,
 } from './auth.dto.js'
+import type { CompanyRole, CabinetRole } from '@prisma/client'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,30 @@ const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const DUMMY_HASH_PROMISE = bcrypt.hash('athenis-internal-noop', BCRYPT_ROUNDS)
 
 authenticator.options = { window: 1 }
+
+// ── Role mapping ──────────────────────────────────────────────────────────────
+
+function companyRoleToUserRole(role: CompanyRole): UserRole {
+  switch (role) {
+    case 'OWNER':
+    case 'ADMIN':
+    case 'MANAGER':
+    case 'SALES':
+      return 'ADMIN'
+    case 'ACCOUNTANT':
+      return 'COMPTABLE'
+    case 'HR':
+      return 'RH'
+    case 'READONLY':
+    case 'CUSTOM':
+    default:
+      return 'READONLY'
+  }
+}
+
+function cabinetRoleToUserRole(_role: CabinetRole): UserRole {
+  return 'ADMIN'
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -66,48 +91,117 @@ function verifyTotpPendingToken(token: string): string {
   return payload.sub
 }
 
+/**
+ * Resolves the agence restriction for a company member.
+ * Returns the first restricted agence, or null if the member has access to all agences.
+ */
+async function getUserAgence(
+  userId: string,
+  companyId: string | null,
+): Promise<{ agenceId: string | null; agenceNom: string | null }> {
+  if (!companyId) return { agenceId: null, agenceNom: null }
+
+  const member = await prisma.companyMember.findFirst({
+    where: { userId, companyId },
+    include: {
+      agences: {
+        where: { isRestricted: true },
+        include: { agence: true },
+        take: 1,
+      },
+    },
+  })
+
+  const firstAgence = member?.agences[0]?.agence
+  return {
+    agenceId: firstAgence?.id ?? null,
+    agenceNom: firstAgence?.nom ?? null,
+  }
+}
+
+// ── Shape accepted by toUserProfile ──────────────────────────────────────────
+
+type DbUser = {
+  id: string
+  email: string
+  nom: string
+  prenom: string | null
+  accountType: string
+  twoFAEnabled: boolean
+  isActive: boolean
+  lastLoginAt: Date | null
+  createdAt: Date
+  atheisNumber: string | null
+  companyMember: { companyId: string; role: CompanyRole } | null
+  cabinetMember: { cabinetId: string; role: CabinetRole } | null
+}
+
 function toUserProfile(
-  user: {
-    id: string
-    email: string
-    firstName: string | null
-    lastName: string | null
-    accountType: string
-    role: string
-    companyId: string | null
-    cabinetId: string | null
-    totpEnabled: boolean
-    isActive: boolean
-    lastLoginAt: Date | null
-    createdAt: Date
-    atheisNumber?: string | null
-  },
+  user: DbUser,
   plan: Plan | null,
   modules: Module[],
+  agenceId: string | null = null,
+  agenceNom: string | null = null,
 ): UserProfile {
+  const companyId = user.companyMember?.companyId ?? null
+  const cabinetId = user.cabinetMember?.cabinetId ?? null
+
+  let role: UserRole = 'READONLY'
+  if (user.companyMember) {
+    role = companyRoleToUserRole(user.companyMember.role)
+  } else if (user.cabinetMember) {
+    role = cabinetRoleToUserRole(user.cabinetMember.role)
+  } else {
+    // PERSONAL or SUPER_ADMIN
+    role = 'ADMIN'
+  }
+
   return {
     id: user.id,
     email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
+    firstName: user.nom,
+    lastName: user.prenom ?? null,
     accountType: user.accountType as AccountType,
-    role: user.role as UserRole,
-    companyId: user.companyId,
-    cabinetId: user.cabinetId,
+    role,
+    companyId,
+    cabinetId,
     plan,
     modules,
-    totpEnabled: user.totpEnabled,
+    totpEnabled: user.twoFAEnabled,
     isActive: user.isActive,
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),
     atheisNumber: user.atheisNumber ?? null,
+    agenceId,
+    agenceNom,
   }
 }
+
+// ── Shared select for User queries ────────────────────────────────────────────
+
+const USER_SELECT = {
+  id: true,
+  email: true,
+  nom: true,
+  prenom: true,
+  accountType: true,
+  twoFAEnabled: true,
+  isActive: true,
+  lastLoginAt: true,
+  createdAt: true,
+  atheisNumber: true,
+  companyMember: {
+    select: { companyId: true, role: true },
+  },
+  cabinetMember: {
+    select: { cabinetId: true, role: true },
+  },
+} as const
 
 async function createRefreshToken(userId: string): Promise<string> {
   const raw = crypto.randomBytes(48).toString('hex')
   await prisma.refreshToken.create({
-    data: { tokenHash: hashToken(raw), userId, expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS) },
+    data: { token: hashToken(raw), userId, expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS) },
   })
   return raw
 }
@@ -132,7 +226,15 @@ async function audit(
 ): Promise<void> {
   await prisma.auditLog
     .create({
-      data: { action: action as never, userId, companyId, ipAddress: ip, userAgent: ua, metadata: metadata as never },
+      data: {
+        action,
+        resource: 'auth',
+        userId,
+        companyId,
+        ipAddress: ip,
+        userAgent: ua,
+        ...(metadata ? { metadata: metadata as object } : {}),
+      },
     })
     .catch((e: unknown) => logger.error('Audit log failed', { e }))
 }
@@ -148,102 +250,124 @@ export async function register(
   if (existing) throw new AppError('Email déjà utilisé', 409, 'EMAIL_TAKEN')
 
   const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS)
-
-  const userSelect = {
-    id: true, email: true, firstName: true, lastName: true,
-    accountType: true, role: true, companyId: true, cabinetId: true,
-    totpEnabled: true, isActive: true, lastLoginAt: true, createdAt: true,
-    atheisNumber: true,
-  }
-
-  type SelectedUser = {
-    id: string; email: string; firstName: string | null; lastName: string | null
-    accountType: import('@prisma/client').AccountType; role: import('@prisma/client').Role
-    companyId: string | null; cabinetId: string | null
-    totpEnabled: boolean; isActive: boolean; lastLoginAt: Date | null; createdAt: Date
-    atheisNumber: string | null
-  }
-  let dbUser: SelectedUser
-
   const atheisNumber = await generateAtheisNumber(dto.accountType as import('@prisma/client').AccountType)
 
+  let dbUser: DbUser
+
   if (dto.accountType === 'PERSONAL') {
-    dbUser = await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
-        email: dto.email, passwordHash,
-        accountType: 'PERSONAL', role: 'ADMIN',
-        firstName: dto.firstName ?? null, lastName: dto.lastName ?? null,
+        email: dto.email,
+        passwordHash,
+        accountType: 'PERSONAL',
+        nom: dto.firstName ?? (dto.email.split('@')[0] ?? 'Utilisateur'),
+        prenom: dto.lastName ?? null,
         atheisNumber,
+        personalProfile: { create: {} },
       },
-      select: userSelect,
+      select: USER_SELECT,
     })
+    dbUser = user as unknown as DbUser
   } else if (dto.accountType === 'COMPANY') {
     const modules = getDefaultModules(dto.plan)
     const countryCfg = getCountryConfig(dto.country ?? 'FR')
     dbUser = await prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
         data: {
-          name: dto.companyName, siren: dto.siren ?? null,
-          secteur: dto.secteur ?? null, taille: dto.taille ?? 'PME',
-          plan: dto.plan, modules,
-          country: countryCfg.code,
+          nom: dto.companyName,
+          secteur: dto.secteur ?? null,
+          taille: (dto.taille ?? 'PME') as import('@prisma/client').CompanySize,
+          plan: dto.plan as import('@prisma/client').Plan,
+          modules,
+          pays: countryCfg.code,
           currency: countryCfg.currencyCode,
           currencySymbol: countryCfg.currencySymbol,
-          accountingZone: countryCfg.accountingZone,
+          accountingZone: countryCfg.accountingZone as import('@prisma/client').AccountingZone,
           accountingPlan: countryCfg.accountingPlan,
-          vatRates: countryCfg.vatRates,
+          vatRate: countryCfg.vatRates[0] ?? 0,
           locale: countryCfg.locale,
           timezone: countryCfg.timezone,
         },
       })
-      return tx.user.create({
+      const user = await tx.user.create({
         data: {
-          email: dto.email, passwordHash,
-          accountType: 'COMPANY', role: 'ADMIN',
-          firstName: dto.firstName ?? null, lastName: dto.lastName ?? null,
-          companyId: company.id, atheisNumber,
+          email: dto.email,
+          passwordHash,
+          accountType: 'COMPANY',
+          nom: dto.firstName ?? (dto.email.split('@')[0] ?? 'Utilisateur'),
+          prenom: dto.lastName ?? null,
+          atheisNumber,
+          companyMember: {
+            create: {
+              companyId: company.id,
+              role: 'OWNER',
+            },
+          },
         },
-        select: userSelect,
+        select: USER_SELECT,
       })
+      return user as unknown as DbUser
     })
   } else {
     dbUser = await prisma.$transaction(async (tx) => {
       const cabinet = await tx.cabinet.create({
-        data: { name: dto.cabinetName, siret: dto.siret ?? null },
+        data: { nom: dto.cabinetName, siret: dto.siret ?? null },
       })
-      return tx.user.create({
+      const user = await tx.user.create({
         data: {
-          email: dto.email, passwordHash,
-          accountType: 'CABINET', role: 'ADMIN',
-          firstName: dto.firstName ?? null, lastName: dto.lastName ?? null,
-          cabinetId: cabinet.id, atheisNumber,
+          email: dto.email,
+          passwordHash,
+          accountType: 'CABINET',
+          nom: dto.firstName ?? (dto.email.split('@')[0] ?? 'Utilisateur'),
+          prenom: dto.lastName ?? null,
+          atheisNumber,
+          cabinetMember: {
+            create: {
+              cabinetId: cabinet.id,
+              role: 'EXPERT_COMPTABLE',
+            },
+          },
         },
-        select: userSelect,
+        select: USER_SELECT,
       })
+      return user as unknown as DbUser
     })
   }
 
-  const plan = await getEffectivePlan(dbUser.accountType as AccountType, dbUser.companyId)
-  const modules = await getEffectiveModules(dbUser.accountType as AccountType, dbUser.companyId)
-  const companyLocale = dbUser.companyId
-    ? await prisma.company.findUnique({ where: { id: dbUser.companyId }, select: { country: true, currencySymbol: true } })
+  const companyId = dbUser.companyMember?.companyId ?? null
+  const cabinetId = dbUser.cabinetMember?.cabinetId ?? null
+  const plan = await getEffectivePlan(dbUser.accountType as AccountType, companyId)
+  const modules = await getEffectiveModules(dbUser.accountType as AccountType, companyId)
+  const companyLocale = companyId
+    ? await prisma.company.findUnique({ where: { id: companyId }, select: { pays: true, currencySymbol: true } })
     : null
+  const { agenceId, agenceNom } = await getUserAgence(dbUser.id, companyId)
+
+  const role = dbUser.companyMember
+    ? companyRoleToUserRole(dbUser.companyMember.role)
+    : dbUser.cabinetMember
+      ? cabinetRoleToUserRole(dbUser.cabinetMember.role)
+      : ('ADMIN' as UserRole)
 
   const accessToken = signAccessToken({
-    sub: dbUser.id, email: dbUser.email,
+    sub: dbUser.id,
+    email: dbUser.email,
     accountType: dbUser.accountType as AccountType,
-    role: dbUser.role as UserRole,
-    companyId: dbUser.companyId,
-    cabinetId: dbUser.cabinetId,
-    plan, modules,
-    country: companyLocale?.country ?? null,
+    role,
+    companyId,
+    cabinetId,
+    plan,
+    modules,
+    country: companyLocale?.pays ?? null,
     currencySymbol: companyLocale?.currencySymbol ?? null,
     atheisNumber: dbUser.atheisNumber ?? null,
+    agenceId,
+    agenceNom,
   })
   const refreshToken = await createRefreshToken(dbUser.id)
-  await audit('USER_CREATED', dbUser.id, dbUser.companyId, ip, ua)
+  await audit('USER_CREATED', dbUser.id, companyId, ip, ua)
 
-  return { response: { accessToken, user: toUserProfile(dbUser, plan, modules) }, refreshToken }
+  return { response: { accessToken, user: toUserProfile(dbUser, plan, modules, agenceId, agenceNom) }, refreshToken }
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -256,18 +380,17 @@ export async function login(
   const user = await prisma.user.findUnique({
     where: { email: dto.email },
     select: {
-      id: true, email: true, firstName: true, lastName: true,
-      passwordHash: true, accountType: true, role: true,
-      companyId: true, cabinetId: true,
-      totpEnabled: true, totpSecret: true, isActive: true,
-      failedLoginAttempts: true, lockedUntil: true,
-      lastLoginAt: true, createdAt: true, atheisNumber: true,
+      ...USER_SELECT,
+      passwordHash: true,
+      twoFASecret: true,
+      failedAttempts: true,
+      lockedUntil: true,
     },
   })
 
   if (user?.lockedUntil && user.lockedUntil > new Date()) {
     const minutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000)
-    await audit('LOGIN_FAILED', user.id, user.companyId, ip, ua, { reason: 'account_locked' })
+    await audit('LOGIN_FAILED', user.id, user.companyMember?.companyId ?? null, ip, ua, { reason: 'account_locked' })
     throw new AppError(`Compte verrouillé. Réessayez dans ${minutes} min.`, 423, 'ACCOUNT_LOCKED')
   }
 
@@ -280,47 +403,68 @@ export async function login(
 
   if (!user || !valid) {
     if (user) {
-      const attempts = user.failedLoginAttempts + 1
+      const attempts = user.failedAttempts + 1
       const shouldLock = attempts >= MAX_FAILED_ATTEMPTS
       await prisma.user.update({
         where: { id: user.id },
         data: {
-          failedLoginAttempts: attempts,
+          failedAttempts: attempts,
           ...(shouldLock ? { lockedUntil: new Date(Date.now() + LOCK_DURATION_MS) } : {}),
         },
       })
-      await audit(shouldLock ? 'ACCOUNT_LOCKED' : 'LOGIN_FAILED', user.id, user.companyId, ip, ua, { attempts })
+      await audit(
+        shouldLock ? 'ACCOUNT_LOCKED' : 'LOGIN_FAILED',
+        user.id,
+        user.companyMember?.companyId ?? null,
+        ip, ua,
+        { attempts },
+      )
     }
     throw new AppError('Email ou mot de passe incorrect', 401, 'INVALID_CREDENTIALS')
   }
 
-  await prisma.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 0, lockedUntil: null } })
+  await prisma.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null } })
 
-  if (user.totpEnabled) {
+  if (user.twoFAEnabled) {
     return { response: { requiresTotp: true, tempToken: signTotpPendingToken(user.id) } as LoginResponse }
   }
 
-  const plan = await getEffectivePlan(user.accountType as AccountType, user.companyId)
-  const modules = await getEffectiveModules(user.accountType as AccountType, user.companyId)
-  const loginLocale = user.companyId
-    ? await prisma.company.findUnique({ where: { id: user.companyId }, select: { country: true, currencySymbol: true } })
+  const companyId = user.companyMember?.companyId ?? null
+  const cabinetId = user.cabinetMember?.cabinetId ?? null
+  const plan = await getEffectivePlan(user.accountType as AccountType, companyId)
+  const modules = await getEffectiveModules(user.accountType as AccountType, companyId)
+  const loginLocale = companyId
+    ? await prisma.company.findUnique({ where: { id: companyId }, select: { pays: true, currencySymbol: true } })
     : null
+  const { agenceId, agenceNom } = await getUserAgence(user.id, companyId)
+
+  const role = user.companyMember
+    ? companyRoleToUserRole(user.companyMember.role)
+    : user.cabinetMember
+      ? cabinetRoleToUserRole(user.cabinetMember.role)
+      : ('ADMIN' as UserRole)
+
   const accessToken = signAccessToken({
-    sub: user.id, email: user.email,
+    sub: user.id,
+    email: user.email,
     accountType: user.accountType as AccountType,
-    role: user.role as UserRole,
-    companyId: user.companyId, cabinetId: user.cabinetId,
-    plan, modules,
-    country: loginLocale?.country ?? null,
+    role,
+    companyId,
+    cabinetId,
+    plan,
+    modules,
+    country: loginLocale?.pays ?? null,
     currencySymbol: loginLocale?.currencySymbol ?? null,
     atheisNumber: user.atheisNumber ?? null,
+    agenceId,
+    agenceNom,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-  await audit('LOGIN', user.id, user.companyId, ip, ua)
+  await audit('LOGIN', user.id, companyId, ip, ua)
 
   return {
-    response: { accessToken, user: toUserProfile(user, plan, modules) },
+    response: { accessToken, user: toUserProfile(user as unknown as DbUser, plan, modules, agenceId, agenceNom) },
     refreshToken,
   }
 }
@@ -343,40 +487,53 @@ export async function loginVerifyTotp(
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
-      id: true, email: true, firstName: true, lastName: true,
-      accountType: true, role: true, companyId: true, cabinetId: true,
-      totpEnabled: true, totpSecret: true, isActive: true,
-      lastLoginAt: true, createdAt: true, atheisNumber: true,
+      ...USER_SELECT,
+      twoFASecret: true,
     },
   })
 
-  if (!user?.totpEnabled || !user.totpSecret) throw new AppError('TOTP non configuré', 400, 'TOTP_NOT_CONFIGURED')
+  if (!user?.twoFAEnabled || !user.twoFASecret) throw new AppError('TOTP non configuré', 400, 'TOTP_NOT_CONFIGURED')
 
-  if (!authenticator.check(code, decrypt(user.totpSecret))) {
-    await audit('TOTP_FAILED', user.id, user.companyId, ip, ua)
+  if (!authenticator.check(code, decrypt(user.twoFASecret))) {
+    await audit('TOTP_FAILED', user.id, user.companyMember?.companyId ?? null, ip, ua)
     throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
   }
 
-  const plan = await getEffectivePlan(user.accountType as AccountType, user.companyId)
-  const modules = await getEffectiveModules(user.accountType as AccountType, user.companyId)
-  const totpLocale = user.companyId
-    ? await prisma.company.findUnique({ where: { id: user.companyId }, select: { country: true, currencySymbol: true } })
+  const companyId = user.companyMember?.companyId ?? null
+  const cabinetId = user.cabinetMember?.cabinetId ?? null
+  const plan = await getEffectivePlan(user.accountType as AccountType, companyId)
+  const modules = await getEffectiveModules(user.accountType as AccountType, companyId)
+  const totpLocale = companyId
+    ? await prisma.company.findUnique({ where: { id: companyId }, select: { pays: true, currencySymbol: true } })
     : null
+  const { agenceId, agenceNom } = await getUserAgence(user.id, companyId)
+
+  const role = user.companyMember
+    ? companyRoleToUserRole(user.companyMember.role)
+    : user.cabinetMember
+      ? cabinetRoleToUserRole(user.cabinetMember.role)
+      : ('ADMIN' as UserRole)
+
   const accessToken = signAccessToken({
-    sub: user.id, email: user.email,
+    sub: user.id,
+    email: user.email,
     accountType: user.accountType as AccountType,
-    role: user.role as UserRole,
-    companyId: user.companyId, cabinetId: user.cabinetId,
-    plan, modules,
-    country: totpLocale?.country ?? null,
+    role,
+    companyId,
+    cabinetId,
+    plan,
+    modules,
+    country: totpLocale?.pays ?? null,
     currencySymbol: totpLocale?.currencySymbol ?? null,
     atheisNumber: user.atheisNumber ?? null,
+    agenceId,
+    agenceNom,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-  await audit('LOGIN', user.id, user.companyId, ip, ua)
+  await audit('LOGIN', user.id, companyId, ip, ua)
 
-  return { response: { accessToken, user: toUserProfile(user, plan, modules) }, refreshToken }
+  return { response: { accessToken, user: toUserProfile(user as unknown as DbUser, plan, modules, agenceId, agenceNom) }, refreshToken }
 }
 
 // ── Refresh ───────────────────────────────────────────────────────────────────
@@ -384,12 +541,17 @@ export async function loginVerifyTotp(
 export async function refreshAccessToken(rawToken: string): Promise<RefreshTokenResponse> {
   const tokenHash = hashToken(rawToken)
   const stored = await prisma.refreshToken.findUnique({
-    where: { tokenHash },
+    where: { token: tokenHash },
     include: {
       user: {
         select: {
-          id: true, email: true, accountType: true, role: true,
-          companyId: true, cabinetId: true, isActive: true, atheisNumber: true,
+          id: true,
+          email: true,
+          accountType: true,
+          isActive: true,
+          atheisNumber: true,
+          companyMember: { select: { companyId: true, role: true } },
+          cabinetMember: { select: { cabinetId: true, role: true } },
         },
       },
     },
@@ -414,30 +576,44 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
   await prisma.$transaction([
     prisma.refreshToken.update({
       where: { id: stored.id },
-      data: { revokedAt: new Date(), replacedByHash: newHash },
+      data: { revokedAt: new Date() },
     }),
     prisma.refreshToken.create({
-      data: { tokenHash: newHash, userId: stored.userId, expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS) },
+      data: { token: newHash, userId: stored.userId, expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS) },
     }),
   ])
 
   const u = stored.user
-  const plan = await getEffectivePlan(u.accountType as AccountType, u.companyId)
-  const modules = await getEffectiveModules(u.accountType as AccountType, u.companyId)
-  const refreshLocale = u.companyId
-    ? await prisma.company.findUnique({ where: { id: u.companyId }, select: { country: true, currencySymbol: true } })
+  const companyId = u.companyMember?.companyId ?? null
+  const cabinetId = u.cabinetMember?.cabinetId ?? null
+  const plan = await getEffectivePlan(u.accountType as AccountType, companyId)
+  const modules = await getEffectiveModules(u.accountType as AccountType, companyId)
+  const refreshLocale = companyId
+    ? await prisma.company.findUnique({ where: { id: companyId }, select: { pays: true, currencySymbol: true } })
     : null
+  const { agenceId, agenceNom } = await getUserAgence(u.id, companyId)
+
+  const role = u.companyMember
+    ? companyRoleToUserRole(u.companyMember.role)
+    : u.cabinetMember
+      ? cabinetRoleToUserRole(u.cabinetMember.role)
+      : ('ADMIN' as UserRole)
 
   return {
     accessToken: signAccessToken({
-      sub: u.id, email: u.email,
+      sub: u.id,
+      email: u.email,
       accountType: u.accountType as AccountType,
-      role: u.role as UserRole,
-      companyId: u.companyId, cabinetId: u.cabinetId,
-      plan, modules,
-      country: refreshLocale?.country ?? null,
+      role,
+      companyId,
+      cabinetId,
+      plan,
+      modules,
+      country: refreshLocale?.pays ?? null,
       currencySymbol: refreshLocale?.currencySymbol ?? null,
       atheisNumber: u.atheisNumber ?? null,
+      agenceId,
+      agenceNom,
     }),
   }
 }
@@ -447,7 +623,7 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
 export async function logout(rawToken: string, userId: string, companyId: string | null, ip: string, ua: string): Promise<void> {
   if (rawToken) {
     await prisma.refreshToken
-      .update({ where: { tokenHash: hashToken(rawToken) }, data: { revokedAt: new Date() } })
+      .update({ where: { token: hashToken(rawToken) }, data: { revokedAt: new Date() } })
       .catch(() => void 0)
   }
   await audit('LOGOUT', userId, companyId, ip, ua)
@@ -456,11 +632,14 @@ export async function logout(rawToken: string, userId: string, companyId: string
 // ── TOTP ──────────────────────────────────────────────────────────────────────
 
 export async function setupTotp(userId: string): Promise<TotpSetupResponse> {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { email: true, totpEnabled: true } })
-  if (user.totpEnabled) throw new AppError('TOTP déjà activé', 409, 'TOTP_ALREADY_ENABLED')
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { email: true, twoFAEnabled: true },
+  })
+  if (user.twoFAEnabled) throw new AppError('TOTP déjà activé', 409, 'TOTP_ALREADY_ENABLED')
 
   const secret = authenticator.generateSecret(20)
-  await prisma.user.update({ where: { id: userId }, data: { totpSecret: encrypt(secret) } })
+  await prisma.user.update({ where: { id: userId }, data: { twoFASecret: encrypt(secret) } })
 
   const otpauthUrl = authenticator.keyuri(user.email, env.totpIssuer, secret)
   return { secret, otpauthUrl, qrCodeDataUrl: await QRCode.toDataURL(otpauthUrl) }
@@ -469,14 +648,18 @@ export async function setupTotp(userId: string): Promise<TotpSetupResponse> {
 export async function enableTotp(userId: string, dto: TotpEnableDto, ip: string, ua: string): Promise<TotpVerifyResponse> {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { totpSecret: true, totpEnabled: true, companyId: true },
+    select: {
+      twoFASecret: true,
+      twoFAEnabled: true,
+      companyMember: { select: { companyId: true } },
+    },
   })
-  if (user.totpEnabled) throw new AppError('TOTP déjà activé', 409, 'TOTP_ALREADY_ENABLED')
-  if (!user.totpSecret) throw new AppError('Lancez la configuration TOTP d\'abord', 400, 'TOTP_NOT_SETUP')
-  if (!authenticator.check(dto.code, decrypt(user.totpSecret))) throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
+  if (user.twoFAEnabled) throw new AppError('TOTP déjà activé', 409, 'TOTP_ALREADY_ENABLED')
+  if (!user.twoFASecret) throw new AppError('Lancez la configuration TOTP d\'abord', 400, 'TOTP_NOT_SETUP')
+  if (!authenticator.check(dto.code, decrypt(user.twoFASecret))) throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
 
-  await prisma.user.update({ where: { id: userId }, data: { totpEnabled: true } })
-  await audit('TOTP_ENABLED', userId, user.companyId, ip, ua)
+  await prisma.user.update({ where: { id: userId }, data: { twoFAEnabled: true } })
+  await audit('TOTP_ENABLED', userId, user.companyMember?.companyId ?? null, ip, ua)
 
   const backupCodes = Array.from({ length: 8 }, () => crypto.randomBytes(5).toString('hex').toUpperCase())
   return { enabled: true, backupCodes }
@@ -485,23 +668,34 @@ export async function enableTotp(userId: string, dto: TotpEnableDto, ip: string,
 export async function disableTotp(userId: string, dto: TotpDisableDto, ip: string, ua: string): Promise<void> {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { passwordHash: true, totpSecret: true, totpEnabled: true, companyId: true },
+    select: {
+      passwordHash: true,
+      twoFASecret: true,
+      twoFAEnabled: true,
+      companyMember: { select: { companyId: true } },
+    },
   })
-  if (!user.totpEnabled) throw new AppError('TOTP non activé', 400, 'TOTP_NOT_ENABLED')
+  if (!user.twoFAEnabled) throw new AppError('TOTP non activé', 400, 'TOTP_NOT_ENABLED')
   if (!await bcrypt.compare(dto.password, user.passwordHash)) throw new AppError('Mot de passe incorrect', 401, 'INVALID_CREDENTIALS')
-  if (!authenticator.check(dto.code, decrypt(user.totpSecret!))) throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
+  if (!authenticator.check(dto.code, decrypt(user.twoFASecret!))) throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
 
-  await prisma.user.update({ where: { id: userId }, data: { totpEnabled: false, totpSecret: null } })
-  await audit('TOTP_DISABLED', userId, user.companyId, ip, ua)
+  await prisma.user.update({ where: { id: userId }, data: { twoFAEnabled: false, twoFASecret: null } })
+  await audit('TOTP_DISABLED', userId, user.companyMember?.companyId ?? null, ip, ua)
 }
 
 export async function changePassword(userId: string, dto: ChangePasswordDto, ip: string, ua: string): Promise<void> {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { passwordHash: true, companyId: true } })
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      passwordHash: true,
+      companyMember: { select: { companyId: true } },
+    },
+  })
   if (!await bcrypt.compare(dto.currentPassword, user.passwordHash)) throw new AppError('Mot de passe actuel incorrect', 401, 'INVALID_CREDENTIALS')
 
   await prisma.$transaction([
     prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS) } }),
     prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } }),
   ])
-  await audit('PASSWORD_CHANGED', userId, user.companyId, ip, ua)
+  await audit('PASSWORD_CHANGED', userId, user.companyMember?.companyId ?? null, ip, ua)
 }

@@ -55,7 +55,7 @@ expensesRouter.post(
   validateRequest({ body: CreateExpenseDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.createExpense(getCompanyId(req), req.body)
+      const data = await svc.createExpense(getCompanyId(req), req.body, req.user?.sub ?? 'unknown')
       res.status(201).json({ success: true, data })
     } catch (e) { next(e) }
   },

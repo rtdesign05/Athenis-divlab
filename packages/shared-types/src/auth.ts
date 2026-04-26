@@ -12,6 +12,8 @@ export interface JwtPayload {
   country?: string | null
   currencySymbol?: string | null
   atheisNumber?: string | null
+  agenceId?: string | null
+  agenceNom?: string | null
   iat?: number
   exp?: number
 }

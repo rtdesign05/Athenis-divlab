@@ -24,23 +24,23 @@ export async function getCompteDeResultat(companyId: string, year: number) {
 
   const [invoiceTotals, expenseTotals, salaryTotals] = await Promise.all([
     prisma.invoice.aggregate({
-      where: { companyId, status: 'PAID', issueDate: { gte: start, lte: end } },
-      _sum: { subtotal: true, taxAmount: true, total: true },
+      where: { companyId, status: 'PAID', issuedAt: { gte: start, lte: end } },
+      _sum: { amountHT: true, amountTTC: true },
     }),
     prisma.expense.aggregate({
       where: { companyId, date: { gte: start, lte: end } },
       _sum: { amount: true },
     }),
     prisma.employee.aggregate({
-      where: { companyId, startDate: { lte: end }, OR: [{ endDate: null }, { endDate: { gte: start } }] },
-      _sum: { grossSalary: true },
+      where: { companyId, dateEmbauche: { lte: end }, OR: [{ dateFinContrat: null }, { dateFinContrat: { gte: start } }] },
+      _sum: { salaireBrut: true },
     }),
   ])
 
-  const chiffreAffaires     = toNum(invoiceTotals._sum.subtotal)
-  const tvaCollectee        = toNum(invoiceTotals._sum.taxAmount)
-  const chargesExploitation = toNum(expenseTotals._sum.amount)
-  const masseSalariale      = toNum(salaryTotals._sum.grossSalary)
+  const chiffreAffaires     = toNum(invoiceTotals._sum?.amountHT)
+  const tvaCollectee        = toNum(invoiceTotals._sum?.amountTTC) - chiffreAffaires
+  const chargesExploitation = toNum(expenseTotals._sum?.amount)
+  const masseSalariale      = toNum(salaryTotals._sum?.salaireBrut)
   const chargesTotal        = chargesExploitation + masseSalariale
   const resultatBrut        = chiffreAffaires - chargesTotal
 
@@ -59,27 +59,27 @@ export async function getBilan(companyId: string, year: number) {
 
   const [creances, dettes, tresorerie] = await Promise.all([
     prisma.invoice.aggregate({
-      where: { companyId, status: { in: ['SENT', 'OVERDUE'] }, dueDate: { lte: end } },
-      _sum: { total: true },
+      where: { companyId, status: { in: ['PENDING', 'OVERDUE'] }, dueAt: { lte: end } },
+      _sum: { amountTTC: true },
     }),
     prisma.expense.aggregate({
       where: { companyId, date: { gte: start, lte: end } },
       _sum: { amount: true },
     }),
     prisma.invoice.aggregate({
-      where: { companyId, status: 'PAID', issueDate: { gte: start, lte: end } },
-      _sum: { total: true },
+      where: { companyId, status: 'PAID', issuedAt: { gte: start, lte: end } },
+      _sum: { amountTTC: true },
     }),
   ])
 
-  const actifCirculant = toNum(creances._sum.total) + toNum(tresorerie._sum.total)
-  const passifCourant  = toNum(dettes._sum.amount)
+  const actifCirculant = toNum(creances._sum?.amountTTC) + toNum(tresorerie._sum?.amountTTC)
+  const passifCourant  = toNum(dettes._sum?.amount)
 
   return {
     year,
     actif: {
-      creancesClients: toNum(creances._sum.total),
-      tresorerie:      toNum(tresorerie._sum.total),
+      creancesClients: toNum(creances._sum?.amountTTC),
+      tresorerie:      toNum(tresorerie._sum?.amountTTC),
       totalActif:      actifCirculant,
     },
     passif: {
@@ -97,9 +97,9 @@ export async function getBalance(companyId: string, year: number) {
   const [invoicesByStatus, expensesByCategory] = await Promise.all([
     prisma.invoice.groupBy({
       by: ['status'],
-      where: { companyId, issueDate: { gte: start, lte: end } },
+      where: { companyId, issuedAt: { gte: start, lte: end } },
       _count: true,
-      _sum:   { total: true, subtotal: true, taxAmount: true },
+      _sum:   { amountHT: true, amountTTC: true },
     }),
     prisma.expense.groupBy({
       by: ['category'],
@@ -117,9 +117,9 @@ export async function getGrandLivre(companyId: string, year: number) {
 
   const [invoices, expenses] = await Promise.all([
     prisma.invoice.findMany({
-      where: { companyId, issueDate: { gte: start, lte: end } },
-      include: { client: { select: { name: true } } },
-      orderBy: { issueDate: 'asc' },
+      where: { companyId, issuedAt: { gte: start, lte: end } },
+      include: { client: { select: { nom: true } } },
+      orderBy: { issuedAt: 'asc' },
     }),
     prisma.expense.findMany({
       where: { companyId, date: { gte: start, lte: end } },
@@ -129,19 +129,19 @@ export async function getGrandLivre(companyId: string, year: number) {
 
   const entries = [
     ...invoices.map((inv) => ({
-      date:      inv.issueDate,
+      date:      inv.issuedAt,
       type:      'INVOICE' as const,
-      reference: inv.number,
-      label:     inv.client.name,
+      reference: inv.reference,
+      label:     inv.client.nom,
       debit:     0,
-      credit:    toNum(inv.total),
+      credit:    toNum(inv.amountTTC),
       status:    inv.status,
     })),
     ...expenses.map((exp) => ({
       date:      exp.date,
       type:      'EXPENSE' as const,
       reference: exp.id,
-      label:     exp.description,
+      label:     exp.note ?? exp.category,
       debit:     toNum(exp.amount),
       credit:    0,
       category:  exp.category,
@@ -165,16 +165,16 @@ export async function getTvaTrimestrielle(companyId: string, year: number) {
     quarters.map(async ({ quarter, start, end }) => {
       const [collectee, deductible] = await Promise.all([
         prisma.invoice.aggregate({
-          where: { companyId, status: 'PAID', issueDate: { gte: start, lte: end } },
-          _sum:  { taxAmount: true, subtotal: true },
+          where: { companyId, status: 'PAID', issuedAt: { gte: start, lte: end } },
+          _sum:  { amountHT: true, amountTTC: true },
         }),
         prisma.expense.aggregate({
           where: { companyId, date: { gte: start, lte: end } },
           _sum:  { amount: true },
         }),
       ])
-      const tvaCollectee  = toNum(collectee._sum.taxAmount)
-      const tvaDeductible = toNum(deductible._sum.amount) * 0.2
+      const tvaCollectee  = toNum(collectee._sum?.amountTTC) - toNum(collectee._sum?.amountHT)
+      const tvaDeductible = toNum(deductible._sum?.amount) * 0.2
       return {
         quarter,
         period:        `T${quarter} ${year}`,
@@ -197,8 +197,8 @@ export async function getTvaCA3(companyId: string, year: number, quarter: number
 
   const [invoices, expenses] = await Promise.all([
     prisma.invoice.findMany({
-      where: { companyId, status: 'PAID', issueDate: { gte: start, lte: end } },
-      select: { subtotal: true, taxAmount: true, taxRate: true, total: true },
+      where: { companyId, status: 'PAID', issuedAt: { gte: start, lte: end } },
+      select: { amountHT: true, amountTTC: true, vatRate: true },
     }),
     prisma.expense.aggregate({
       where: { companyId, date: { gte: start, lte: end } },
@@ -209,10 +209,12 @@ export async function getTvaCA3(companyId: string, year: number, quarter: number
   // Group by TVA rate
   const byRate = new Map<number, { base: number; tva: number }>()
   for (const inv of invoices) {
-    const rate = Number(inv.taxRate)
+    const rate = Number(inv.vatRate) * 100
     const cur  = byRate.get(rate) ?? { base: 0, tva: 0 }
-    cur.base  += toNum(inv.subtotal)
-    cur.tva   += toNum(inv.taxAmount)
+    const ht   = toNum(inv.amountHT)
+    const ttc  = toNum(inv.amountTTC)
+    cur.base  += ht
+    cur.tva   += ttc - ht
     byRate.set(rate, cur)
   }
 
@@ -223,7 +225,7 @@ export async function getTvaCA3(companyId: string, year: number, quarter: number
 
   const totalBase       = base20.base  + base10.base  + base55.base  + base21.base
   const tvaCollectee    = base20.tva   + base10.tva   + base55.tva   + base21.tva
-  const tvaDeductible   = toNum(expenses._sum.amount) * 0.2
+  const tvaDeductible   = toNum(expenses._sum?.amount) * 0.2
 
   return {
     period:  `T${quarter} ${year}`,
@@ -237,7 +239,7 @@ export async function getTvaCA3(companyId: string, year: number, quarter: number
       '04': { label: 'Opérations imposables (2,1%)',            base: base21.base,  tva: base21.tva  },
       '09': { label: 'Total TVA brute',                         base: totalBase,    tva: tvaCollectee },
       // Cadre B - Déductions
-      '20': { label: 'Dont TVA déductible sur autres biens',    base: toNum(expenses._sum.amount), tva: tvaDeductible },
+      '20': { label: 'Dont TVA déductible sur autres biens',    base: toNum(expenses._sum?.amount), tva: tvaDeductible },
       '23': { label: 'Total TVA déductible',                    base: null,         tva: tvaDeductible },
       // Cadre C - Calcul de la TVA à payer
       '28': { label: 'TVA nette due',                           base: null,         tva: Math.max(0, tvaCollectee - tvaDeductible) },
@@ -249,15 +251,14 @@ export async function getTvaCA3(companyId: string, year: number, quarter: number
 // ── Export FEC (Fichier des Écritures Comptables) DGFiP ──────────────────────
 
 export async function exportFEC(companyId: string, year: number): Promise<string> {
-  const company = await prisma.company.findUnique({ where: { id: companyId }, select: { name: true, siren: true } })
   const start   = new Date(`${year}-01-01`)
   const end     = new Date(`${year}-12-31T23:59:59.999Z`)
 
   const [invoices, expenses] = await Promise.all([
     prisma.invoice.findMany({
-      where: { companyId, issueDate: { gte: start, lte: end } },
-      include: { client: { select: { name: true, siren: true } } },
-      orderBy: { issueDate: 'asc' },
+      where: { companyId, issuedAt: { gte: start, lte: end } },
+      include: { client: { select: { nom: true } } },
+      orderBy: { issuedAt: 'asc' },
     }),
     prisma.expense.findMany({
       where: { companyId, date: { gte: start, lte: end } },
@@ -278,17 +279,18 @@ export async function exportFEC(companyId: string, year: number): Promise<string
 
   // Invoices → Journal VTE
   for (const inv of invoices) {
-    const d      = fmtDate(inv.issueDate)
-    const pieceD = fmtDate(inv.issueDate)
+    const d      = fmtDate(inv.issuedAt)
+    const pieceD = fmtDate(inv.issuedAt)
     const num    = String(lineNum).padStart(6, '0')
     const client = inv.client
+    const taxAmount = toNum(inv.amountTTC) - toNum(inv.amountHT)
 
     // Débit client (411)
     rows.push([
       'VTE', 'Ventes', num, d,
-      '411', 'Clients', client.siren ?? '', client.name,
-      inv.number, pieceD, `Facture ${inv.number}`,
-      fmtDecimal(toNum(inv.total)), '0,00', '', '',
+      '411', 'Clients', '', client.nom,
+      inv.reference, pieceD, `Facture ${inv.reference}`,
+      fmtDecimal(toNum(inv.amountTTC)), '0,00', '', '',
       d, '', '',
     ].join('|'))
     lineNum++
@@ -297,19 +299,19 @@ export async function exportFEC(companyId: string, year: number): Promise<string
     rows.push([
       'VTE', 'Ventes', String(lineNum).padStart(6, '0'), d,
       '706', 'Prestations de services', '', '',
-      inv.number, pieceD, `Facture ${inv.number}`,
-      '0,00', fmtDecimal(toNum(inv.subtotal)), '', '',
+      inv.reference, pieceD, `Facture ${inv.reference}`,
+      '0,00', fmtDecimal(toNum(inv.amountHT)), '', '',
       d, '', '',
     ].join('|'))
     lineNum++
 
     // Crédit TVA (44571)
-    if (toNum(inv.taxAmount) > 0) {
+    if (taxAmount > 0) {
       rows.push([
         'VTE', 'Ventes', String(lineNum).padStart(6, '0'), d,
         '44571', 'TVA collectée', '', '',
-        inv.number, pieceD, `TVA Facture ${inv.number}`,
-        '0,00', fmtDecimal(toNum(inv.taxAmount)), '', '',
+        inv.reference, pieceD, `TVA Facture ${inv.reference}`,
+        '0,00', fmtDecimal(taxAmount), '', '',
         d, '', '',
       ].join('|'))
       lineNum++
@@ -320,12 +322,13 @@ export async function exportFEC(companyId: string, year: number): Promise<string
   for (const exp of expenses) {
     const d   = fmtDate(exp.date)
     const num = String(lineNum).padStart(6, '0')
+    const label = exp.note ?? exp.category
 
     // Débit charges (607/606 etc)
     rows.push([
       'ACH', 'Achats', num, d,
       '607', 'Achats divers', '', '',
-      exp.id.slice(0, 12), d, exp.description,
+      exp.id.slice(0, 12), d, label,
       fmtDecimal(toNum(exp.amount)), '0,00', '', '',
       d, '', '',
     ].join('|'))
@@ -335,7 +338,7 @@ export async function exportFEC(companyId: string, year: number): Promise<string
     rows.push([
       'ACH', 'Achats', String(lineNum).padStart(6, '0'), d,
       '401', 'Fournisseurs', '', '',
-      exp.id.slice(0, 12), d, exp.description,
+      exp.id.slice(0, 12), d, label,
       '0,00', fmtDecimal(toNum(exp.amount)), '', '',
       d, '', '',
     ].join('|'))
@@ -348,19 +351,21 @@ export async function exportFEC(companyId: string, year: number): Promise<string
 // ── Clôture d'exercice ────────────────────────────────────────────────────────
 
 export async function getClotureStatus(companyId: string, year: number) {
-  const [existingClose, openInvoices, result] = await Promise.all([
-    prisma.fiscalYearClose.findUnique({ where: { companyId_year: { companyId, year } } }),
-    prisma.invoice.count({ where: { companyId, status: { in: ['SENT', 'OVERDUE'] }, issueDate: { gte: new Date(`${year}-01-01`), lte: new Date(`${year}-12-31`) } } }),
+  const [existingFY, openInvoices, result] = await Promise.all([
+    prisma.fiscalYear.findUnique({ where: { companyId_year: { companyId, year } } }),
+    prisma.invoice.count({ where: { companyId, status: { in: ['PENDING', 'OVERDUE'] }, issuedAt: { gte: new Date(`${year}-01-01`), lte: new Date(`${year}-12-31`) } } }),
     getCompteDeResultat(companyId, year),
   ])
 
+  const alreadyClosed = existingFY?.status === 'CLOSED'
+
   return {
     year,
-    alreadyClosed: !!existingClose,
-    closedAt:      existingClose?.createdAt ?? null,
+    alreadyClosed,
+    closedAt:      existingFY?.closedAt ?? null,
     openInvoices,
     resultatNet:   result.resultatBrut,
-    canClose:      openInvoices === 0 && !existingClose,
+    canClose:      openInvoices === 0 && !alreadyClosed,
     blockers:      openInvoices > 0 ? [`${openInvoices} facture(s) non encaissée(s) sur l'exercice`] : [],
   }
 }
@@ -372,13 +377,17 @@ export async function closeExercise(companyId: string, year: number, notes?: str
   if (!status.canClose)
     throw new AppError(`Impossible de clôturer : ${status.blockers.join(', ')}`, 422, 'CANNOT_CLOSE')
 
-  return prisma.fiscalYearClose.create({
+  // Use FiscalYear directly instead of FiscalYearClose
+  const fy = await prisma.fiscalYear.findUnique({ where: { companyId_year: { companyId, year } } })
+  if (!fy) throw new AppError(`Exercice fiscal ${year} introuvable`, 404, 'NOT_FOUND')
+
+  return prisma.fiscalYear.update({
+    where: { id: fy.id },
     data: {
-      companyId,
-      year,
-      resultNet: new Prisma.Decimal(status.resultatNet),
-      notes:     notes ?? null,
+      status:    'CLOSED',
       closedBy:  closedBy ?? null,
+      closedAt:  new Date(),
+      closingBalance: { resultNet: status.resultatNet, notes } as Prisma.InputJsonValue,
     },
   })
 }
@@ -422,7 +431,7 @@ export async function getComptes(companyId: string) {
   // Compute balances from journal entries (invoices + expenses)
   const invoices = await prisma.invoice.findMany({
     where: { companyId },
-    select: { subtotal: true, taxAmount: true, total: true, status: true },
+    select: { amountHT: true, amountTTC: true, status: true },
   })
   const expenses = await prisma.expense.findMany({
     where: { companyId },
@@ -441,9 +450,9 @@ export async function getComptes(companyId: string) {
   const bankAcc   = zone === 'OHADA' ? '521' : zone === 'IFRS' ? '1000' : '512'
 
   for (const inv of invoices) {
-    const ht  = toNum(inv.subtotal)
-    const tva = toNum(inv.taxAmount)
-    const ttc = toNum(inv.total)
+    const ht  = toNum(inv.amountHT)
+    const ttc = toNum(inv.amountTTC)
+    const tva = ttc - ht
     debitMap.set(clientAcc,  (debitMap.get(clientAcc)  ?? 0) + ttc)
     creditMap.set(salesAcc,  (creditMap.get(salesAcc)  ?? 0) + ht)
     creditMap.set(tvaAcc,    (creditMap.get(tvaAcc)    ?? 0) + tva)
@@ -527,7 +536,7 @@ export async function deleteCompte(companyId: string, id: string) {
 
 // ── Fiscal Year Management ─────────────────────────────────────────────────────
 
-export async function getOrCreateFiscalYear(companyId: string, year: number, createdBy: string) {
+export async function getOrCreateFiscalYear(companyId: string, year: number, _createdBy: string) {
   const existing = await prisma.fiscalYear.findUnique({
     where: { companyId_year: { companyId, year } },
   })
@@ -540,7 +549,6 @@ export async function getOrCreateFiscalYear(companyId: string, year: number, cre
       startDate: new Date(`${year}-01-01`),
       endDate:   new Date(`${year}-12-31`),
       status:    'OPEN',
-      createdBy,
     },
   })
 }
@@ -551,7 +559,7 @@ export async function listFiscalYears(companyId: string) {
     orderBy: { year: 'desc' },
     include: {
       _count: {
-        select: { entries: true, invoices: true, expenses: true },
+        select: { journalEntries: true },
       },
     },
   })
@@ -560,7 +568,7 @@ export async function listFiscalYears(companyId: string) {
 export async function createFiscalYear(
   companyId: string,
   data: { year: number; startDate?: string; endDate?: string },
-  createdBy: string,
+  _createdBy: string,
 ) {
   // Maximum 2 OPEN fiscal years simultaneously
   const openYears = await prisma.fiscalYear.findMany({
@@ -569,7 +577,7 @@ export async function createFiscalYear(
   })
   if (openYears.length >= 2) {
     throw new AppError(
-      `Maximum 2 exercices ouverts simultan\xe9ment. Cl\xf4turez l\u2019exercice ${openYears[0]!.year} avant d\u2019en cr\xe9er un nouveau.`,
+      `Maximum 2 exercices ouverts simultan\xe9ment. Cl\xf4turez l’exercice ${openYears[0]!.year} avant d’en cr\xe9er un nouveau.`,
       409,
       'OPEN_FISCAL_YEAR_LIMIT',
     )
@@ -590,7 +598,6 @@ export async function createFiscalYear(
       startDate: new Date(data.startDate ?? `${data.year}-01-01`),
       endDate:   new Date(data.endDate   ?? `${data.year}-12-31`),
       status:    'OPEN',
-      createdBy,
     },
   })
 }
@@ -644,18 +651,6 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
     },
   })
 
-  // Backward compat: create FiscalYearClose record
-  await prisma.fiscalYearClose.upsert({
-    where:  { companyId_year: { companyId, year: fy.year } },
-    update: { resultNet: new Prisma.Decimal(compteResultat.resultatBrut), closedBy: userId },
-    create: {
-      companyId,
-      year:      fy.year,
-      resultNet: new Prisma.Decimal(compteResultat.resultatBrut),
-      closedBy:  userId,
-    },
-  })
-
   // Auto-create next year's fiscal year if it doesn't exist yet
   const nextYear = fy.year + 1
   const nextYearExists = await prisma.fiscalYear.findUnique({
@@ -669,7 +664,6 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
         startDate:      new Date(`${nextYear}-01-01`),
         endDate:        new Date(`${nextYear}-12-31`),
         status:         'OPEN',
-        createdBy:      userId,
         openingBalance: closingBalance as Prisma.InputJsonValue,
       },
     })
@@ -683,7 +677,7 @@ export async function reopenFiscalYear(companyId: string, id: string) {
   if (fy.status !== 'CLOSED')
     throw new AppError(`Impossible de rouvrir un exercice avec le statut "${fy.status}"`, 422, 'INVALID_STATUS')
 
-  const updated = await prisma.fiscalYear.update({
+  return prisma.fiscalYear.update({
     where: { id },
     data: {
       status:    'OPEN',
@@ -691,29 +685,22 @@ export async function reopenFiscalYear(companyId: string, id: string) {
       closedAt:  null,
     },
   })
-
-  // Delete backward-compat FiscalYearClose record if it exists
-  await prisma.fiscalYearClose.deleteMany({
-    where: { companyId, year: fy.year },
-  })
-
-  return updated
 }
 
 export async function getFiscalYearSummary(companyId: string, id: string) {
   const fy = await getFiscalYear(companyId, id)
   const year = fy.year
 
-  const [compteResultat, bilan, totalInvoices, openInvoices, totalExpenses, entriesCount, existingClose] =
+  const [compteResultat, bilan, entriesCount] =
     await Promise.all([
       getCompteDeResultat(companyId, year),
       getBilan(companyId, year),
-      prisma.invoice.count({ where: { companyId, fiscalYearId: id } }),
-      prisma.invoice.count({ where: { companyId, fiscalYearId: id, status: { in: ['SENT', 'OVERDUE'] } } }),
-      prisma.expense.count({ where: { companyId, fiscalYearId: id } }),
       prisma.journalEntry.count({ where: { companyId, fiscalYearId: id } }),
-      prisma.fiscalYearClose.findUnique({ where: { companyId_year: { companyId, year } } }),
     ])
+
+  const totalInvoices = await prisma.invoice.count({ where: { companyId } })
+  const openInvoices  = await prisma.invoice.count({ where: { companyId, status: { in: ['PENDING', 'OVERDUE'] } } })
+  const totalExpenses = await prisma.expense.count({ where: { companyId } })
 
   return {
     id:            fy.id,
@@ -731,7 +718,7 @@ export async function getFiscalYearSummary(companyId: string, id: string) {
     totalInvoices,
     totalExpenses,
     entriesCount,
-    alreadyClosed: !!existingClose,
+    alreadyClosed: fy.status === 'CLOSED',
     openingBalance: fy.openingBalance,
     closingBalance: fy.closingBalance,
   }
@@ -752,9 +739,9 @@ export async function getJournalByFiscalYear(companyId: string, fiscalYearId: st
     entries: entries.map(e => ({
       id:          e.id,
       date:        e.date,
-      journalCode: e.journalCode,
-      account:     e.account,
-      label:       e.label,
+      journalCode: e.journal,
+      account:     e.compte,
+      label:       e.libelle,
       debit:       Number(e.debit),
       credit:      Number(e.credit),
       reference:   e.reference,
@@ -766,15 +753,15 @@ export async function getBalanceByFiscalYear(companyId: string, fiscalYearId: st
   const fy = await getFiscalYear(companyId, fiscalYearId)
   const entries = await prisma.journalEntry.findMany({
     where:   { companyId, fiscalYearId },
-    select:  { account: true, debit: true, credit: true },
+    select:  { compte: true, debit: true, credit: true },
   })
 
   const map = new Map<string, { debit: number; credit: number }>()
   for (const e of entries) {
-    const cur = map.get(e.account) ?? { debit: 0, credit: 0 }
+    const cur = map.get(e.compte) ?? { debit: 0, credit: 0 }
     cur.debit  += Number(e.debit)
     cur.credit += Number(e.credit)
-    map.set(e.account, cur)
+    map.set(e.compte, cur)
   }
 
   // Enrich with account labels from AccountPlan
@@ -814,15 +801,15 @@ export async function getGrandLivreByFiscalYear(companyId: string, fiscalYearId:
   const fy = await getFiscalYear(companyId, fiscalYearId)
   const entries = await prisma.journalEntry.findMany({
     where:   { companyId, fiscalYearId },
-    orderBy: [{ account: 'asc' }, { date: 'asc' }],
+    orderBy: [{ compte: 'asc' }, { date: 'asc' }],
   })
 
   // Group by account
   const accountMap = new Map<string, typeof entries>()
   for (const e of entries) {
-    const arr = accountMap.get(e.account) ?? []
+    const arr = accountMap.get(e.compte) ?? []
     arr.push(e)
-    accountMap.set(e.account, arr)
+    accountMap.set(e.compte, arr)
   }
 
   // Enrich with labels
@@ -844,8 +831,8 @@ export async function getGrandLivreByFiscalYear(companyId: string, fiscalYearId:
         return {
           id:          e.id,
           date:        e.date,
-          journalCode: e.journalCode,
-          label:       e.label,
+          journalCode: e.journal,
+          label:       e.libelle,
           debit:       d,
           credit:      c,
           solde:       runningBalance,

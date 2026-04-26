@@ -8,8 +8,6 @@ import {
   UpdateInvoiceDto,
   UpdateStatusDto,
   ListInvoicesDto,
-  CreateRecurringDto,
-  UpdateRecurringDto,
 } from './invoices.dto.js'
 import * as svc from './invoices.service.js'
 
@@ -63,65 +61,6 @@ invoicesRouter.get(
   },
 )
 
-// ── Recurring invoices ────────────────────────────────────────────────────────
-
-invoicesRouter.get(
-  '/recurring',
-  checkModule('gestion', 'read'),
-  async (req, res, next) => {
-    try {
-      const data = await svc.listRecurring(getCompanyId(req))
-      res.json({ success: true, data })
-    } catch (e) { next(e) }
-  },
-)
-
-invoicesRouter.post(
-  '/recurring',
-  checkModule('gestion', 'write'),
-  validateRequest({ body: CreateRecurringDto }),
-  async (req, res, next) => {
-    try {
-      const data = await svc.createRecurring(getCompanyId(req), req.body)
-      res.status(201).json({ success: true, data })
-    } catch (e) { next(e) }
-  },
-)
-
-invoicesRouter.patch(
-  '/recurring/:id',
-  checkModule('gestion', 'write'),
-  validateRequest({ body: UpdateRecurringDto }),
-  async (req, res, next) => {
-    try {
-      const data = await svc.updateRecurring(getCompanyId(req), req.params.id!, req.body)
-      res.json({ success: true, data })
-    } catch (e) { next(e) }
-  },
-)
-
-invoicesRouter.delete(
-  '/recurring/:id',
-  checkModule('gestion', 'delete'),
-  async (req, res, next) => {
-    try {
-      await svc.deleteRecurring(getCompanyId(req), req.params.id!)
-      res.json({ success: true, data: null })
-    } catch (e) { next(e) }
-  },
-)
-
-invoicesRouter.post(
-  '/recurring/:id/generate',
-  checkModule('gestion', 'write'),
-  async (req, res, next) => {
-    try {
-      const data = await svc.generateFromRecurring(getCompanyId(req), req.params.id!)
-      res.status(201).json({ success: true, data })
-    } catch (e) { next(e) }
-  },
-)
-
 // ── Standard invoices CRUD ────────────────────────────────────────────────────
 
 invoicesRouter.get(
@@ -153,7 +92,7 @@ invoicesRouter.post(
   validateRequest({ body: CreateInvoiceDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.createInvoice(getCompanyId(req), req.body)
+      const data = await svc.createInvoice(getCompanyId(req), req.body, req.user?.sub ?? 'unknown')
       res.status(201).json({ success: true, data })
     } catch (e) { next(e) }
   },
