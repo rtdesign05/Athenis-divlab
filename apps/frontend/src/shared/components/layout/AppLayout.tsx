@@ -1,19 +1,44 @@
+import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
+import { AppSidebar } from './AppSidebar'
 import { Topbar } from './Topbar'
-import { ModuleTabBar } from './ModuleTabBar'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
 import { AiWidget } from '@/features/ai/AiWidget'
 
 export function AppLayout() {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-slate-50">
-      <Topbar />
-      <ModuleTabBar />
-      <main className="flex-1 overflow-y-auto">
-        <ErrorBoundary>
-          <Outlet />
-        </ErrorBoundary>
-      </main>
+    <div className="flex h-screen overflow-hidden bg-slate-50">
+
+      {/* Sidebar desktop */}
+      <div className="relative z-10 hidden lg:flex">
+        <AppSidebar />
+      </div>
+
+      {/* Sidebar mobile — overlay */}
+      {sidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="fixed inset-y-0 left-0 z-50 lg:hidden">
+            <AppSidebar onClose={() => setSidebarOpen(false)} />
+          </div>
+        </>
+      )}
+
+      {/* Main column */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Topbar onMenuClick={() => setSidebarOpen((v) => !v)} />
+        <main className="flex-1 overflow-hidden">
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
+        </main>
+      </div>
+
       <AiWidget />
     </div>
   )

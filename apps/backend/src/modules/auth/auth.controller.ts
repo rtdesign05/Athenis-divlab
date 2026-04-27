@@ -9,6 +9,21 @@ function userAgent(req: Request): string {
   return req.headers['user-agent'] ?? 'unknown'
 }
 
+export async function acceptInvitation(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const token    = String(req.params['token'])
+    const password = String(req.body.password ?? '')
+    if (!password || password.length < 8) {
+      res.status(400).json({ success: false, error: 'Le mot de passe doit contenir au moins 8 caractères', code: 'PASSWORD_TOO_SHORT' })
+      return
+    }
+    const data = await authService.acceptInvitation(token, password, clientIp(req), userAgent(req))
+    res.status(201).json({ success: true, data })
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { response, refreshToken } = await authService.register(req.body, clientIp(req), userAgent(req))

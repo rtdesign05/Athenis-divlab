@@ -44,11 +44,38 @@ const UpdateCompanySchema = z.object({
   discountRate:     z.number().nonnegative().optional(),
 })
 
+const PermissionLevelSchema = z.enum(['none', 'read', 'write', 'admin'])
+
 const InviteUserSchema = z.object({
-  email:     z.string().email(),
-  firstName: z.string().optional(),
-  lastName:  z.string().optional(),
-  roleId:    z.string(),
+  prenom:       z.string().min(1, 'Le prénom est requis').max(100),
+  nom:          z.string().min(1, 'Le nom est requis').max(100),
+  email:        z.string().email('Email invalide'),
+  telephone:    z.string().optional(),
+  role:         z.enum(['ADMIN', 'MANAGER', 'ACCOUNTANT', 'HR', 'SALES', 'READONLY', 'CUSTOM']),
+  permissions:  z.object({
+    gestion:      PermissionLevelSchema,
+    comptabilite: PermissionLevelSchema,
+    rh:           PermissionLevelSchema,
+    juridique:    PermissionLevelSchema,
+    esg:          PermissionLevelSchema,
+    settings:     PermissionLevelSchema,
+  }),
+  agenceIds:    z.array(z.string()).default([]),
+  isRestricted: z.boolean().default(false),
+})
+
+const CreateAgenceSchema = z.object({
+  code:      z.string().min(1).max(20),
+  nom:       z.string().min(1).max(200),
+  adresse:   z.string().optional(),
+  ville:     z.string().optional(),
+  telephone: z.string().optional(),
+  email:     z.string().email().optional(),
+  isSiege:   z.boolean().optional().default(false),
+})
+
+const UpdateAgenceSchema = CreateAgenceSchema.partial().extend({
+  isActive: z.boolean().optional(),
 })
 
 const UpdateRoleSchema = z.object({
@@ -106,7 +133,9 @@ settingsRouter.put(
   async (req, res, next) => {
     try {
       requireAdmin(req)
-      const data = await svc.updateCompanySettings(getCompanyId(req), req.body)
+      // Map API field names (camelCase English) → Prisma DB field names (French)
+      const dbData = svc.toCompanyUpdateData(req.body as Record<string, unknown>)
+      const data = await svc.updateCompanySettings(getCompanyId(req), dbData)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -135,6 +164,47 @@ settingsRouter.post(
     } catch (e) { next(e) }
   },
 )
+
+// ── Agences ───────────────────────────────────────────────────────────────────
+
+settingsRouter.get('/agences', async (req, res, next) => {
+  try {
+    const data = await svc.listAgences(getCompanyId(req))
+    res.json({ success: true, data })
+  } catch (e) { next(e) }
+})
+
+settingsRouter.post(
+  '/agences',
+  validateRequest({ body: CreateAgenceSchema }),
+  async (req, res, next) => {
+    try {
+      requireAdmin(req)
+      const data = await svc.createAgence(getCompanyId(req), req.body)
+      res.status(201).json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+settingsRouter.put(
+  '/agences/:id',
+  validateRequest({ body: UpdateAgenceSchema }),
+  async (req, res, next) => {
+    try {
+      requireAdmin(req)
+      const data = await svc.updateAgence(getCompanyId(req), String(req.params['id']), req.body)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+settingsRouter.delete('/agences/:id', async (req, res, next) => {
+  try {
+    requireAdmin(req)
+    await svc.deleteAgence(getCompanyId(req), String(req.params['id']))
+    res.json({ success: true })
+  } catch (e) { next(e) }
+})
 
 settingsRouter.put(
   '/users/:id/role',

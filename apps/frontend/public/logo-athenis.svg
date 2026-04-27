@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Stylized "A" with upward growth / chart motif -->
+  <rect width="64" height="64" rx="14" fill="#16a34a"/>
+  <!-- Left leg of A -->
+  <path d="M14 50 L32 14 L50 50" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Crossbar -->
+  <path d="M21 37 L43 37" stroke="white" stroke-width="5" stroke-linecap="round"/>
+  <!-- Rising arrow on top right -->
+  <path d="M38 28 L50 16 M50 16 L50 24 M50 16 L42 16" stroke="#86efac" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

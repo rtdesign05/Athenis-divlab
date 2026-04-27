@@ -74,7 +74,7 @@ export interface QuoteListParams {
 }
 
 export interface CreateInvoiceDto {
-  clientId?: string
+  clientId: string
   subtotal: number
   taxRate?: number
   issueDate: string

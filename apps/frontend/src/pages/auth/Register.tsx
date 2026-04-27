@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { PLAN_INFO, ALL_COUNTRIES, getCountryConfig } from '@athenis/shared-types'
 import type { RegisterRequest, AccountType, Plan, CountryListItem } from '@athenis/shared-types'
@@ -146,12 +146,15 @@ function CountryConfigPreview({ countryCode }: { countryCode: string }) {
 
 export function Register() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { register } = useAuth()
-  const [step, setStep] = useState<Step>(1)
+
+  const presetType = searchParams.get('type') as AccountType | null
+  const [step, setStep] = useState<Step>(presetType ? 2 : 1)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState<FormState>({
-    accountType: null,
+    accountType: presetType,
     email: '', password: '',
     firstName: '', lastName: '',
     companyName: '', siren: '', secteur: '', taille: 'PME', plan: 'FREE',
@@ -239,6 +242,8 @@ export function Register() {
   }
 
   return (
+    <div className="min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
+    <div className="w-full max-w-lg bg-white rounded-2xl shadow-lg p-8">
     <div className="space-y-6">
       {/* Progress */}
       <div className="flex gap-1">
@@ -397,6 +402,8 @@ export function Register() {
           ) : null}
         </div>
       )}
+    </div>
+    </div>
     </div>
   )
 }

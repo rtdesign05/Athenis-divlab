@@ -1,27 +1,9 @@
 import { Outlet } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { SubTabBar, type SubTab } from '@/shared/components/layout/SubTabBar'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
+import { ContextualTabBar } from '@/shared/components/layout/ContextualTabBar'
 import { FiscalYearProvider, useFiscalYear } from '@/contexts/FiscalYearContext'
 import { FiscalYearSelector } from '@/components/accounting/FiscalYearSelector'
 import { useFiscalYearGuard } from '@/hooks/useFiscalYear'
-import { settingsApi } from '@/services/settingsApi'
-
-const BASE_TABS: readonly SubTab[] = [
-  { label: 'Tableau de bord',  to: '/app/accounting', end: true },
-  { label: 'Journal',          to: '/app/accounting/journal' },
-  { label: 'Grand livre',      to: '/app/accounting/grand-livre' },
-  { label: 'Balance',          to: '/app/accounting/balance' },
-  { label: 'Comptes',          to: '/app/accounting/comptes' },
-  { label: 'Immobilisations',  to: '/app/accounting/immobilisations' },
-  { label: 'Révision',         to: '/app/accounting/revision' },
-]
-
-function etatsFinanciersLabel(zone?: string): string {
-  if (zone === 'OHADA') return 'États financiers'
-  if (zone === 'IFRS')  return 'Financial Statements'
-  return 'Plaquette'
-}
 
 function ReadOnlyBanner({ selectedYear, status }: { selectedYear: number; status: string }) {
   return (
@@ -38,24 +20,14 @@ function ReadOnlyBanner({ selectedYear, status }: { selectedYear: number; status
 function AccountingLayoutInner() {
   const { isReadOnly, status } = useFiscalYearGuard()
   const { selectedYear } = useFiscalYear()
-  const { data: company } = useQuery({
-    queryKey: ['company-settings'],
-    queryFn:  () => settingsApi.getCompany(),
-    staleTime: 5 * 60_000,
-  })
-
-  const tabs: SubTab[] = [
-    ...BASE_TABS,
-    { label: etatsFinanciersLabel(company?.accountingZone), to: '/app/accounting/etats-financiers' },
-  ]
 
   return (
-    <div className="flex flex-col min-h-full animate-fade-in">
+    <div className="flex flex-col h-full animate-fade-in">
       {isReadOnly && (
         <ReadOnlyBanner selectedYear={selectedYear} status={status} />
       )}
-      <SubTabBar tabs={tabs} rightSlot={<FiscalYearSelector />} />
-      <div className="p-6">
+      <ContextualTabBar rightSlot={<FiscalYearSelector />} />
+      <div className="flex-1 min-h-0 overflow-y-auto p-4">
         <ErrorBoundary>
           <Outlet />
         </ErrorBoundary>

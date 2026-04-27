@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 580" width="320" height="580">
+  <defs>
+    <linearGradient id="mheader" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#052e16"/>
+      <stop offset="100%" stop-color="#14532d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Phone frame -->
+  <rect width="320" height="580" rx="32" fill="#1e293b"/>
+  <rect x="8" y="8" width="304" height="564" rx="26" fill="#f8fafc"/>
+
+  <!-- Status bar -->
+  <rect x="8" y="8" width="304" height="40" rx="26" fill="url(#mheader)"/>
+  <rect x="8" y="34" width="304" height="14" fill="url(#mheader)"/>
+  <text x="28" y="30" font-family="Arial" font-size="10" fill="#86efac">9:41</text>
+  <text x="260" y="30" font-family="Arial" font-size="10" fill="#86efac">●●●</text>
+
+  <!-- Header -->
+  <rect x="8" y="48" width="304" height="56" fill="url(#mheader)"/>
+  <text x="28" y="72" font-family="Arial" font-weight="bold" font-size="14" fill="white">Athenis</text>
+  <text x="28" y="90" font-family="Arial" font-size="10" fill="#86efac">Bonjour, Jean-Denis 👋</text>
+  <circle cx="288" cy="76" r="18" fill="#16a34a"/>
+  <text x="288" y="80" font-family="Arial" font-size="10" fill="white" text-anchor="middle">JD</text>
+
+  <!-- KPI mini cards -->
+  <rect x="18" y="116" width="132" height="72" rx="10" fill="#16a34a"/>
+  <text x="30" y="138" font-family="Arial" font-size="9" fill="#bbf7d0">Revenus</text>
+  <text x="30" y="160" font-family="Arial" font-weight="bold" font-size="15" fill="white">4,8M</text>
+  <text x="30" y="177" font-family="Arial" font-size="8" fill="#bbf7d0">▲ +12,4%</text>
+
+  <rect x="162" y="116" width="150" height="72" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="174" y="138" font-family="Arial" font-size="9" fill="#64748b">Trésorerie</text>
+  <text x="174" y="160" font-family="Arial" font-weight="bold" font-size="15" fill="#0f172a">12,3M</text>
+  <text x="174" y="177" font-family="Arial" font-size="8" fill="#16a34a">● Saine</text>
+
+  <!-- Quick actions -->
+  <text x="28" y="210" font-family="Arial" font-weight="bold" font-size="12" fill="#0f172a">Actions rapides</text>
+
+  <rect x="18" y="220" width="64" height="64" rx="12" fill="#f0fdf4"/>
+  <text x="50" y="248" font-family="Arial" font-size="18" text-anchor="middle">📄</text>
+  <text x="50" y="274" font-family="Arial" font-size="8" fill="#16a34a" text-anchor="middle">Facture</text>
+
+  <rect x="92" y="220" width="64" height="64" rx="12" fill="#f0fdf4"/>
+  <text x="124" y="248" font-family="Arial" font-size="18" text-anchor="middle">💰</text>
+  <text x="124" y="274" font-family="Arial" font-size="8" fill="#16a34a" text-anchor="middle">Devis</text>
+
+  <rect x="166" y="220" width="64" height="64" rx="12" fill="#f0fdf4"/>
+  <text x="198" y="248" font-family="Arial" font-size="18" text-anchor="middle">📊</text>
+  <text x="198" y="274" font-family="Arial" font-size="8" fill="#16a34a" text-anchor="middle">Rapport</text>
+
+  <rect x="240" y="220" width="64" height="64" rx="12" fill="#f0fdf4"/>
+  <text x="272" y="248" font-family="Arial" font-size="18" text-anchor="middle">⚡</text>
+  <text x="272" y="274" font-family="Arial" font-size="8" fill="#16a34a" text-anchor="middle">Stock</text>
+
+  <!-- Recent activity -->
+  <text x="28" y="310" font-family="Arial" font-weight="bold" font-size="12" fill="#0f172a">Activité récente</text>
+
+  <!-- Row 1 -->
+  <rect x="18" y="320" width="284" height="52" rx="10" fill="white" stroke="#f1f5f9" stroke-width="1"/>
+  <rect x="28" y="334" width="28" height="28" rx="8" fill="#dcfce7"/>
+  <text x="42" y="353" font-family="Arial" font-size="12" text-anchor="middle">✓</text>
+  <text x="68" y="340" font-family="Arial" font-weight="bold" font-size="10" fill="#0f172a">FA-2026-042 payée</text>
+  <text x="68" y="356" font-family="Arial" font-size="9" fill="#94a3b8">Entreprise Alpha • 580 000 XAF</text>
+  <text x="280" y="340" font-family="Arial" font-size="8" fill="#94a3b8" text-anchor="end">il y a 2h</text>
+
+  <!-- Row 2 -->
+  <rect x="18" y="378" width="284" height="52" rx="10" fill="white" stroke="#f1f5f9" stroke-width="1"/>
+  <rect x="28" y="392" width="28" height="28" rx="8" fill="#fef9c3"/>
+  <text x="42" y="411" font-family="Arial" font-size="12" text-anchor="middle">!</text>
+  <text x="68" y="398" font-family="Arial" font-weight="bold" font-size="10" fill="#0f172a">FA-2026-040 en retard</text>
+  <text x="68" y="414" font-family="Arial" font-size="9" fill="#94a3b8">SOPROCOM • 1 200 000 XAF</text>
+  <text x="280" y="398" font-family="Arial" font-size="8" fill="#94a3b8" text-anchor="end">hier</text>
+
+  <!-- Row 3 -->
+  <rect x="18" y="436" width="284" height="52" rx="10" fill="white" stroke="#f1f5f9" stroke-width="1"/>
+  <rect x="28" y="450" width="28" height="28" rx="8" fill="#dbeafe"/>
+  <text x="42" y="469" font-family="Arial" font-size="12" text-anchor="middle">📋</text>
+  <text x="68" y="456" font-family="Arial" font-weight="bold" font-size="10" fill="#0f172a">Devis DEV-2026-018 accepté</text>
+  <text x="68" y="472" font-family="Arial" font-size="9" fill="#94a3b8">Cabinet Conseil</text>
+  <text x="280" y="456" font-family="Arial" font-size="8" fill="#94a3b8" text-anchor="end">hier</text>
+
+  <!-- Bottom nav -->
+  <rect x="8" y="502" width="304" height="62" rx="0" fill="white"/>
+  <rect x="8" y="556" width="304" height="14" rx="26" fill="white"/>
+  <rect x="8" y="502" width="304" height="1" fill="#e2e8f0"/>
+
+  <text x="52" y="524" font-family="Arial" font-size="18" text-anchor="middle">🏠</text>
+  <text x="52" y="540" font-family="Arial" font-size="8" fill="#16a34a" text-anchor="middle">Accueil</text>
+
+  <text x="116" y="524" font-family="Arial" font-size="18" text-anchor="middle">📄</text>
+  <text x="116" y="540" font-family="Arial" font-size="8" fill="#94a3b8" text-anchor="middle">Facturation</text>
+
+  <text x="180" y="524" font-family="Arial" font-size="18" text-anchor="middle">📊</text>
+  <text x="180" y="540" font-family="Arial" font-size="8" fill="#94a3b8" text-anchor="middle">Compta</text>
+
+  <text x="244" y="524" font-family="Arial" font-size="18" text-anchor="middle">⚙️</text>
+  <text x="244" y="540" font-family="Arial" font-size="8" fill="#94a3b8" text-anchor="middle">Paramètres</text>
+
+  <!-- Home indicator -->
+  <rect x="120" y="560" width="80" height="4" rx="2" fill="#cbd5e1"/>
+</svg>

@@ -136,6 +136,25 @@ export const accountingApi = {
     api.get<{ data: FinancialStatements }>('/accounting/financial-statements', { params: { fiscalYearId } }).then(d),
   getJournal:             (fiscalYearId: string) =>
     api.get<{ data: JournalData }>('/accounting/journal', { params: { fiscalYearId } }).then(d),
+  createJournalEntry:     (data: { fiscalYearId: string; date: string; journal: string; compte: string; libelle: string; debit: number; credit: number; reference?: string }) =>
+    api.post<{ data: unknown }>('/accounting/journal', data).then(d),
+  createJournalEntryBatch: (data: {
+    fiscalYearId: string
+    date: string
+    journal: string
+    reference?: string
+    lines: { compte: string; libelle: string; debit: number; credit: number }[]
+  }) => api.post<{ data: unknown[] }>('/accounting/journal/batch', data).then(d),
+  updateJournalPiece: (pieceId: string, data: {
+    date: string
+    journal: string
+    reference?: string
+    lines: { compte: string; libelle: string; debit: number; credit: number }[]
+  }) => api.put<{ data: unknown[] }>(`/accounting/journal/piece/${pieceId}`, data).then(d),
+  deleteJournalPiece: (pieceId: string) =>
+    api.delete(`/accounting/journal/piece/${pieceId}`),
+  deleteJournalEntry: (id: string) =>
+    api.delete(`/accounting/journal/${id}`),
   getBalanceByFiscalYear: (fiscalYearId: string) =>
     api.get<{ data: BalanceData }>('/accounting/balance-journal', { params: { fiscalYearId } }).then(d),
   getGrandLivreByFiscalYear: (fiscalYearId: string) =>
@@ -210,6 +229,7 @@ export interface JournalEntryRow {
   id:          string
   date:        string
   journalCode: string
+  pieceId:     string | null
   account:     string
   label:       string
   debit:       number

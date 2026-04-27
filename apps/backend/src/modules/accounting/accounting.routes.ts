@@ -360,6 +360,62 @@ accountingRouter.get('/financial-statements',   checkModule('comptabilite', 'rea
 
 // ── Journal / Balance / Grand Livre by fiscalYearId ────────────────────────
 
+accountingRouter.post(
+  '/journal/batch',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { fiscalYearId, date, journal, reference, lines } = req.body as {
+        fiscalYearId: string; date: string; journal: string; reference?: string
+        lines: { compte: string; libelle: string; debit: number; credit: number }[]
+      }
+      if (!fiscalYearId || !journal || !date || !Array.isArray(lines) || lines.length === 0) {
+        throw new AppError('Champs requis manquants', 400, 'VALIDATION_ERROR')
+      }
+      const entries = await svc.createJournalEntryBatch(
+        getCompanyId(req)!,
+        fiscalYearId,
+        {
+          date: new Date(date),
+          journal,
+          reference: reference ?? null,
+          lines: lines.map(l => ({
+            compte:  String(l.compte).trim(),
+            libelle: String(l.libelle).trim(),
+            debit:   Number(l.debit)  || 0,
+            credit:  Number(l.credit) || 0,
+          })),
+        },
+        req.user!.sub,
+      )
+      res.status(201).json({ success: true, data: entries })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/journal',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { fiscalYearId, date, journal, compte, libelle, debit, credit, reference } = req.body as {
+        fiscalYearId: string; date: string; journal: string; compte: string
+        libelle: string; debit: number; credit: number; reference?: string
+      }
+      if (!fiscalYearId || !journal || !compte || !libelle || !date) {
+        throw new AppError('Champs requis manquants', 400, 'VALIDATION_ERROR')
+      }
+      const entry = await svc.createJournalEntry(
+        getCompanyId(req)!,
+        fiscalYearId,
+        { date: new Date(date), journal, compte, libelle, debit: Number(debit) || 0, credit: Number(credit) || 0, reference: reference ?? null },
+        req.user!.sub,
+      )
+      res.status(201).json({ success: true, data: entry })
+    } catch (e) { next(e) }
+  },
+)
+
 accountingRouter.get(
   '/journal',
   checkModule('comptabilite', 'read'),
@@ -369,6 +425,64 @@ accountingRouter.get(
       if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
       const data = await svc.getJournalByFiscalYear(getCompanyId(req)!, fiscalYearId)
       res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.put(
+  '/journal/piece/:pieceId',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { pieceId } = req.params as { pieceId: string }
+      const { date, journal, reference, lines } = req.body as {
+        date: string; journal: string; reference?: string
+        lines: { compte: string; libelle: string; debit: number; credit: number }[]
+      }
+      if (!journal || !date || !Array.isArray(lines) || lines.length === 0) {
+        throw new AppError('Champs requis manquants', 400, 'VALIDATION_ERROR')
+      }
+      const entries = await svc.updateJournalPiece(
+        getCompanyId(req)!,
+        pieceId,
+        {
+          date: new Date(date),
+          journal,
+          reference: reference ?? null,
+          lines: lines.map(l => ({
+            compte:  String(l.compte).trim(),
+            libelle: String(l.libelle).trim(),
+            debit:   Number(l.debit)  || 0,
+            credit:  Number(l.credit) || 0,
+          })),
+        },
+        req.user!.sub,
+      )
+      res.json({ success: true, data: entries })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.delete(
+  '/journal/piece/:pieceId',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { pieceId } = req.params as { pieceId: string }
+      await svc.deleteJournalPiece(getCompanyId(req)!, pieceId)
+      res.json({ success: true })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.delete(
+  '/journal/:id',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { id } = req.params as { id: string }
+      await svc.deleteJournalEntry(getCompanyId(req)!, id)
+      res.json({ success: true })
     } catch (e) { next(e) }
   },
 )

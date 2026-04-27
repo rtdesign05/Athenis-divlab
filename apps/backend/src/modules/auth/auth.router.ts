@@ -15,6 +15,7 @@ import * as ctrl from './auth.controller.js'
 const router = Router()
 
 // Public routes
+router.post('/accept-invitation/:token', authLimiter, ctrl.acceptInvitation)
 router.post('/register', authLimiter, validateRequest({ body: RegisterDto }), ctrl.register)
 router.post('/login', authLimiter, validateRequest({ body: LoginDto }), ctrl.login)
 router.post('/login/2fa', authLimiter, validateRequest({ body: TotpVerifyDto }), ctrl.loginVerifyTotp)

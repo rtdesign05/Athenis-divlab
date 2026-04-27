@@ -27,7 +27,7 @@ export function useInvoices(params?: InvoiceListParams) {
       ...data,
       totalAmount: data.items.reduce((s, i) => s + toSafeAmount(i.total), 0),
       paidAmount:  data.items.filter(i => i.status === 'PAID').reduce((s, i) => s + toSafeAmount(i.total), 0),
-      totalPages:  data.pages,
+      totalPages:  data.page,
     }),
   })
 }

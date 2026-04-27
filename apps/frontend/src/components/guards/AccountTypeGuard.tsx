@@ -16,7 +16,8 @@ function homeForType(type: AccountType): string {
 }
 
 export function AccountTypeGuard({ allow, children }: Props) {
-  const { user, isLoading, isAuthenticated } = useAuth()
+  const { user, isLoading } = useAuth()
+  const isAuthenticated = user !== null
 
   if (isLoading) {
     return (
@@ -37,7 +38,8 @@ export function AccountTypeGuard({ allow, children }: Props) {
 
 /** Guard for authenticated routes regardless of account type */
 export function AuthGuard(_props: { children: React.ReactNode }) {
-  const { isLoading, isAuthenticated, user } = useAuth()
+  const { isLoading, user } = useAuth()
+  const isAuthenticated = user !== null
 
   if (isLoading) {
     return (

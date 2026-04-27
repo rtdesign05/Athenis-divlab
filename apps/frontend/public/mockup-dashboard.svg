@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 560" width="840" height="560">
+  <defs>
+    <linearGradient id="sidebar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#052e16"/>
+      <stop offset="100%" stop-color="#14532d"/>
+    </linearGradient>
+    <linearGradient id="card1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#16a34a"/>
+      <stop offset="100%" stop-color="#15803d"/>
+    </linearGradient>
+    <linearGradient id="chart" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#16a34a" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#16a34a" stop-opacity="0.6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="840" height="560" rx="12" fill="#f8fafc"/>
+
+  <!-- Sidebar -->
+  <rect width="200" height="560" rx="0" fill="url(#sidebar)"/>
+  <rect width="200" height="560" rx="12" fill="url(#sidebar)"/>
+  <rect x="188" width="12" height="560" fill="url(#sidebar)"/>
+
+  <!-- Logo in sidebar -->
+  <rect x="20" y="20" width="32" height="32" rx="8" fill="#16a34a"/>
+  <text x="36" y="41" font-family="Arial" font-weight="bold" font-size="16" fill="white" text-anchor="middle">A</text>
+  <text x="62" y="41" font-family="Arial" font-weight="bold" font-size="14" fill="white">Athenis</text>
+
+  <!-- Nav items -->
+  <rect x="12" y="72" width="176" height="36" rx="8" fill="#16a34a" opacity="0.9"/>
+  <text x="48" y="95" font-family="Arial" font-size="12" fill="white">Tableau de bord</text>
+
+  <text x="48" y="134" font-family="Arial" font-size="12" fill="#86efac">Facturation</text>
+  <text x="48" y="170" font-family="Arial" font-size="12" fill="#86efac">Comptabilité</text>
+  <text x="48" y="206" font-family="Arial" font-size="12" fill="#86efac">Gestion</text>
+  <text x="48" y="242" font-family="Arial" font-size="12" fill="#86efac">Trésorerie</text>
+  <text x="48" y="278" font-family="Arial" font-size="12" fill="#86efac">RH</text>
+  <text x="48" y="314" font-family="Arial" font-size="12" fill="#86efac">ESG</text>
+
+  <!-- Dots for nav -->
+  <circle cx="30" cy="130" r="4" fill="#86efac"/>
+  <circle cx="30" cy="166" r="4" fill="#86efac"/>
+  <circle cx="30" cy="202" r="4" fill="#86efac"/>
+  <circle cx="30" cy="238" r="4" fill="#86efac"/>
+  <circle cx="30" cy="274" r="4" fill="#86efac"/>
+  <circle cx="30" cy="310" r="4" fill="#86efac"/>
+
+  <!-- Topbar -->
+  <rect x="200" y="0" width="640" height="56" fill="white"/>
+  <rect x="200" y="55" width="640" height="1" fill="#e2e8f0"/>
+  <text x="224" y="34" font-family="Arial" font-weight="bold" font-size="15" fill="#0f172a">Tableau de bord</text>
+  <rect x="560" y="14" width="120" height="28" rx="14" fill="#f1f5f9"/>
+  <text x="620" y="32" font-family="Arial" font-size="11" fill="#64748b" text-anchor="middle">Exercice 2026</text>
+  <circle cx="740" cy="28" r="16" fill="#dcfce7"/>
+  <text x="740" y="33" font-family="Arial" font-size="11" fill="#16a34a" text-anchor="middle">JD</text>
+
+  <!-- KPI Cards -->
+  <!-- Card 1: Revenus -->
+  <rect x="220" y="74" width="174" height="96" rx="10" fill="url(#card1)"/>
+  <text x="236" y="100" font-family="Arial" font-size="10" fill="#bbf7d0">Revenus du mois</text>
+  <text x="236" y="128" font-family="Arial" font-weight="bold" font-size="20" fill="white">4 820 000</text>
+  <text x="236" y="148" font-family="Arial" font-size="10" fill="#bbf7d0">▲ +12,4% vs mois dernier</text>
+
+  <!-- Card 2: Factures -->
+  <rect x="406" y="74" width="174" height="96" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="422" y="100" font-family="Arial" font-size="10" fill="#64748b">Factures en attente</text>
+  <text x="422" y="128" font-family="Arial" font-weight="bold" font-size="20" fill="#0f172a">18</text>
+  <text x="422" y="148" font-family="Arial" font-size="10" fill="#f59e0b">▲ 3 en retard</text>
+
+  <!-- Card 3: Trésorerie -->
+  <rect x="592" y="74" width="174" height="96" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="608" y="100" font-family="Arial" font-size="10" fill="#64748b">Trésorerie nette</text>
+  <text x="608" y="128" font-family="Arial" font-weight="bold" font-size="20" fill="#0f172a">12 340 000</text>
+  <text x="608" y="148" font-family="Arial" font-size="10" fill="#16a34a">▲ Saine</text>
+
+  <!-- Chart area -->
+  <rect x="220" y="184" width="360" height="210" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="240" y="208" font-family="Arial" font-weight="bold" font-size="12" fill="#0f172a">Évolution du chiffre d'affaires</text>
+
+  <!-- Chart bars -->
+  <rect x="250" y="280" width="28" height="80" rx="4" fill="#16a34a" opacity="0.3"/>
+  <rect x="290" y="260" width="28" height="100" rx="4" fill="#16a34a" opacity="0.4"/>
+  <rect x="330" y="240" width="28" height="120" rx="4" fill="#16a34a" opacity="0.5"/>
+  <rect x="370" y="250" width="28" height="110" rx="4" fill="#16a34a" opacity="0.6"/>
+  <rect x="410" y="220" width="28" height="140" rx="4" fill="#16a34a" opacity="0.7"/>
+  <rect x="450" y="230" width="28" height="130" rx="4" fill="#16a34a" opacity="0.8"/>
+  <rect x="490" y="210" width="28" height="150" rx="4" fill="#16a34a"/>
+
+  <!-- Month labels -->
+  <text x="258" y="375" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Oct</text>
+  <text x="298" y="375" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Nov</text>
+  <text x="338" y="375" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Déc</text>
+  <text x="378" y="375" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Jan</text>
+  <text x="418" y="375" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Fév</text>
+  <text x="458" y="375" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Mar</text>
+  <text x="498" y="375" font-family="Arial" font-size="9" fill="#94a3b8" text-anchor="middle">Avr</text>
+
+  <!-- Right panel: Recent invoices -->
+  <rect x="592" y="184" width="248" height="210" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="612" y="208" font-family="Arial" font-weight="bold" font-size="12" fill="#0f172a">Dernières factures</text>
+
+  <!-- Invoice rows -->
+  <rect x="608" y="218" width="216" height="1" fill="#f1f5f9"/>
+  <text x="612" y="238" font-family="Arial" font-size="10" fill="#0f172a">FA-2026-042</text>
+  <text x="612" y="252" font-family="Arial" font-size="9" fill="#94a3b8">Entreprise Alpha</text>
+  <rect x="748" y="226" width="56" height="18" rx="9" fill="#dcfce7"/>
+  <text x="776" y="239" font-family="Arial" font-size="9" fill="#16a34a" text-anchor="middle">Payée</text>
+
+  <rect x="608" y="262" width="216" height="1" fill="#f1f5f9"/>
+  <text x="612" y="282" font-family="Arial" font-size="10" fill="#0f172a">FA-2026-041</text>
+  <text x="612" y="296" font-family="Arial" font-size="9" fill="#94a3b8">Cabinet Conseil</text>
+  <rect x="748" y="270" width="56" height="18" rx="9" fill="#fef9c3"/>
+  <text x="776" y="283" font-family="Arial" font-size="9" fill="#ca8a04" text-anchor="middle">Envoyée</text>
+
+  <rect x="608" y="306" width="216" height="1" fill="#f1f5f9"/>
+  <text x="612" y="326" font-family="Arial" font-size="10" fill="#0f172a">FA-2026-040</text>
+  <text x="612" y="340" font-family="Arial" font-size="9" fill="#94a3b8">SOPROCOM</text>
+  <rect x="748" y="314" width="56" height="18" rx="9" fill="#fee2e2"/>
+  <text x="776" y="327" font-family="Arial" font-size="9" fill="#dc2626" text-anchor="middle">En retard</text>
+
+  <rect x="608" y="350" width="216" height="1" fill="#f1f5f9"/>
+  <text x="612" y="370" font-family="Arial" font-size="10" fill="#0f172a">FA-2026-039</text>
+  <text x="612" y="384" font-family="Arial" font-size="9" fill="#94a3b8">SABC Douala</text>
+  <rect x="748" y="358" width="56" height="18" rx="9" fill="#dcfce7"/>
+  <text x="776" y="371" font-family="Arial" font-size="9" fill="#16a34a" text-anchor="middle">Payée</text>
+
+  <!-- Bottom section -->
+  <rect x="220" y="408" width="360" height="120" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="240" y="432" font-family="Arial" font-weight="bold" font-size="12" fill="#0f172a">Prévision de trésorerie</text>
+
+  <!-- Mini line chart -->
+  <polyline points="250,510 290,490 330,500 370,470 410,460 450,475 500,450 550,445" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <polygon points="250,510 290,490 330,500 370,470 410,460 450,475 500,450 550,445 550,520 250,520" fill="#16a34a" opacity="0.08"/>
+
+  <rect x="592" y="408" width="248" height="120" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="612" y="432" font-family="Arial" font-weight="bold" font-size="12" fill="#0f172a">Alertes</text>
+  <rect x="608" y="440" width="8" height="8" rx="2" fill="#f59e0b"/>
+  <text x="622" y="450" font-family="Arial" font-size="10" fill="#0f172a">3 factures arrivent à échéance</text>
+  <rect x="608" y="460" width="8" height="8" rx="2" fill="#dc2626"/>
+  <text x="622" y="470" font-family="Arial" font-size="10" fill="#0f172a">Stock critique : 2 articles</text>
+  <rect x="608" y="480" width="8" height="8" rx="2" fill="#16a34a"/>
+  <text x="622" y="490" font-family="Arial" font-size="10" fill="#0f172a">Rapport ESG disponible</text>
+</svg>

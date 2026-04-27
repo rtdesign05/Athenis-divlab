@@ -33,7 +33,7 @@ export function CloturePage() {
 
   const handleClose = useCallback(async () => {
     if (!confirm(`Confirmer la clôture définitive de l'exercice ${year} ?\nCette opération est irréversible.`)) return
-    await close.mutateAsync({ year, notes: notes || undefined })
+    await close.mutateAsync({ year, ...(notes ? { notes } : {}) })
   }, [close, year, notes])
 
   return (

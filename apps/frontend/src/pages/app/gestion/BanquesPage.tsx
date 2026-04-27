@@ -4,11 +4,18 @@ import { useAuth } from '@/features/auth/useAuth'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+interface PieceJustificative {
+  name: string
+  url:  string   // blob: URL — valide pour la session courante
+  type: string   // MIME
+}
+
 interface Operation {
-  id: string
-  date: string
+  id:      string
+  date:    string
   libelle: string
   montant: number
+  piece?:  PieceJustificative
 }
 
 interface Compte {
@@ -154,15 +161,38 @@ function ModalOperation({ compte, initialOp, onSave, onClose }: {
     montant: initialOp ? String(Math.abs(initialOp.montant)) : '',
     type:    initialOp ? (initialOp.montant >= 0 ? 'in' : 'out') : 'in',
   }))
+  const [newFile, setNewFile]               = useState<File | null>(null)
+  const [removePieceFlag, setRemovePieceFlag] = useState(false)
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const displayPiece: { name: string } | null =
+    removePieceFlag ? null : newFile ?? initialOp?.piece ?? null
+
+  function handleFile(f: File | undefined) {
+    if (!f) return
+    setNewFile(f)
+    setRemovePieceFlag(false)
+  }
 
   function submit(e: React.FormEvent) {
     e.preventDefault()
     const raw = Number(form.montant)
     if (!raw || !form.libelle) return
-    onSave({ date: form.date, libelle: form.libelle, montant: form.type === 'out' ? -Math.abs(raw) : Math.abs(raw) })
+    let piece: PieceJustificative | undefined
+    if (removePieceFlag) {
+      if (initialOp?.piece) URL.revokeObjectURL(initialOp.piece.url)
+    } else if (newFile) {
+      if (initialOp?.piece) URL.revokeObjectURL(initialOp.piece.url)
+      piece = { name: newFile.name, url: URL.createObjectURL(newFile), type: newFile.type }
+    } else {
+      piece = initialOp?.piece
+    }
+    const montant = form.type === 'out' ? -Math.abs(raw) : Math.abs(raw)
+    onSave({ date: form.date, libelle: form.libelle, montant, ...(piece ? { piece } : {}) })
   }
+
+  const INPUT = 'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -170,7 +200,7 @@ function ModalOperation({ compte, initialOp, onSave, onClose }: {
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">
-              {editing ? 'Modifier l\'opération' : 'Saisir une opération'}
+              {editing ? "Modifier l'opération" : 'Saisir une opération'}
             </h2>
             <p className="text-xs text-gray-400">{compte.banque} — {compte.intitule}</p>
           </div>
@@ -180,13 +210,11 @@ function ModalOperation({ compte, initialOp, onSave, onClose }: {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Date *</label>
-              <input type="date" value={form.date} onChange={set('date')} required
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+              <input type="date" value={form.date} onChange={set('date')} required className={INPUT} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Type *</label>
-              <select value={form.type} onChange={set('type')}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
+              <select value={form.type} onChange={set('type')} className={INPUT}>
                 <option value="in">Crédit (entrée)</option>
                 <option value="out">Débit (sortie)</option>
               </select>
@@ -194,14 +222,38 @@ function ModalOperation({ compte, initialOp, onSave, onClose }: {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Libellé *</label>
-            <input value={form.libelle} onChange={set('libelle')} required placeholder="ex: Virement reçu client ACME"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+            <input value={form.libelle} onChange={set('libelle')} required placeholder="ex: Virement reçu client ACME" className={INPUT} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Montant ({compte.devise}) *</label>
-            <input value={form.montant} onChange={set('montant')} required placeholder="0" type="number" min="0"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+            <input value={form.montant} onChange={set('montant')} required placeholder="0" type="number" min="0" className={INPUT} />
           </div>
+
+          {/* Pièce justificative */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Pièce justificative</label>
+            {displayPiece ? (
+              <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+                <span className="text-base shrink-0">📎</span>
+                <span className="text-xs text-blue-700 flex-1 truncate">{displayPiece.name}</span>
+                <label className="text-xs text-blue-500 hover:text-blue-700 cursor-pointer underline shrink-0">
+                  Remplacer
+                  <input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.webp"
+                    onChange={e => { handleFile(e.target.files?.[0]); e.target.value = '' }} />
+                </label>
+                <button type="button" onClick={() => { setNewFile(null); setRemovePieceFlag(true) }}
+                  className="shrink-0 text-gray-400 hover:text-red-500 text-base leading-none">×</button>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 px-3 py-2.5 cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition-colors">
+                <span className="text-gray-400 text-base">📎</span>
+                <span className="text-xs text-gray-500">Joindre une pièce justificative (PDF, image…)</span>
+                <input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.webp"
+                  onChange={e => { handleFile(e.target.files?.[0]); e.target.value = '' }} />
+              </label>
+            )}
+          </div>
+
           <div className="flex gap-2 pt-1">
             <button type="button" onClick={onClose}
               className="flex-1 rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
@@ -291,10 +343,39 @@ export function BanquesPage() {
       if (c.id !== selectedId) return c
       const op = c.operations.find(o => o.id === opId)
       if (!op) return c
+      if (op.piece) URL.revokeObjectURL(op.piece.url)
       return {
         ...c,
         solde: c.solde - op.montant,
         operations: c.operations.filter(o => o.id !== opId),
+      }
+    }))
+  }
+
+  function attachPiece(opId: string, file: File) {
+    const url = URL.createObjectURL(file)
+    setComptes(cs => cs.map(c =>
+      c.id === selectedId
+        ? { ...c, operations: c.operations.map(op =>
+            op.id === opId
+              ? { ...op, piece: { name: file.name, url, type: file.type } }
+              : op
+          )}
+        : c
+    ))
+  }
+
+  function removePieceFromOp(opId: string) {
+    setComptes(cs => cs.map(c => {
+      if (c.id !== selectedId) return c
+      return {
+        ...c,
+        operations: c.operations.map(op => {
+          if (op.id !== opId) return op
+          if (op.piece) URL.revokeObjectURL(op.piece.url)
+          const { piece: _p, ...rest } = op
+          return rest
+        }),
       }
     }))
   }
@@ -369,7 +450,7 @@ export function BanquesPage() {
                     <th className="px-4 py-2.5">Libellé</th>
                     <th className="px-4 py-2.5 text-right">Débit</th>
                     <th className="px-4 py-2.5 text-right">Crédit</th>
-                    <th className="px-2 py-2.5 w-16" />
+                    <th className="px-2 py-2.5 w-20" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -379,13 +460,23 @@ export function BanquesPage() {
                         {new Date(op.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </td>
                       <td className="px-4 py-2.5 text-gray-700">
-                        <button
-                          onClick={() => setEditingOp(op)}
+                        <button onClick={() => setEditingOp(op)}
                           className="text-left hover:text-green-700 hover:underline transition-colors"
-                          title="Modifier cette opération"
-                        >
+                          title="Modifier cette opération">
                           {op.libelle}
                         </button>
+                        {op.piece && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <a href={op.piece.url} target="_blank" rel="noreferrer"
+                              title={op.piece.name}
+                              className="flex items-center gap-0.5 text-[10px] text-blue-600 hover:text-blue-800 hover:underline max-w-[180px]">
+                              <span>📎</span>
+                              <span className="truncate">{op.piece.name}</span>
+                            </a>
+                            <button onClick={() => removePieceFromOp(op.id)} title="Retirer la pièce"
+                              className="text-gray-300 hover:text-red-500 text-xs leading-none transition-colors">×</button>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-right font-medium text-red-500">
                         {op.montant < 0 ? fmt(op.montant) : ''}
@@ -393,20 +484,20 @@ export function BanquesPage() {
                       <td className="px-4 py-2.5 text-right font-medium text-green-600">
                         {op.montant >= 0 ? fmt(op.montant) : ''}
                       </td>
-                      <td className="px-2 py-2.5 w-16">
+                      <td className="px-2 py-2.5 w-20">
                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                          <button
-                            onClick={() => setEditingOp(op)}
-                            title="Modifier"
-                            className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-blue-50 hover:text-blue-600 text-xs"
-                          >
+                          <label title="Joindre une pièce justificative"
+                            className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-blue-50 hover:text-blue-600 cursor-pointer text-xs">
+                            <input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.webp"
+                              onChange={e => { const f = e.target.files?.[0]; if (f) attachPiece(op.id, f); e.target.value = '' }} />
+                            📎
+                          </label>
+                          <button onClick={() => setEditingOp(op)} title="Modifier"
+                            className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-blue-50 hover:text-blue-600 text-xs">
                             ✎
                           </button>
-                          <button
-                            onClick={() => deleteOperation(op.id)}
-                            title="Supprimer"
-                            className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 text-sm font-bold"
-                          >
+                          <button onClick={() => deleteOperation(op.id)} title="Supprimer"
+                            className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 text-sm font-bold">
                             ×
                           </button>
                         </div>

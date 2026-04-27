@@ -1,11 +1,360 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/features/auth/useAuth'
 import {
   settingsApi,
   type CompanyRole,
+  type SettingsUser,
   type RolePermissions,
   type PermissionLevel,
 } from '@/services/settingsApi'
+
+// ── Types accès trésorerie (modèle scopé par agence) ─────────────────────────
+
+type TresoResourceType = 'banque' | 'caisse' | 'mobile_money'
+type TresoLevel = 'lecture' | 'ecriture'
+
+interface TresoAccess {
+  id: string
+  sujet: string
+  sujetType: 'role' | 'utilisateur'
+  agence: string                    // périmètre géographique strict
+  ressourceTypes: TresoResourceType[] // types autorisés dans cette agence
+  niveau: TresoLevel
+}
+
+// Agences et les types de ressources qu'elles possèdent réellement
+const AGENCES_TRESO: { label: string; types: TresoResourceType[] }[] = [
+  { label: 'Toutes les agences',         types: ['banque', 'caisse', 'mobile_money'] },
+  { label: 'Siège',                       types: ['banque', 'caisse'] },
+  { label: 'Agence Douala — Akwa',        types: ['caisse'] },
+  { label: 'Succursale Yaoundé — Centre', types: ['caisse'] },
+  { label: 'Bureau Bafoussam',            types: ['caisse'] },
+]
+
+const TYPE_LABELS: Record<TresoResourceType, string> = {
+  banque:       'Comptes bancaires',
+  caisse:       'Caisses',
+  mobile_money: 'Mobile Money',
+}
+
+const TYPE_COLORS: Record<TresoResourceType, string> = {
+  banque:       'bg-blue-100 text-blue-700',
+  caisse:       'bg-amber-100 text-amber-700',
+  mobile_money: 'bg-purple-100 text-purple-700',
+}
+
+const LEVEL_COLORS: Record<TresoLevel, string> = {
+  lecture:  'bg-blue-100 text-blue-700',
+  ecriture: 'bg-green-100 text-green-700',
+}
+
+function userDisplayName(u: SettingsUser): string {
+  const full = [u.firstName, u.lastName].filter(Boolean).join(' ')
+  return full || u.email
+}
+
+function buildInitialAccesses(roles: CompanyRole[]): TresoAccess[] {
+  const adminName = roles.find(r => /admin/i.test(r.name))?.name ?? roles[0]?.name ?? 'Admin'
+  const comptName = roles.find(r => /compt/i.test(r.name))?.name ?? roles[1]?.name ?? 'Comptable'
+  return [
+    {
+      id: 'a1', sujet: adminName, sujetType: 'role',
+      agence: 'Toutes les agences', ressourceTypes: ['banque', 'caisse', 'mobile_money'], niveau: 'ecriture',
+    },
+    {
+      id: 'a2', sujet: comptName, sujetType: 'role',
+      agence: 'Toutes les agences', ressourceTypes: ['banque', 'caisse', 'mobile_money'], niveau: 'lecture',
+    },
+  ]
+}
+
+// ── Modal ajout / modification accès ─────────────────────────────────────────
+
+function ModalTresoAccess({ initial, sujets, onSave, onClose }: {
+  initial?: TresoAccess
+  sujets: { label: string; type: 'role' | 'utilisateur' }[]
+  onSave: (a: Omit<TresoAccess, 'id'>) => void
+  onClose: () => void
+}) {
+  const editing = !!initial
+  const defaultAgence = AGENCES_TRESO[0]!
+
+  const [form, setForm] = useState({
+    sujet:          initial?.sujet         ?? sujets[0]?.label ?? '',
+    sujetType:      initial?.sujetType     ?? 'role' as 'role' | 'utilisateur',
+    agence:         initial?.agence        ?? defaultAgence.label,
+    ressourceTypes: initial?.ressourceTypes ?? [...defaultAgence.types],
+    niveau:         initial?.niveau        ?? 'lecture' as TresoLevel,
+  })
+
+  const agenceInfo = AGENCES_TRESO.find(a => a.label === form.agence) ?? defaultAgence
+
+  // Quand l'agence change, on recalcule les types disponibles
+  function handleAgenceChange(label: string) {
+    const ag = AGENCES_TRESO.find(a => a.label === label) ?? defaultAgence
+    setForm(f => ({ ...f, agence: label, ressourceTypes: [...ag.types] }))
+  }
+
+  function toggleType(t: TresoResourceType) {
+    setForm(f => ({
+      ...f,
+      ressourceTypes: f.ressourceTypes.includes(t)
+        ? f.ressourceTypes.filter(x => x !== t)
+        : [...f.ressourceTypes, t],
+    }))
+  }
+
+  function handleSujetChange(label: string) {
+    const s = sujets.find(s => s.label === label)
+    setForm(f => ({ ...f, sujet: label, sujetType: s?.type ?? f.sujetType }))
+  }
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (form.ressourceTypes.length === 0) return
+    onSave(form)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-900">
+            {editing ? 'Modifier l\'accès' : 'Ajouter un accès trésorerie'}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-4">
+
+          {/* Sujet */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Rôle ou utilisateur</label>
+            <select value={form.sujet} onChange={e => handleSujetChange(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500/30">
+              <optgroup label="Rôles">
+                {sujets.filter(s => s.type === 'role').map(s => (
+                  <option key={s.label} value={s.label}>{s.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Utilisateurs">
+                {sujets.filter(s => s.type === 'utilisateur').map(s => (
+                  <option key={s.label} value={s.label}>{s.label}</option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+
+          {/* Agence — périmètre strict */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Périmètre (agence)
+              <span className="ml-1 font-normal text-gray-400">— l'accès est limité à cette agence uniquement</span>
+            </label>
+            <select value={form.agence} onChange={e => handleAgenceChange(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500/30">
+              {AGENCES_TRESO.map(a => (
+                <option key={a.label} value={a.label}>{a.label}</option>
+              ))}
+            </select>
+            {form.agence !== 'Toutes les agences' && (
+              <p className="mt-1 text-[11px] text-amber-600 font-medium">
+                ⚠ Cet utilisateur ne verra pas la trésorerie des autres agences.
+              </p>
+            )}
+          </div>
+
+          {/* Types de ressources disponibles dans cette agence */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">
+              Ressources accessibles dans {form.agence === 'Toutes les agences' ? 'toutes les agences' : form.agence}
+            </label>
+            <div className="flex flex-col gap-2">
+              {agenceInfo.types.map(t => (
+                <label key={t} className={`flex items-center gap-3 rounded-lg border px-3 py-2 cursor-pointer transition-colors ${form.ressourceTypes.includes(t) ? 'border-forest-500 bg-forest-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                  <input type="checkbox" checked={form.ressourceTypes.includes(t)}
+                    onChange={() => toggleType(t)} className="accent-forest-600" />
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${TYPE_COLORS[t]}`}>
+                    {TYPE_LABELS[t]}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {form.ressourceTypes.length === 0 && (
+              <p className="mt-1 text-[11px] text-red-500">Sélectionnez au moins un type de ressource.</p>
+            )}
+          </div>
+
+          {/* Niveau */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">Niveau d'accès</label>
+            <div className="flex gap-3">
+              {(['lecture', 'ecriture'] as TresoLevel[]).map(lvl => (
+                <label key={lvl} className={`flex-1 flex items-center gap-2 rounded-lg border-2 px-3 py-2 cursor-pointer transition-colors ${form.niveau === lvl ? 'border-forest-600 bg-forest-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                  <input type="radio" name="niveau" value={lvl} checked={form.niveau === lvl}
+                    onChange={() => setForm(f => ({ ...f, niveau: lvl }))} className="accent-forest-600" />
+                  <div>
+                    <p className="text-xs font-semibold text-gray-800 capitalize">{lvl}</p>
+                    <p className="text-[10px] text-gray-400">{lvl === 'lecture' ? 'Consulter seulement' : 'Consulter & modifier'}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+              Annuler
+            </button>
+            <button type="submit" disabled={form.ressourceTypes.length === 0}
+              className="flex-1 rounded-lg bg-forest-900 py-2 text-sm font-medium text-white hover:bg-forest-700 disabled:opacity-40">
+              {editing ? 'Enregistrer' : 'Ajouter'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Section accès trésorerie ──────────────────────────────────────────────────
+
+function TresoAccessSection({ roles, users }: { roles: CompanyRole[]; users: SettingsUser[] }) {
+  const sujets = [
+    ...roles.map(r => ({ label: r.name, type: 'role' as const })),
+    ...users.map(u => ({ label: userDisplayName(u), type: 'utilisateur' as const })),
+  ]
+
+  const [accesses, setAccesses] = useState<TresoAccess[]>([])
+  const initialized = useRef(false)
+  useEffect(() => {
+    if (roles.length > 0 && !initialized.current) {
+      initialized.current = true
+      setAccesses(buildInitialAccesses(roles))
+    }
+  }, [roles])
+
+  const [filterSujet, setFilterSujet] = useState('all')
+  const [filterAgence, setFilterAgence] = useState('all')
+  const [showModal, setShowModal] = useState(false)
+  const [editing, setEditing] = useState<TresoAccess | null>(null)
+
+  function addOrUpdate(data: Omit<TresoAccess, 'id'>) {
+    if (editing) {
+      setAccesses(prev => prev.map(a => a.id === editing.id ? { ...a, ...data } : a))
+      setEditing(null)
+    } else {
+      setAccesses(prev => [...prev, { ...data, id: Date.now().toString() }])
+      setShowModal(false)
+    }
+  }
+
+  function remove(id: string) {
+    setAccesses(prev => prev.filter(a => a.id !== id))
+  }
+
+  const filtered = accesses.filter(a => {
+    if (filterSujet !== 'all' && a.sujet !== filterSujet) return false
+    if (filterAgence !== 'all' && a.agence !== filterAgence) return false
+    return true
+  })
+
+  const bySujet = filtered.reduce<Record<string, TresoAccess[]>>((acc, a) => {
+    ;(acc[a.sujet] ??= []).push(a)
+    return acc
+  }, {})
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-800">Accès à la trésorerie</h2>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Chaque accès est limité à une agence — un chef d'agence ne voit pas la trésorerie des autres agences.
+          </p>
+        </div>
+        <button onClick={() => setShowModal(true)}
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-forest-900 px-3 py-2 text-sm font-medium text-white hover:bg-forest-800 transition-colors">
+          <span className="text-base leading-none">+</span> Ajouter un accès
+        </button>
+      </div>
+
+      {/* Filtres */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select value={filterSujet} onChange={e => setFilterSujet(e.target.value)}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-forest-500/30">
+          <option value="all">Tous les utilisateurs / rôles</option>
+          {sujets.map(s => <option key={s.label} value={s.label}>{s.label}</option>)}
+        </select>
+        <select value={filterAgence} onChange={e => setFilterAgence(e.target.value)}
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-forest-500/30">
+          <option value="all">Toutes les agences</option>
+          {AGENCES_TRESO.map(a => <option key={a.label} value={a.label}>{a.label}</option>)}
+        </select>
+      </div>
+
+      {/* Tableau */}
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        {Object.keys(bySujet).length === 0 ? (
+          <p className="text-center text-sm text-gray-400 py-8">Aucun accès configuré</p>
+        ) : (
+          Object.entries(bySujet).map(([sujet, rows]) => {
+            const first = rows[0]!
+            return (
+              <div key={sujet} className="border-b border-gray-100 last:border-b-0">
+                <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100">
+                  <span className="text-sm font-semibold text-gray-800">{sujet}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${first.sujetType === 'role' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
+                    {first.sujetType === 'role' ? 'Rôle' : 'Utilisateur'}
+                  </span>
+                  <span className="ml-auto text-[11px] text-gray-400">{rows.length} périmètre{rows.length > 1 ? 's' : ''}</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {rows.map(a => (
+                    <div key={a.id} className="group flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/60">
+                      {/* Agence badge */}
+                      <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold border ${a.agence === 'Toutes les agences' ? 'border-green-300 text-green-700 bg-green-50' : 'border-amber-300 text-amber-700 bg-amber-50'}`}>
+                        {a.agence === 'Toutes les agences' ? 'Toutes agences' : a.agence}
+                      </span>
+                      {/* Types */}
+                      <div className="flex-1 flex flex-wrap gap-1">
+                        {a.ressourceTypes.map(t => (
+                          <span key={t} className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${TYPE_COLORS[t]}`}>
+                            {TYPE_LABELS[t]}
+                          </span>
+                        ))}
+                      </div>
+                      {/* Niveau */}
+                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${LEVEL_COLORS[a.niveau]}`}>
+                        {a.niveau === 'lecture' ? 'Lecture' : 'Écriture'}
+                      </span>
+                      {/* Actions */}
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => setEditing(a)} title="Modifier"
+                          className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-blue-50 hover:text-blue-600 text-xs">✎</button>
+                        <button onClick={() => remove(a.id)} title="Supprimer"
+                          className="h-6 w-6 flex items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-500 text-sm font-bold">×</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {(showModal || editing) && (
+        <ModalTresoAccess
+          initial={editing ?? undefined}
+          sujets={sujets}
+          onSave={addOrUpdate}
+          onClose={() => { setShowModal(false); setEditing(null) }}
+        />
+      )}
+    </section>
+  )
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -403,6 +752,7 @@ function UpgradeBanner() {
 export function RolesPage() {
   const { user } = useAuth()
   const [roles, setRoles] = useState<CompanyRole[]>([])
+  const [users, setUsers] = useState<SettingsUser[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showModal, setShowModal] = useState(false)
@@ -412,9 +762,8 @@ export function RolesPage() {
 
   useEffect(() => {
     setLoading(true)
-    settingsApi
-      .listRoles()
-      .then(setRoles)
+    Promise.all([settingsApi.listRoles(), settingsApi.listUsers()])
+      .then(([r, u]) => { setRoles(r); setUsers(u) })
       .catch(() => setError('Impossible de charger les rôles.'))
       .finally(() => setLoading(false))
   }, [])
@@ -527,6 +876,9 @@ export function RolesPage() {
           </div>
         )}
       </section>
+
+      {/* Accès trésorerie */}
+      <TresoAccessSection roles={roles} users={users} />
 
       {/* Modal */}
       {showModal && (

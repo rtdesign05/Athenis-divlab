@@ -11,8 +11,9 @@ const router = createBrowserRouter([
   { path: '/', element: <Navigate to="/auth/login" replace /> },
 
   // ── Auth (public) ───────────────────────────────────────────────────────────
-  { path: '/auth/login',    lazy: lz(() => import('@/features/auth/LoginPage'), 'LoginPage') },
-  { path: '/auth/register', lazy: lz(() => import('@/pages/auth/Register'), 'Register') },
+  { path: '/auth/login',         lazy: lz(() => import('@/features/auth/LoginPage'),       'LoginPage') },
+  { path: '/auth/register',      lazy: lz(() => import('@/pages/auth/AccountTypePage'),    'AccountTypePage') },
+  { path: '/auth/register/form', lazy: lz(() => import('@/pages/auth/Register'),           'Register') },
 
   // ── Personal space ──────────────────────────────────────────────────────────
   {
@@ -31,15 +32,15 @@ const router = createBrowserRouter([
     element: <ProtectedRoute allow={['COMPANY']} />,
     children: [{ path: '/app', lazy: lz(() => import('@/shared/components/layout/AppLayout'), 'AppLayout'), children: [
 
-      { index: true, element: <Navigate to="gestion" replace /> },
+      { index: true, lazy: lz(() => import('@/pages/app/Dashboard'), 'AppDashboard') },
 
       // ── Redirects from legacy paths ──────────────────────────────────────────
-      { path: 'dashboard',  element: <Navigate to="/app/gestion"            replace /> },
-      { path: 'invoices',   element: <Navigate to="/app/gestion/factures"   replace /> },
-      { path: 'quotes',     element: <Navigate to="/app/gestion/devis"      replace /> },
-      { path: 'clients',    element: <Navigate to="/app/gestion/clients"    replace /> },
-      { path: 'expenses',   element: <Navigate to="/app/gestion/depenses"   replace /> },
-      { path: 'reports',    element: <Navigate to="/app/gestion"            replace /> },
+      { path: 'dashboard',  element: <Navigate to="/app/gestion/ventes"     replace /> },
+      { path: 'invoices',   element: <Navigate to="/app/gestion/ventes"     replace /> },
+      { path: 'quotes',     element: <Navigate to="/app/gestion/ventes"     replace /> },
+      { path: 'clients',    element: <Navigate to="/app/gestion/ventes"     replace /> },
+      { path: 'expenses',   element: <Navigate to="/app/gestion/achats"     replace /> },
+      { path: 'reports',    element: <Navigate to="/app/gestion/ventes"     replace /> },
       { path: 'hr/leaves',  element: <Navigate to="/app/hr/conges"          replace /> },
       { path: 'hr/payslip', element: <Navigate to="/app/hr/paie"            replace /> },
       { path: 'hr/reviews', element: <Navigate to="/app/hr/entretiens"      replace /> },
@@ -59,13 +60,33 @@ const router = createBrowserRouter([
         path: 'gestion',
         lazy: lz(() => import('@/layouts/modules/GestionLayout'), 'GestionLayout'),
         children: [
-          { index: true,        lazy: lz(() => import('@/pages/app/Dashboard'),            'AppDashboard') },
-          { path: 'factures',   lazy: lz(() => import('@/pages/app/BillingPage'),          'BillingPage') },
-          { path: 'devis',      lazy: lz(() => import('@/pages/app/QuotesPage'),           'QuotesPage') },
-          { path: 'clients',    lazy: lz(() => import('@/pages/app/ClientsPage'),          'ClientsPage') },
-          { path: 'depenses',   lazy: lz(() => import('@/pages/app/ExpensesPage'),         'ExpensesPage') },
-          { path: 'tresorerie', lazy: lz(() => import('@/pages/app/gestion/TresoreriePage'), 'TresoreriePage') },
-          { path: 'stock',      lazy: lz(() => import('@/pages/app/gestion/StockPage'),      'StockPage') },
+          { index: true, lazy: lz(() => import('@/pages/app/gestion/GestionOverviewPage'), 'GestionOverviewPage') },
+          {
+            path: 'ventes',
+            children: [
+              { index: true,           lazy: lz(() => import('@/pages/app/gestion/VentesPage'),    'VentesPage') },
+              { path: 'livraisons',    lazy: lz(() => import('@/pages/app/Placeholder'),           'Placeholder') },
+              { path: 'retours',       lazy: lz(() => import('@/pages/app/Placeholder'),           'Placeholder') },
+            ],
+          },
+          {
+            path: 'achats',
+            children: [
+              { index: true,           lazy: lz(() => import('@/pages/app/gestion/AchatsPage'),    'AchatsPage') },
+              { path: 'receptions',    lazy: lz(() => import('@/pages/app/Placeholder'),           'Placeholder') },
+              { path: 'fournisseurs',  lazy: lz(() => import('@/pages/app/Placeholder'),           'Placeholder') },
+            ],
+          },
+          {
+            path: 'tresorerie',
+            children: [
+              { index: true,           lazy: lz(() => import('@/pages/app/gestion/TresoreriePage'),        'TresoreriePage') },
+              { path: 'banques',       lazy: lz(() => import('@/pages/app/gestion/BanquesPage'),           'BanquesPage') },
+              { path: 'caisses',       lazy: lz(() => import('@/pages/app/gestion/CaissesPage'),           'CaissesPage') },
+              { path: 'mobile-money',  lazy: lz(() => import('@/pages/app/gestion/MobileMoneyPage'),       'MobileMoneyPage') },
+              { path: 'previsions',    lazy: lz(() => import('@/pages/app/gestion/PrevisionsPage'),        'PrevisionsPage') },
+            ],
+          },
         ],
       },
 
@@ -74,7 +95,8 @@ const router = createBrowserRouter([
         path: 'accounting',
         lazy: lz(() => import('@/layouts/modules/AccountingLayout'), 'AccountingLayout'),
         children: [
-          { index: true,         lazy: lz(() => import('@/pages/app/accounting/AccountingDashboard'), 'AccountingDashboard') },
+          { index: true,              lazy: lz(() => import('@/pages/app/accounting/AccountingDashboard'), 'AccountingDashboard') },
+          { path: 'transactions',     lazy: lz(() => import('@/pages/app/accounting/TransactionsPage'),    'TransactionsPage') },
           { path: 'bilan',       lazy: lz(() => import('@/pages/app/accounting/BilanPage'),           'BilanPage') },
           { path: 'resultat',    lazy: lz(() => import('@/pages/app/accounting/ResultatPage'),         'ResultatPage') },
           { path: 'journal',     lazy: lz(() => import('@/pages/app/accounting/JournalPage'),          'JournalPage') },
@@ -155,6 +177,7 @@ const router = createBrowserRouter([
           { index: true,           element: <Navigate to="entreprise" replace /> },
           { path: 'entreprise',    lazy: lz(() => import('@/pages/app/settings/EntreprisePage'),    'EntreprisePage') },
           { path: 'utilisateurs',  lazy: lz(() => import('@/pages/app/settings/UtilisateursPage'),  'UtilisateursPage') },
+          { path: 'agences',       lazy: lz(() => import('@/pages/app/settings/AgencesPage'),       'AgencesPage') },
           { path: 'roles',         lazy: lz(() => import('@/pages/app/settings/RolesPage'),         'RolesPage') },
           { path: 'securite',      lazy: lz(() => import('@/pages/app/settings/SecuritePage'),      'SecuritePage') },
           { path: 'facturation',   lazy: lz(() => import('@/pages/app/settings/FacturationPage'),   'FacturationPage') },

@@ -5,8 +5,66 @@ import type { CompanyRole } from '@prisma/client'
 
 // ── Company Settings ──────────────────────────────────────────────────────────
 
+/** Map raw Prisma Company row → API response shape expected by the frontend */
+function toCompanySettingsDto(raw: {
+  id: string
+  nom: string
+  plan: string
+  modules: string[]
+  locale: string
+  timezone: string
+  pays: string
+  currency: string
+  accountingZone: string
+  accountingPlan: string
+  logoUrl: string | null
+  formeJuridique: string | null
+  siren: string | null
+  siret: string | null
+  capital: object | null   // Decimal
+  adresse: string | null
+  codePostal: string | null
+  ville: string | null
+  telephone: string | null
+  email: string | null
+  siteWeb: string | null
+}) {
+  return {
+    id:               raw.id,
+    name:             raw.nom,
+    logo:             raw.logoUrl,
+    legalForm:        raw.formeJuridique,
+    siren:            raw.siren,
+    siret:            raw.siret,
+    // Fields not yet in DB — return null so frontend shows empty but doesn't crash
+    naf:              null as null,
+    vatNumber:        null as null,
+    capital:          raw.capital !== null ? Number(raw.capital) : null,
+    address:          raw.adresse,
+    postalCode:       raw.codePostal,
+    city:             raw.ville,
+    country:          raw.pays,
+    phone:            raw.telephone,
+    contactEmail:     raw.email,
+    website:          raw.siteWeb,
+    primaryColor:     null as null,
+    secondaryColor:   null as null,
+    font:             null as null,
+    invoiceMentions:  null as null,
+    paymentTerms:     null as null,
+    lateInterestRate: null as null,
+    discountRate:     null as null,
+    plan:             raw.plan,
+    modules:          raw.modules,
+    locale:           raw.locale,
+    timezone:         raw.timezone,
+    accountingZone:   raw.accountingZone,
+    accountingPlan:   raw.accountingPlan,
+  }
+}
+
 export async function getCompanySettings(companyId: string) {
-  return prisma.company.findUniqueOrThrow({
+  const raw = await prisma.company.findUniqueOrThrow({
     where: { id: companyId },
     select: {
       id: true,
@@ -21,6 +79,7 @@ export async function getCompanySettings(companyId: string) {
       accountingPlan: true,
       logoUrl: true,
       formeJuridique: true,
+      siren: true,
       siret: true,
       capital: true,
       adresse: true,
@@ -29,36 +88,50 @@ export async function getCompanySettings(companyId: string) {
       telephone: true,
       email: true,
       siteWeb: true,
-      vatRate: true,
     },
   })
+  return toCompanySettingsDto(raw)
+}
+
+/** Map API request body (camelCase English) → Prisma DB field names */
+export function toCompanyUpdateData(body: Record<string, unknown>): Record<string, unknown> {
+  const d: Record<string, unknown> = {}
+  if ('name'         in body) d.nom            = body.name          || null
+  if ('logo'         in body) d.logoUrl         = body.logo          || null
+  if ('legalForm'    in body) d.formeJuridique  = body.legalForm     || null
+  if ('siren'        in body) d.siren           = body.siren         || null
+  if ('siret'        in body) d.siret           = body.siret         || null
+  if ('capital'      in body) d.capital         = body.capital !== null ? Number(body.capital) : null
+  if ('address'      in body) d.adresse         = body.address       || null
+  if ('postalCode'   in body) d.codePostal      = body.postalCode    || null
+  if ('city'         in body) d.ville           = body.city          || null
+  if ('country'      in body) d.pays            = body.country       || 'CM'
+  if ('phone'        in body) d.telephone       = body.phone         || null
+  if ('contactEmail' in body) d.email           = body.contactEmail  || null
+  if ('website'      in body) d.siteWeb         = body.website       || null
+  if ('locale'       in body) d.locale          = body.locale
+  if ('timezone'     in body) d.timezone        = body.timezone
+  // Fields not in DB (naf, vatNumber, primaryColor, secondaryColor, font,
+  // invoiceMentions, paymentTerms, lateInterestRate, discountRate) — silently ignored
+  return d
 }
 
 export async function updateCompanySettings(
   companyId: string,
-  data: Partial<{
-    nom: string
-    logoUrl: string
-    formeJuridique: string
-    siret: string
-    capital: number
-    adresse: string
-    codePostal: string
-    ville: string
-    telephone: string
-    email: string
-    siteWeb: string
-    vatRate: number
-    locale: string
-    timezone: string
-    pays: string
-    currency: string
-  }>,
+  dbData: Record<string, unknown>,
 ) {
-  return prisma.company.update({
+  const updated = await prisma.company.update({
     where: { id: companyId },
-    data,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: dbData as any,
+    select: {
+      id: true, nom: true, plan: true, modules: true, locale: true, timezone: true,
+      pays: true, currency: true, accountingZone: true, accountingPlan: true,
+      logoUrl: true, formeJuridique: true, siren: true, siret: true, capital: true,
+      adresse: true, codePostal: true, ville: true, telephone: true, email: true, siteWeb: true,
+    },
   })
+  return toCompanySettingsDto(updated)
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
@@ -101,13 +174,15 @@ export async function listUsers(companyId: string) {
     return {
       id:              user.id,
       email:           user.email,
-      firstName:       user.nom,
-      lastName:        user.prenom ?? null,
-      companyRole:     member.role as string,
+      // DB: nom = nom de famille (last name), prenom = prénom (first name)
+      firstName:       user.prenom ?? null,
+      lastName:        user.nom,
+      globalRole:      member.role as string,
+      companyRoleId:   member.role as string,
       companyRoleName: member.role as string,
       status:          member.status as string,
-      twoFAEnabled:    user.twoFAEnabled,
-      lastLoginAt:     user.lastLoginAt,
+      totpEnabled:     user.twoFAEnabled,
+      lastLoginAt:     user.lastLoginAt?.toISOString() ?? null,
       invitedAt:       member.invitedAt?.toISOString() ?? null,
       isInvitation:    false as const,
     }
@@ -118,10 +193,11 @@ export async function listUsers(companyId: string) {
     email:           inv.email,
     firstName:       null as null,
     lastName:        null as null,
-    companyRole:     inv.role as string,
+    globalRole:      inv.role as string,
+    companyRoleId:   inv.role as string,
     companyRoleName: inv.role as string,
     status:          'INVITED' as const,
-    twoFAEnabled:    false as const,
+    totpEnabled:     false as const,
     lastLoginAt:     null as null,
     invitedAt:       inv.createdAt.toISOString(),
     isInvitation:    true as const,
@@ -142,7 +218,16 @@ export function getUserLimit(plan: string): number {
 
 export async function inviteUser(
   companyId: string,
-  data: { email: string; firstName?: string; lastName?: string; role?: string },
+  data: {
+    prenom: string
+    nom: string
+    email: string
+    telephone?: string
+    role: CompanyRole
+    permissions: Record<string, string>
+    agenceIds: string[]
+    isRestricted: boolean
+  },
   invitedBy: string,
 ) {
   const company = await prisma.company.findUniqueOrThrow({
@@ -187,16 +272,39 @@ export async function inviteUser(
     throw new AppError('Une invitation est déjà en attente pour cette adresse email', 409, 'INVITATION_ALREADY_EXISTS')
   }
 
-  const roleEnum: CompanyRole = (data.role as CompanyRole) ?? 'READONLY'
+  // Validate agenceIds belong to this company
+  if (data.agenceIds.length > 0) {
+    const validAgences = await prisma.agence.count({
+      where: { companyId, id: { in: data.agenceIds } },
+    })
+    if (validAgences !== data.agenceIds.length) {
+      throw new AppError("Une ou plusieurs agences spécifiées sont invalides", 400, 'INVALID_AGENCE')
+    }
+  }
+
+  const roleEnum: CompanyRole = data.role
+
+  // Store prenom, nom, telephone in metadata inside permissions JSON
+  const permissionsWithMeta = {
+    ...data.permissions,
+    _meta: {
+      prenom:    data.prenom,
+      nom:       data.nom,
+      telephone: data.telephone ?? null,
+      isRestricted: data.isRestricted,
+    },
+  }
 
   return prisma.invitation.create({
     data: {
       companyId,
-      email:     data.email,
-      role:      roleEnum,
-      token:     crypto.randomBytes(32).toString('hex'),
-      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-      createdBy: invitedBy,
+      email:       data.email,
+      role:        roleEnum,
+      permissions: permissionsWithMeta,
+      agenceIds:   data.agenceIds,
+      token:       crypto.randomBytes(32).toString('hex'),
+      expiresAt:   new Date(Date.now() + 48 * 60 * 60 * 1000),
+      createdBy:   invitedBy,
     },
   })
 }
@@ -262,18 +370,138 @@ export async function deleteUser(
   await prisma.companyMember.delete({ where: { id: member.id } })
 }
 
+// ── Agences ───────────────────────────────────────────────────────────────────
+
+export async function listAgences(companyId: string) {
+  return prisma.agence.findMany({
+    where: { companyId },
+    orderBy: [{ isSiege: 'desc' }, { nom: 'asc' }],
+    include: {
+      _count: { select: { members: true } },
+    },
+  })
+}
+
+export async function createAgence(
+  companyId: string,
+  data: {
+    code: string
+    nom: string
+    adresse?: string
+    ville?: string
+    telephone?: string
+    email?: string
+    isSiege?: boolean
+  },
+) {
+  // Ensure unique code within company
+  const existing = await prisma.agence.findUnique({
+    where: { companyId_code: { companyId, code: data.code } },
+  })
+  if (existing) {
+    throw new AppError(`Le code agence "${data.code}" est déjà utilisé`, 409, 'CODE_ALREADY_EXISTS')
+  }
+
+  // If this is set as siege, unset others
+  if (data.isSiege) {
+    await prisma.agence.updateMany({
+      where: { companyId, isSiege: true },
+      data: { isSiege: false },
+    })
+  }
+
+  return prisma.agence.create({
+    data: {
+      companyId,
+      code:      data.code,
+      nom:       data.nom,
+      adresse:   data.adresse ?? null,
+      ville:     data.ville ?? null,
+      telephone: data.telephone ?? null,
+      email:     data.email ?? null,
+      isSiege:   data.isSiege ?? false,
+    },
+  })
+}
+
+export async function updateAgence(
+  companyId: string,
+  agenceId: string,
+  data: {
+    code?: string
+    nom?: string
+    adresse?: string
+    ville?: string
+    telephone?: string
+    email?: string
+    isSiege?: boolean
+    isActive?: boolean
+  },
+) {
+  const agence = await prisma.agence.findFirst({ where: { id: agenceId, companyId } })
+  if (!agence) throw new AppError('Agence introuvable', 404, 'NOT_FOUND')
+
+  // Check code uniqueness if changing code
+  if (data.code && data.code !== agence.code) {
+    const existing = await prisma.agence.findUnique({
+      where: { companyId_code: { companyId, code: data.code } },
+    })
+    if (existing) {
+      throw new AppError(`Le code agence "${data.code}" est déjà utilisé`, 409, 'CODE_ALREADY_EXISTS')
+    }
+  }
+
+  // If setting as siege, unset others
+  if (data.isSiege) {
+    await prisma.agence.updateMany({
+      where: { companyId, isSiege: true, id: { not: agenceId } },
+      data: { isSiege: false },
+    })
+  }
+
+  return prisma.agence.update({
+    where: { id: agenceId },
+    data,
+  })
+}
+
+export async function deleteAgence(companyId: string, agenceId: string) {
+  const agence = await prisma.agence.findFirst({ where: { id: agenceId, companyId } })
+  if (!agence) throw new AppError('Agence introuvable', 404, 'NOT_FOUND')
+  if (agence.isSiege) {
+    throw new AppError("Le siège social ne peut pas être supprimé", 403, 'CANNOT_DELETE_SIEGE')
+  }
+
+  // Check for active members
+  const memberCount = await prisma.agenceMember.count({ where: { agenceId } })
+  if (memberCount > 0) {
+    throw new AppError(
+      `Cette agence a ${memberCount} membre(s) rattaché(s). Retirez-les avant de supprimer l'agence.`,
+      409,
+      'AGENCE_HAS_MEMBERS',
+    )
+  }
+
+  await prisma.agence.delete({ where: { id: agenceId } })
+}
+
 // ── Roles ─────────────────────────────────────────────────────────────────────
 // Roles are now an enum (CompanyRole), not a DB model. Return predefined values.
 
-const SYSTEM_ROLES = [
-  { id: 'OWNER',      name: 'Propriétaire',    description: 'Accès complet, propriétaire de l\'entreprise', isSystem: true, permissions: {}, userCount: 0 },
-  { id: 'ADMIN',      name: 'Administrateur',  description: 'Accès complet à toutes les fonctionnalités',    isSystem: true, permissions: {}, userCount: 0 },
-  { id: 'MANAGER',    name: 'Gestionnaire',    description: 'Gestion des opérations courantes',              isSystem: true, permissions: {}, userCount: 0 },
-  { id: 'ACCOUNTANT', name: 'Comptable',       description: 'Accès aux modules comptables',                  isSystem: true, permissions: {}, userCount: 0 },
-  { id: 'HR',         name: 'RH',              description: 'Gestion des ressources humaines',               isSystem: true, permissions: {}, userCount: 0 },
-  { id: 'SALES',      name: 'Commercial',      description: 'Gestion des ventes et clients',                 isSystem: true, permissions: {}, userCount: 0 },
-  { id: 'READONLY',   name: 'Lecture seule',   description: 'Consultation uniquement',                       isSystem: true, permissions: {}, userCount: 0 },
-  { id: 'CUSTOM',     name: 'Personnalisé',    description: 'Rôle avec permissions personnalisées',          isSystem: false, permissions: {}, userCount: 0 },
+type PermLevel = 'none' | 'read' | 'write' | 'admin'
+interface RolePerms { gestion: PermLevel; comptabilite: PermLevel; rh: PermLevel; juridique: PermLevel; esg: PermLevel; settings: PermLevel }
+
+const SYSTEM_ROLES: Array<{
+  id: string; name: string; description: string; isSystem: boolean; permissions: RolePerms; userCount: number
+}> = [
+  { id: 'OWNER',      name: 'Propriétaire',   description: 'Accès complet, propriétaire de l\'entreprise',  isSystem: true,  permissions: { gestion: 'admin', comptabilite: 'admin', rh: 'admin', juridique: 'admin', esg: 'admin', settings: 'admin'  }, userCount: 0 },
+  { id: 'ADMIN',      name: 'Administrateur', description: 'Accès complet à toutes les fonctionnalités',     isSystem: true,  permissions: { gestion: 'admin', comptabilite: 'admin', rh: 'admin', juridique: 'admin', esg: 'admin', settings: 'admin'  }, userCount: 0 },
+  { id: 'MANAGER',    name: 'Gestionnaire',   description: 'Gestion des opérations courantes',               isSystem: true,  permissions: { gestion: 'write', comptabilite: 'read',  rh: 'read',  juridique: 'read',  esg: 'read',  settings: 'read'   }, userCount: 0 },
+  { id: 'ACCOUNTANT', name: 'Comptable',      description: 'Accès aux modules comptables',                   isSystem: true,  permissions: { gestion: 'read',  comptabilite: 'write', rh: 'none',  juridique: 'none',  esg: 'none',  settings: 'none'   }, userCount: 0 },
+  { id: 'HR',         name: 'RH',             description: 'Gestion des ressources humaines',                isSystem: true,  permissions: { gestion: 'none',  comptabilite: 'none',  rh: 'write', juridique: 'read',  esg: 'none',  settings: 'none'   }, userCount: 0 },
+  { id: 'SALES',      name: 'Commercial',     description: 'Gestion des ventes et clients',                  isSystem: true,  permissions: { gestion: 'write', comptabilite: 'none',  rh: 'none',  juridique: 'none',  esg: 'none',  settings: 'none'   }, userCount: 0 },
+  { id: 'READONLY',   name: 'Lecture seule',  description: 'Consultation uniquement',                        isSystem: true,  permissions: { gestion: 'read',  comptabilite: 'read',  rh: 'read',  juridique: 'read',  esg: 'read',  settings: 'none'   }, userCount: 0 },
+  { id: 'CUSTOM',     name: 'Personnalisé',   description: 'Rôle avec permissions personnalisées',           isSystem: false, permissions: { gestion: 'none',  comptabilite: 'none',  rh: 'none',  juridique: 'none',  esg: 'none',  settings: 'none'   }, userCount: 0 },
 ]
 
 export async function listRoles(companyId: string) {

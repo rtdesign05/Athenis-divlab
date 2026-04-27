@@ -48,12 +48,16 @@ export interface CompanySettings {
 export interface SettingsUser {
   id:              string
   email:           string
+  /** Prénom de l'utilisateur (user.prenom dans la DB) */
   firstName:       string | null
+  /** Nom de famille (user.nom dans la DB) */
   lastName:        string | null
+  /** Rôle enum au niveau de la company (ADMIN, MANAGER, etc.) */
   globalRole:      string
   companyRoleId:   string | null
   companyRoleName: string | null
   status:          UserStatus
+  /** Alias de twoFAEnabled */
   totpEnabled:     boolean
   lastLoginAt:     string | null
   invitedAt:       string | null
@@ -85,6 +89,43 @@ export interface SecurityPolicy {
   lockoutDurationMinutes: number
 }
 
+export interface Agence {
+  id:        string
+  code:      string
+  nom:       string
+  adresse:   string | null
+  ville:     string | null
+  telephone: string | null
+  email:     string | null
+  isActive:  boolean
+  isSiege:   boolean
+  createdAt: string
+  _count:    { members: number }
+}
+
+export interface CreateAgenceDto {
+  code:      string
+  nom:       string
+  adresse?:  string
+  ville?:    string
+  telephone?: string
+  email?:    string
+  isSiege?:  boolean
+}
+
+export type InviteRole = 'ADMIN' | 'MANAGER' | 'ACCOUNTANT' | 'HR' | 'SALES' | 'READONLY' | 'CUSTOM'
+
+export interface InviteUserDto {
+  prenom:       string
+  nom:          string
+  email:        string
+  telephone?:   string
+  role:         InviteRole
+  permissions:  RolePermissions
+  agenceIds:    string[]
+  isRestricted: boolean
+}
+
 export interface AuditLogEntry {
   id:        string
   action:    string
@@ -106,8 +147,8 @@ export const settingsApi = {
   listUsers:        () =>
     api.get<{ data: SettingsUser[] }>('/settings/users').then(d),
 
-  inviteUser:       (body: { email: string; firstName?: string; lastName?: string; roleId: string }) =>
-    api.post<{ data: { message: string } }>('/settings/users/invite', body).then(d),
+  inviteUser:       (body: InviteUserDto) =>
+    api.post<{ data: unknown }>('/settings/users/invite', body).then(d),
 
   updateUserRole:   (id: string, roleId: string) =>
     api.put(`/settings/users/${id}/role`, { roleId }),
@@ -138,4 +179,16 @@ export const settingsApi = {
 
   getAuditLogs:     () =>
     api.get<{ data: AuditLogEntry[] }>('/settings/security/audit').then(d),
+
+  listAgences:   () =>
+    api.get<{ data: Agence[] }>('/settings/agences').then(d),
+
+  createAgence:  (body: CreateAgenceDto) =>
+    api.post<{ data: Agence }>('/settings/agences', body).then(d),
+
+  updateAgence:  (id: string, body: Partial<CreateAgenceDto> & { isActive?: boolean }) =>
+    api.put<{ data: Agence }>(`/settings/agences/${id}`, body).then(d),
+
+  deleteAgence:  (id: string) =>
+    api.delete(`/settings/agences/${id}`),
 }

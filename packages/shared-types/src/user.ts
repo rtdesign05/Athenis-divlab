@@ -28,6 +28,10 @@ export interface UserProfile {
   atheisNumber: string | null
   agenceId: string | null
   agenceNom: string | null
+  /** IDs des agences auxquelles l'utilisateur est rattaché ([] = accès à toutes) */
+  agenceIds: string[]
+  /** true → l'utilisateur ne voit que ses agences rattachées */
+  isRestricted: boolean
 }
 
 export interface CompanyProfile {

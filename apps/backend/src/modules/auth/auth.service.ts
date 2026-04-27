@@ -174,6 +174,8 @@ function toUserProfile(
     atheisNumber: user.atheisNumber ?? null,
     agenceId,
     agenceNom,
+    agenceIds:    [],
+    isRestricted: false,
   }
 }
 
@@ -363,6 +365,8 @@ export async function register(
     atheisNumber: dbUser.atheisNumber ?? null,
     agenceId,
     agenceNom,
+    agenceIds:    [],
+    isRestricted: false,
   })
   const refreshToken = await createRefreshToken(dbUser.id)
   await audit('USER_CREATED', dbUser.id, companyId, ip, ua)
@@ -458,6 +462,8 @@ export async function login(
     atheisNumber: user.atheisNumber ?? null,
     agenceId,
     agenceNom,
+    agenceIds:    [],
+    isRestricted: false,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
@@ -528,6 +534,8 @@ export async function loginVerifyTotp(
     atheisNumber: user.atheisNumber ?? null,
     agenceId,
     agenceNom,
+    agenceIds:    [],
+    isRestricted: false,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
@@ -614,6 +622,8 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
       atheisNumber: u.atheisNumber ?? null,
       agenceId,
       agenceNom,
+      agenceIds:    [],
+      isRestricted: false,
     }),
   }
 }
@@ -681,6 +691,124 @@ export async function disableTotp(userId: string, dto: TotpDisableDto, ip: strin
 
   await prisma.user.update({ where: { id: userId }, data: { twoFAEnabled: false, twoFASecret: null } })
   await audit('TOTP_DISABLED', userId, user.companyMember?.companyId ?? null, ip, ua)
+}
+
+// ── Accept Invitation ─────────────────────────────────────────────────────────
+
+export async function acceptInvitation(
+  token: string,
+  password: string,
+  ip: string,
+  ua: string,
+): Promise<{ accessToken: string; user: UserProfile }> {
+  const invitation = await prisma.invitation.findUnique({ where: { token } })
+
+  if (!invitation) throw new AppError('Invitation invalide ou introuvable', 404, 'INVITATION_NOT_FOUND')
+  if (invitation.acceptedAt) throw new AppError('Cette invitation a déjà été utilisée', 409, 'INVITATION_ALREADY_USED')
+  if (invitation.expiresAt < new Date()) throw new AppError('Cette invitation a expiré', 410, 'INVITATION_EXPIRED')
+
+  // Load company data separately (Invitation model has no direct relation)
+  const company = await prisma.company.findUniqueOrThrow({
+    where: { id: invitation.companyId },
+    select: { plan: true, currencySymbol: true, pays: true },
+  })
+
+  // Extract metadata from permissions JSON
+  const permsRaw = invitation.permissions as Record<string, unknown>
+  const meta = (permsRaw._meta ?? {}) as { prenom?: string; nom?: string; telephone?: string; isRestricted?: boolean }
+  const permissions: Record<string, unknown> = Object.fromEntries(
+    Object.entries(permsRaw).filter(([k]) => k !== '_meta'),
+  )
+
+  // Check if a user with this email already exists
+  const existingUser = await prisma.user.findUnique({ where: { email: invitation.email } })
+  if (existingUser) throw new AppError('Un compte existe déjà avec cette adresse email', 409, 'EMAIL_ALREADY_EXISTS')
+
+  const passwordHash  = await bcrypt.hash(password, BCRYPT_ROUNDS)
+  const atheisNumber  = await generateAtheisNumber('COMPANY')
+
+  const result = await prisma.$transaction(async (tx) => {
+    // Create user
+    const user = await tx.user.create({
+      data: {
+        email:        invitation.email,
+        passwordHash,
+        nom:          meta.nom ?? '',
+        prenom:       meta.prenom ?? null,
+        telephone:    meta.telephone ?? null,
+        accountType:  'COMPANY',
+        atheisNumber,
+      },
+    })
+
+    // Create CompanyMember
+    const member = await tx.companyMember.create({
+      data: {
+        userId:      user.id,
+        companyId:   invitation.companyId,
+        role:        invitation.role,
+        permissions: permissions as object,
+        status:      'ACTIVE',
+        invitedBy:   invitation.createdBy,
+        invitedAt:   invitation.createdAt,
+        joinedAt:    new Date(),
+      },
+    })
+
+    // Create AgenceMember records if agenceIds specified
+    if (invitation.agenceIds.length > 0) {
+      await tx.agenceMember.createMany({
+        data: invitation.agenceIds.map((agenceId) => ({
+          companyMemberId: member.id,
+          agenceId,
+          isRestricted:    meta.isRestricted ?? true,
+        })),
+      })
+    }
+
+    // Mark invitation as accepted
+    await tx.invitation.update({
+      where: { id: invitation.id },
+      data:  { acceptedAt: new Date() },
+    })
+
+    return { user, member }
+  })
+
+  const plan    = (company.plan ?? 'FREE') as Plan
+  const modules = getDefaultModules(plan)
+
+  await audit('USER_CREATED', result.user.id, invitation.companyId, ip, ua)
+
+  const accessToken = signAccessToken({
+    sub:           result.user.id,
+    email:         result.user.email,
+    accountType:   'COMPANY',
+    role:          companyRoleToUserRole(result.member.role),
+    companyId:     invitation.companyId,
+    cabinetId:     null,
+    plan,
+    modules,
+    country:       company.pays ?? null,
+    currencySymbol: company.currencySymbol ?? null,
+    atheisNumber:  result.user.atheisNumber ?? null,
+    agenceId:      invitation.agenceIds[0] ?? null,
+    agenceNom:     null,
+    agenceIds:     invitation.agenceIds,
+    isRestricted:  meta.isRestricted ?? false,
+  })
+  await createRefreshToken(result.user.id)
+
+  return {
+    accessToken,
+    user: toUserProfile(
+      result.user as unknown as DbUser,
+      plan,
+      modules,
+      invitation.agenceIds[0] ?? null,
+      null,
+    ),
+  }
 }
 
 export async function changePassword(userId: string, dto: ChangePasswordDto, ip: string, ua: string): Promise<void> {

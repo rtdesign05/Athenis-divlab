@@ -723,6 +723,7 @@ model JournalEntry {
 
   date         DateTime
   journal      String
+  pieceId      String?    @map("piece_id")
   compte       String
   libelle      String
   debit        Decimal    @db.Decimal(15, 2) @default(0)
@@ -735,6 +736,7 @@ model JournalEntry {
 
   @@index([companyId, fiscalYearId])
   @@index([compte])
+  @@index([pieceId])
   @@map("journal_entries")
 }
 

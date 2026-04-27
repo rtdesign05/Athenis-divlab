@@ -1,8 +1,10 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, Fragment, useRef, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
 import { useFiscalYearGuard } from '@/hooks/useFiscalYear'
 import { accountingApi } from '@/services/accountingApi'
+import type { CompteItem, ChartAccountType, AccountingZone } from '@/services/accountingApi'
 import { useCurrency } from '@/hooks/useCurrency'
 
 type JournalFilter = 'ALL' | 'VTE' | 'ACH' | 'BQ' | 'CAI' | 'OD'
@@ -15,6 +17,15 @@ const FILTER_LABELS: Record<JournalFilter, string> = {
   CAI: 'Caisse',
   OD:  'OD',
 }
+
+const JOURNAL_OPTIONS = [
+  { code: 'VTE', label: 'Ventes' },
+  { code: 'ACH', label: 'Achats' },
+  { code: 'BQ',  label: 'Banque' },
+  { code: 'CAI', label: 'Caisse' },
+  { code: 'OD',  label: 'Opérations diverses' },
+  { code: 'AUTRE', label: 'Autre…' },
+]
 
 const JOURNAL_COLOR: Record<string, string> = {
   VTE: 'bg-green-100 text-green-700',
@@ -30,6 +41,10 @@ function formatDate(d: string | Date): string {
   return dt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-20">
@@ -38,10 +53,697 @@ function Spinner() {
   )
 }
 
+interface EntryLine {
+  id: string
+  compte: string
+  libelle: string
+  debit: string
+  credit: string
+}
+
+interface EntryForm {
+  date: string
+  journal: string
+  customJournal: string
+  reference: string
+  lines: EntryLine[]
+}
+
+function newLine(): EntryLine {
+  return { id: Math.random().toString(36).slice(2), compte: '', libelle: '', debit: '', credit: '' }
+}
+
+function makeEmptyForm(initialJournal?: string): EntryForm {
+  const journal = initialJournal ?? 'VTE'
+  const isKnown = JOURNAL_OPTIONS.some(o => o.code === journal && o.code !== 'AUTRE')
+  return {
+    date: todayISO(),
+    journal: isKnown ? journal : 'AUTRE',
+    customJournal: isKnown ? '' : journal,
+    reference: '',
+    lines: [newLine(), newLine()],
+  }
+}
+
+// ── Helpers for compte creation ───────────────────────────────────────────────
+
+function guessTypeFromNumero(numero: string): ChartAccountType {
+  const c = parseInt(numero[0] ?? '0', 10)
+  if (c === 6) return 'CHARGE'
+  if (c === 7) return 'PRODUIT'
+  if (c === 1) return 'PASSIF'
+  return 'ACTIF'
+}
+
+// ── Create compte mini-modal ──────────────────────────────────────────────────
+
+function CreateCompteModal({ numero, onCreated, onClose }: {
+  numero: string
+  onCreated: (c: CompteItem) => void
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const classeGuess = parseInt(numero[0] ?? '1', 10) || 1
+  const [form, setForm] = useState({
+    intitule: '',
+    classe: String(classeGuess),
+    type: guessTypeFromNumero(numero) as ChartAccountType,
+  })
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const mutation = useMutation({
+    mutationFn: () => accountingApi.addCompte({
+      numero:    numero.trim(),
+      intitule:  form.intitule.trim(),
+      classe:    parseInt(form.classe, 10),
+      type:      form.type,
+    }),
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ['comptes'] })
+      onCreated(created)
+    },
+  })
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.intitule.trim()) return
+    mutation.mutate()
+  }
+
+  const INPUT = 'w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-900/30'
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Créer un nouveau compte</h3>
+            <p className="text-xs text-gray-400 mt-0.5">N° <span className="font-mono font-semibold text-gray-700">{numero}</span></p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+        </div>
+        <form onSubmit={submit} className="p-5 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Intitulé *</label>
+            <input value={form.intitule} onChange={set('intitule')} required autoFocus
+              placeholder="ex. Clients — ventes de marchandises"
+              className={INPUT} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Classe</label>
+              <input value={form.classe} onChange={set('classe')} type="number" min="1" max="9"
+                className={INPUT} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+              <select value={form.type} onChange={set('type')} className={INPUT}>
+                <option value="ACTIF">Actif</option>
+                <option value="PASSIF">Passif</option>
+                <option value="CHARGE">Charge</option>
+                <option value="PRODUIT">Produit</option>
+              </select>
+            </div>
+          </div>
+          {mutation.isError && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+              {(mutation.error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Erreur lors de la création.'}
+            </p>
+          )}
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
+              Annuler
+            </button>
+            <button type="submit" disabled={mutation.isPending}
+              className="flex-1 rounded-lg bg-forest-900 py-2 text-sm font-medium text-white hover:bg-forest-700 disabled:opacity-50">
+              {mutation.isPending ? 'Création…' : 'Créer le compte'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Compte autocomplete input (portal-based to escape overflow clipping) ──────
+
+function CompteAutocomplete({ value, onChange, onSelectCompte, comptes, inputClassName }: {
+  value: string
+  onChange: (v: string) => void
+  onSelectCompte: (c: CompteItem) => void
+  comptes: CompteItem[]
+  inputClassName: string
+}) {
+  const [open, setOpen]             = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const query       = value.trim()
+  const suggestions = query.length > 0
+    ? comptes.filter(c => c.numero.startsWith(query)).slice(0, 12)
+    : []
+  const exactMatch     = comptes.some(c => c.numero === query)
+  const canCreate      = query.length > 0 && !exactMatch
+  const dropdownVisible = open && (suggestions.length > 0 || canCreate)
+
+  function openWith(v: string) {
+    if (inputRef.current) setAnchorRect(inputRef.current.getBoundingClientRect())
+    if (v.trim().length > 0) setOpen(true)
+    else setOpen(false)
+  }
+
+  // Keep rect in sync when the user scrolls inside the modal
+  useEffect(() => {
+    if (!open) return
+    const sync = () => {
+      if (inputRef.current) setAnchorRect(inputRef.current.getBoundingClientRect())
+    }
+    window.addEventListener('scroll', sync, true)
+    window.addEventListener('resize', sync)
+    return () => {
+      window.removeEventListener('scroll', sync, true)
+      window.removeEventListener('resize', sync)
+    }
+  }, [open])
+
+  // Close on outside click (excluding the portal node itself)
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (inputRef.current?.contains(t)) return
+      const portal = document.getElementById('_compte-portal')
+      if (portal?.contains(t)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const typeColors: Record<string, string> = {
+    ACTIF:   'bg-blue-100 text-blue-700',
+    PASSIF:  'bg-purple-100 text-purple-700',
+    CHARGE:  'bg-red-100 text-red-700',
+    PRODUIT: 'bg-green-100 text-green-700',
+  }
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        placeholder="ex. 411000"
+        className={inputClassName}
+        autoComplete="off"
+        onChange={e => { onChange(e.target.value); openWith(e.target.value) }}
+        onFocus={e  => { openWith(e.target.value) }}
+        onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
+      />
+
+      {dropdownVisible && anchorRect && createPortal(
+        <div
+          id="_compte-portal"
+          style={{
+            position: 'fixed',
+            top:      anchorRect.bottom + 4,
+            left:     anchorRect.left,
+            width:    Math.max(anchorRect.width, 340),
+            zIndex:   9999,
+          }}
+          className="rounded-lg border border-gray-200 bg-white shadow-2xl overflow-hidden"
+        >
+          {suggestions.length > 0 && (
+            <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
+              {suggestions.map(c => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onMouseDown={e => { e.preventDefault(); onSelectCompte(c); setOpen(false) }}
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors flex items-center gap-2"
+                >
+                  <span className="font-mono text-xs font-semibold text-gray-900 w-20 shrink-0">{c.numero}</span>
+                  <span className="text-xs text-gray-600 truncate flex-1">{c.intitule}</span>
+                  <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${typeColors[c.type] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {c.type}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          {canCreate && (
+            <button
+              type="button"
+              onMouseDown={e => { e.preventDefault(); setShowCreate(true); setOpen(false) }}
+              className="w-full text-left px-3 py-2.5 text-xs font-medium text-forest-900 hover:bg-green-50 transition-colors flex items-center gap-2 border-t border-gray-100"
+            >
+              <span className="flex h-4 w-4 items-center justify-center rounded border border-forest-900/40 text-sm leading-none shrink-0">+</span>
+              Créer le compte <span className="font-mono font-semibold ml-1">{query}</span>
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
+
+      {showCreate && (
+        <CreateCompteModal
+          numero={query}
+          onCreated={c => { onSelectCompte(c); setShowCreate(false) }}
+          onClose={() => setShowCreate(false)}
+        />
+      )}
+    </>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface NewEntryModalProps {
+  fiscalYearId: string
+  onClose: () => void
+  initialJournal?: string
+  // Edit mode
+  editPieceId?: string
+  editData?: {
+    date: string
+    journal: string
+    reference: string | null
+    lines: EntryLine[]
+  }
+}
+
+function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, editData }: NewEntryModalProps) {
+  const isEditMode = !!editPieceId
+  const queryClient = useQueryClient()
+
+  // Load plan comptable for autocomplete — merge static plan (always populated)
+  // with user-created custom comptes (may be empty)
+  const { data: planData } = useQuery({
+    queryKey: ['plan'],
+    queryFn:  accountingApi.plan,
+    staleTime: 10 * 60_000,
+  })
+  const { data: comptesData } = useQuery({
+    queryKey: ['comptes'],
+    queryFn:  accountingApi.comptes,
+    staleTime: 5 * 60_000,
+  })
+  const comptes = useMemo<CompteItem[]>(() => {
+    const zone = (planData?.zone ?? 'FRANCE') as AccountingZone
+    const fromPlan: CompteItem[] = (planData?.entries ?? []).map(e => ({
+      id:             e.numero,
+      numero:         e.numero,
+      intitule:       e.intitule,
+      classe:         e.classe,
+      type:           e.type,
+      zone,
+      isSystem:       true,
+      soldeDebiteur:  0,
+      soldeCrediteur: 0,
+      soldeNet:       0,
+    }))
+    const custom   = comptesData ?? []
+    const customNums = new Set(custom.map(c => c.numero))
+    return [...fromPlan.filter(e => !customNums.has(e.numero)), ...custom]
+      .sort((a, b) => a.numero.localeCompare(b.numero))
+  }, [planData, comptesData])
+
+  const [form, setForm] = useState<EntryForm>(() => {
+    if (editData) {
+      const journal = editData.journal
+      const isKnown = JOURNAL_OPTIONS.some(o => o.code === journal && o.code !== 'AUTRE')
+      return {
+        date: editData.date,
+        journal: isKnown ? journal : 'AUTRE',
+        customJournal: isKnown ? '' : journal,
+        reference: editData.reference ?? '',
+        lines: editData.lines.map(l => ({ ...l, id: Math.random().toString(36).slice(2) })),
+      }
+    }
+    return makeEmptyForm(initialJournal)
+  })
+  const [error, setError] = useState<string | null>(null)
+
+  const isCustom = form.journal === 'AUTRE'
+  const resolvedJournal = isCustom ? form.customJournal.trim().toUpperCase() : form.journal
+
+  const totalDebit  = form.lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0)
+  const totalCredit = form.lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0)
+  const diff        = Math.abs(totalDebit - totalCredit)
+  const isBalanced  = diff < 0.001 && totalDebit > 0
+  const hasEnoughLines = form.lines.length >= 2
+
+  const mutation = useMutation({
+    mutationFn: (payload: {
+      date: string; journal: string; reference?: string
+      lines: { compte: string; libelle: string; debit: number; credit: number }[]
+    }) => isEditMode && editPieceId
+      ? accountingApi.updateJournalPiece(editPieceId, payload)
+      : accountingApi.createJournalEntryBatch({ fiscalYearId, ...payload }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['journal', fiscalYearId] })
+      onClose()
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setError(msg ?? 'Une erreur est survenue.')
+    },
+  })
+
+  function setHeader(field: keyof Omit<EntryForm, 'lines'>, value: string) {
+    setForm(f => ({ ...f, [field]: value }))
+    setError(null)
+  }
+
+  function setLine(id: string, field: keyof Omit<EntryLine, 'id'>, value: string) {
+    setForm(f => ({
+      ...f,
+      lines: f.lines.map(l => l.id === id ? { ...l, [field]: value } : l),
+    }))
+    setError(null)
+  }
+
+  function selectCompte(lineId: string, c: CompteItem) {
+    setForm(f => ({
+      ...f,
+      lines: f.lines.map(l =>
+        l.id === lineId
+          ? { ...l, compte: c.numero, libelle: l.libelle.trim() === '' ? c.intitule : l.libelle }
+          : l
+      ),
+    }))
+    setError(null)
+  }
+
+  function addLine() {
+    setForm(f => ({ ...f, lines: [...f.lines, newLine()] }))
+  }
+
+  function removeLine(id: string) {
+    if (form.lines.length <= 2) return
+    setForm(f => ({ ...f, lines: f.lines.filter(l => l.id !== id) }))
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!resolvedJournal) { setError('Veuillez saisir un code journal.'); return }
+    if (!hasEnoughLines)  { setError('Au moins 2 lignes sont requises.'); return }
+
+    for (const l of form.lines) {
+      if (!l.compte.trim())  { setError(`Ligne "${l.libelle || '?'}" : numéro de compte manquant.`); return }
+      if (!l.libelle.trim()) { setError(`Ligne compte ${l.compte} : libellé manquant.`); return }
+      const d = parseFloat(l.debit) || 0
+      const c = parseFloat(l.credit) || 0
+      if (d === 0 && c === 0) { setError(`Ligne ${l.compte} : débit ou crédit requis.`); return }
+      if (d > 0 && c > 0)     { setError(`Ligne ${l.compte} : saisissez débit OU crédit, pas les deux.`); return }
+    }
+
+    if (!isBalanced) {
+      setError(`Écriture déséquilibrée : débit ${totalDebit.toFixed(2)} ≠ crédit ${totalCredit.toFixed(2)}.`)
+      return
+    }
+
+    mutation.mutate({
+      date:    form.date,
+      journal: resolvedJournal,
+      ...(form.reference.trim() ? { reference: form.reference.trim() } : {}),
+      lines: form.lines.map(l => ({
+        compte:  l.compte.trim(),
+        libelle: l.libelle.trim(),
+        debit:   parseFloat(l.debit)  || 0,
+        credit:  parseFloat(l.credit) || 0,
+      })),
+    })
+  }
+
+  const INPUT = 'w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-900/30'
+  const INPUT_MONO = INPUT + ' font-mono'
+  const INPUT_NUM  = INPUT + ' text-right tabular-nums'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-4xl rounded-xl bg-white shadow-xl flex flex-col max-h-[90vh]">
+
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 shrink-0">
+          <h2 className="text-base font-semibold text-gray-900">{isEditMode ? 'Modifier l\'écriture' : 'Nouvelle écriture comptable'}</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">✕</button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="px-6 py-4 space-y-4 shrink-0">
+
+            {/* Date / Journal / Référence */}
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">Date</label>
+                <input type="date" value={form.date} onChange={e => setHeader('date', e.target.value)} required className={INPUT} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">
+                  Journal
+                  <span className="ml-1.5 text-gray-400 font-normal">(commun à toutes les lignes)</span>
+                </label>
+                <select value={form.journal} onChange={e => setHeader('journal', e.target.value)} className={INPUT}>
+                  {JOURNAL_OPTIONS.map(o => (
+                    <option key={o.code} value={o.code}>{o.code !== 'AUTRE' ? `${o.code} / ${o.label}` : o.label}</option>
+                  ))}
+                </select>
+              </div>
+              {isCustom ? (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">Code journal</label>
+                  <input type="text" placeholder="ex. AN, SAL…" value={form.customJournal}
+                    onChange={e => setHeader('customJournal', e.target.value.toUpperCase())}
+                    maxLength={10} className={INPUT_MONO} />
+                </div>
+              ) : (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-700">
+                    Référence <span className="text-gray-400 font-normal">(optionnel)</span>
+                  </label>
+                  <input type="text" placeholder="ex. FAC-2026-001" value={form.reference}
+                    onChange={e => setHeader('reference', e.target.value)} className={INPUT} />
+                </div>
+              )}
+            </div>
+            {isCustom && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-700">
+                  Référence <span className="text-gray-400 font-normal">(optionnel)</span>
+                </label>
+                <input type="text" placeholder="ex. FAC-2026-001" value={form.reference}
+                  onChange={e => setHeader('reference', e.target.value)} className={INPUT} />
+              </div>
+            )}
+            {/* Journal badge */}
+            {resolvedJournal && (
+              <div className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+                <span className={`rounded px-2 py-0.5 text-xs font-semibold ${JOURNAL_COLOR[resolvedJournal] ?? 'bg-gray-100 text-gray-600'}`}>
+                  {resolvedJournal}
+                </span>
+                <span className="text-xs text-gray-500">
+                  Toutes les lignes de cette écriture seront enregistrées dans ce journal — une écriture ne peut appartenir qu'à un seul journal.
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* ── Lines table ── */}
+          <div className="flex-1 overflow-y-auto px-6 pb-2">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-xs font-semibold text-gray-500">
+                  <th className="pb-2 pr-2 w-32">N° Compte</th>
+                  <th className="pb-2 pr-2">Libellé</th>
+                  <th className="pb-2 pr-2 w-36 text-right">Débit</th>
+                  <th className="pb-2 pr-2 w-36 text-right">Crédit</th>
+                  <th className="pb-2 w-8" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {form.lines.map((line) => (
+                  <tr key={line.id} className="group">
+                    <td className="py-1.5 pr-2">
+                      <CompteAutocomplete
+                        value={line.compte}
+                        onChange={v => setLine(line.id, 'compte', v)}
+                        onSelectCompte={c => selectCompte(line.id, c)}
+                        comptes={comptes}
+                        inputClassName={INPUT_MONO}
+                      />
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <input type="text" placeholder="Description…" value={line.libelle}
+                        onChange={e => setLine(line.id, 'libelle', e.target.value)}
+                        className={INPUT} />
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <input type="number" min="0" step="0.01" placeholder="0.00" value={line.debit}
+                        onChange={e => setLine(line.id, 'debit', e.target.value)}
+                        className={INPUT_NUM} />
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <input type="number" min="0" step="0.01" placeholder="0.00" value={line.credit}
+                        onChange={e => setLine(line.id, 'credit', e.target.value)}
+                        className={INPUT_NUM} />
+                    </td>
+                    <td className="py-1.5 text-center">
+                      {form.lines.length > 2 && (
+                        <button type="button" onClick={() => removeLine(line.id)}
+                          className="text-gray-300 hover:text-red-500 transition-colors text-base leading-none opacity-0 group-hover:opacity-100">
+                          ×
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {/* Totals row */}
+              <tfoot>
+                <tr className="border-t-2 border-gray-200">
+                  <td colSpan={2} className="pt-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Totaux</td>
+                  <td className="pt-2 pr-2 text-right font-semibold tabular-nums text-sm text-gray-900">
+                    {totalDebit > 0 ? totalDebit.toLocaleString('fr-FR', { minimumFractionDigits: 2 }) : '—'}
+                  </td>
+                  <td className="pt-2 pr-2 text-right font-semibold tabular-nums text-sm text-gray-900">
+                    {totalCredit > 0 ? totalCredit.toLocaleString('fr-FR', { minimumFractionDigits: 2 }) : '—'}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+
+            {/* Add line */}
+            <button type="button" onClick={addLine}
+              className="mt-3 flex items-center gap-1.5 text-xs font-medium text-forest-900 hover:text-forest-700 transition-colors">
+              <span className="flex h-5 w-5 items-center justify-center rounded border border-forest-900/30 text-base leading-none">+</span>
+              Ajouter une ligne
+            </button>
+          </div>
+
+          {/* ── Balance indicator + actions ── */}
+          <div className="border-t border-gray-200 px-6 py-4 shrink-0 space-y-3">
+            {/* Balance status */}
+            <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium ${
+              isBalanced
+                ? 'bg-green-50 text-green-700 border border-green-200'
+                : totalDebit === 0 && totalCredit === 0
+                  ? 'bg-gray-50 text-gray-500 border border-gray-200'
+                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+            }`}>
+              {isBalanced ? (
+                <><span>✓</span><span>Écriture équilibrée — Débit = Crédit = {totalDebit.toLocaleString('fr-FR', { minimumFractionDigits: 2 })}</span></>
+              ) : totalDebit === 0 && totalCredit === 0 ? (
+                <><span>○</span><span>Saisissez les montants (au moins 2 lignes, débit = crédit obligatoires)</span></>
+              ) : (
+                <><span>⚠</span><span>
+                  Déséquilibre : débit {totalDebit.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} / crédit {totalCredit.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} — écart {Math.abs(totalDebit - totalCredit).toLocaleString('fr-FR', { minimumFractionDigits: 2 })}
+                </span></>
+              )}
+            </div>
+
+            {error && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                Annuler
+              </button>
+              <button type="submit" disabled={mutation.isPending || !isBalanced}
+                className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                {mutation.isPending ? 'Enregistrement…' : isEditMode ? 'Enregistrer les modifications' : 'Enregistrer l\'écriture'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Piece grouping helper ────────────────────────────────────────────────────
+
+function groupEntries(entries: import('@/services/accountingApi').JournalEntryRow[]) {
+  const groups: { key: string; pieceId: string | null; rows: typeof entries }[] = []
+  const seen = new Map<string, typeof entries>()
+
+  for (const e of entries) {
+    if (e.pieceId) {
+      if (!seen.has(e.pieceId)) {
+        const rows: typeof entries = []
+        seen.set(e.pieceId, rows)
+        groups.push({ key: e.pieceId, pieceId: e.pieceId, rows })
+      }
+      seen.get(e.pieceId)!.push(e)
+    } else {
+      groups.push({ key: e.id, pieceId: null, rows: [e] })
+    }
+  }
+  return groups
+}
+
+// ── Confirm delete dialog ────────────────────────────────────────────────────
+
+function ConfirmDeleteModal({ lineCount, onConfirm, onCancel, isPending }: {
+  lineCount: number
+  onConfirm: () => void
+  onCancel: () => void
+  isPending: boolean
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-xl bg-white shadow-xl p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 text-lg">⚠</div>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">Supprimer cette écriture ?</h3>
+            <p className="mt-1 text-xs text-gray-500">
+              {lineCount > 1
+                ? `Cette écriture comporte ${lineCount} lignes qui seront toutes supprimées.`
+                : 'Cette ligne sera supprimée définitivement.'}
+              {' '}Cette action est irréversible.
+            </p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} disabled={isPending}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+            Annuler
+          </button>
+          <button onClick={onConfirm} disabled={isPending}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50">
+            {isPending ? 'Suppression…' : 'Supprimer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
+
 export function JournalPage() {
   const { fmt: fmtAmount } = useCurrency()
   const fmt = (n: number) => n === 0 ? '' : fmtAmount(n)
-  const [filter, setFilter] = useState<JournalFilter>('ALL')
+  const queryClient = useQueryClient()
+
+  const [filter, setFilter]             = useState<JournalFilter>('ALL')
+  const [showModal, setShowModal]       = useState(false)
+  const [modalJournal, setModalJournal] = useState<string | undefined>(undefined)
+  const [hoveredKey, setHoveredKey]     = useState<string | null>(null)
+
+  // Edit state
+  const [editPieceId, setEditPieceId]   = useState<string | undefined>(undefined)
+  const [editData, setEditData]         = useState<NewEntryModalProps['editData']>(undefined)
+
+  // Delete state
+  const [deleteTarget, setDeleteTarget] = useState<{ key: string; pieceId: string | null; lineCount: number } | null>(null)
 
   const { isLoading: yearsLoading } = useFiscalYears()
   const fyData = useSelectedFiscalYearData()
@@ -54,11 +756,48 @@ export function JournalPage() {
     staleTime: 30_000,
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: ({ pieceId, entryId }: { pieceId: string | null; entryId?: string }) =>
+      pieceId
+        ? accountingApi.deleteJournalPiece(pieceId)
+        : accountingApi.deleteJournalEntry(entryId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['journal', fyData?.id] })
+      setDeleteTarget(null)
+    },
+  })
+
   const entries = data?.entries ?? []
   const visible = filter === 'ALL' ? entries : entries.filter(e => e.journalCode === filter)
+  const groups  = groupEntries(visible)
 
   const totalDebit  = visible.reduce((s, e) => s + e.debit,  0)
   const totalCredit = visible.reduce((s, e) => s + e.credit, 0)
+
+  function openNewModal(journal?: string) {
+    setEditPieceId(undefined)
+    setEditData(undefined)
+    setModalJournal(journal)
+    setShowModal(true)
+  }
+
+  function openEditModal(group: ReturnType<typeof groupEntries>[0]) {
+    const first = group.rows[0]!
+    setEditPieceId(group.pieceId ?? undefined)
+    setEditData({
+      date:      new Date(first.date).toISOString().slice(0, 10),
+      journal:   first.journalCode,
+      reference: first.reference,
+      lines: group.rows.map(r => ({
+        id:      r.id,
+        compte:  r.account,
+        libelle: r.label,
+        debit:   r.debit  ? String(r.debit)  : '',
+        credit:  r.credit ? String(r.credit) : '',
+      })),
+    })
+    setShowModal(true)
+  }
 
   return (
     <div className="space-y-4">
@@ -66,43 +805,50 @@ export function JournalPage() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Journal comptable</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {data ? `Exercice ${data.year} \u2014 ${entries.length} \xe9criture${entries.length !== 1 ? 's' : ''}` : 'Chargement\u2026'}
+            {data ? `Exercice ${data.year} — ${entries.length} ligne${entries.length !== 1 ? 's' : ''}` : 'Chargement…'}
           </p>
         </div>
         {!isReadOnly && (
-          <button className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 transition-colors">
-            + Nouvelle \xe9criture
+          <button onClick={() => openNewModal()}
+            className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 transition-colors">
+            + Nouvelle écriture
           </button>
         )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         {(Object.keys(FILTER_LABELS) as JournalFilter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
+          <button key={f} onClick={() => setFilter(f)}
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              filter === f
-                ? 'bg-forest-900 text-white'
-                : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-            }`}
-          >
+              filter === f ? 'bg-forest-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+            }`}>
             {FILTER_LABELS[f]}
           </button>
         ))}
+        {!isReadOnly && fyData && (
+          <div className="relative group">
+            <button onClick={() => openNewModal('')} title="Ajouter un journal"
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-dashed border-gray-300 text-gray-400 hover:border-forest-900 hover:text-forest-900 transition-colors text-sm">
+              +
+            </button>
+            <span className="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              Ajouter un journal
+            </span>
+          </div>
+        )}
       </div>
 
       {(yearsLoading || isLoading) && <Spinner />}
 
       {!yearsLoading && !fyData && (
         <div className="flex flex-col items-center justify-center py-20 gap-2 text-slate-500">
-          <p className="text-sm">S\xe9lectionnez un exercice comptable ci-dessus.</p>
+          <p className="text-sm">Sélectionnez un exercice comptable ci-dessus.</p>
         </div>
       )}
 
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          Impossible de charger le journal. V\xe9rifiez la connexion au serveur.
+          Impossible de charger le journal. Vérifiez la connexion au serveur.
         </div>
       )}
 
@@ -114,46 +860,102 @@ export function JournalPage() {
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Journal</th>
                 <th className="px-4 py-3">Compte</th>
-                <th className="px-4 py-3">Libell\xe9</th>
-                <th className="px-4 py-3 text-right">D\xe9bit</th>
-                <th className="px-4 py-3 text-right">Cr\xe9dit</th>
+                <th className="px-4 py-3">Libellé</th>
+                <th className="px-4 py-3 text-right">Débit</th>
+                <th className="px-4 py-3 text-right">Crédit</th>
+                {!isReadOnly && <th className="px-2 py-3 w-16" />}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
-              {visible.length === 0 ? (
+            <tbody>
+              {groups.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-gray-400">
-                    Aucune \xe9criture{filter !== 'ALL' ? ` pour le journal ${filter}` : ''} sur cet exercice.
+                  <td colSpan={isReadOnly ? 6 : 7} className="px-4 py-10 text-center text-sm text-gray-400">
+                    Aucune écriture{filter !== 'ALL' ? ` pour le journal ${filter}` : ''} sur cet exercice.
                   </td>
                 </tr>
               ) : (
-                visible.map((e) => (
-                  <tr key={e.id} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-2.5 text-gray-500">{formatDate(e.date)}</td>
-                    <td className="px-4 py-2.5">
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${JOURNAL_COLOR[e.journalCode] ?? 'bg-gray-100 text-gray-600'}`}>
-                        {e.journalCode}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{e.account}</td>
-                    <td className="px-4 py-2.5 text-gray-700">{e.label}</td>
-                    <td className="px-4 py-2.5 text-right font-medium text-gray-900">{fmt(e.debit)}</td>
-                    <td className="px-4 py-2.5 text-right font-medium text-gray-900">{fmt(e.credit)}</td>
-                  </tr>
-                ))
+                groups.map((group, gi) => {
+                  const isHovered = hoveredKey === group.key
+                  const rowBg = isHovered ? 'bg-blue-50/50' : ''
+                  return (
+                    <Fragment key={group.key}>
+                      {group.rows.map((e, ri) => (
+                        <tr key={e.id}
+                          onMouseEnter={() => setHoveredKey(group.key)}
+                          onMouseLeave={() => setHoveredKey(null)}
+                          className={`border-t transition-colors ${rowBg} ${ri === 0 && gi > 0 ? 'border-gray-200' : 'border-gray-50'}`}>
+                          <td className="px-4 py-2.5 text-gray-500">{formatDate(e.date)}</td>
+                          <td className="px-4 py-2.5">
+                            <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${JOURNAL_COLOR[e.journalCode] ?? 'bg-gray-100 text-gray-600'}`}>
+                              {e.journalCode}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{e.account}</td>
+                          <td className="px-4 py-2.5 text-gray-700">{e.label}</td>
+                          <td className="px-4 py-2.5 text-right font-medium text-gray-900">{fmt(e.debit)}</td>
+                          <td className="px-4 py-2.5 text-right font-medium text-gray-900">{fmt(e.credit)}</td>
+                          {!isReadOnly && (
+                            <td className="px-2 py-2.5 w-16">
+                              {ri === 0 && (
+                                <div className={`flex items-center justify-end gap-1 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                                  {group.pieceId && (
+                                    <button
+                                      onClick={() => openEditModal(group)}
+                                      title="Modifier l'écriture"
+                                      className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 hover:border-forest-900/40 hover:text-forest-900 hover:bg-forest-50 transition-colors text-sm shadow-sm"
+                                    >
+                                      ✎
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => setDeleteTarget({ key: group.key, pieceId: group.pieceId, lineCount: group.rows.length })}
+                                    title="Supprimer"
+                                    className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-colors text-sm shadow-sm"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </Fragment>
+                  )
+                })
               )}
             </tbody>
             {visible.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
-                  <td colSpan={4} className="px-4 py-2.5 text-gray-700">TOTAUX</td>
+                  <td colSpan={isReadOnly ? 4 : 4} className="px-4 py-2.5 text-gray-700">TOTAUX</td>
                   <td className="px-4 py-2.5 text-right text-gray-900">{fmtAmount(totalDebit)}</td>
                   <td className="px-4 py-2.5 text-right text-gray-900">{fmtAmount(totalCredit)}</td>
+                  {!isReadOnly && <td />}
                 </tr>
               </tfoot>
             )}
           </table>
         </div>
+      )}
+
+      {showModal && fyData && (
+        <NewEntryModal
+          fiscalYearId={fyData.id}
+          onClose={() => { setShowModal(false); setEditPieceId(undefined); setEditData(undefined) }}
+          {...(modalJournal  !== undefined ? { initialJournal: modalJournal }  : {})}
+          {...(editPieceId   !== undefined ? { editPieceId }                   : {})}
+          {...(editData      !== undefined ? { editData }                      : {})}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDeleteModal
+          lineCount={deleteTarget.lineCount}
+          isPending={deleteMutation.isPending}
+          onConfirm={() => deleteMutation.mutate({ pieceId: deleteTarget.pieceId, entryId: deleteTarget.key })}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   )

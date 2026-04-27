@@ -1,36 +1,55 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useAuth } from '@/features/auth/useAuth'
+import { useAuth } from '@/hooks/useAuth'
 import {
   settingsApi,
   type SettingsUser,
-  type CompanyRole,
   type UserStatus,
   type RolePermissions,
+  type PermissionLevel,
+  type InviteRole,
+  type Agence,
 } from '@/services/settingsApi'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const USER_LIMITS: Record<string, number> = {
-  FREE: 1,
-  STARTER: 3,
-  PRO: 5,
-  PREMIUM: 99,
+  FREE: 1, STARTER: 3, PRO: 5, PREMIUM: 99,
 }
 
-const PERMISSION_LABELS: Record<keyof RolePermissions, string> = {
-  gestion:      'Gestion',
-  comptabilite: 'Comptabilité',
-  rh:           'Ressources humaines',
-  juridique:    'Juridique',
-  esg:          'ESG',
-  settings:     'Paramètres',
-}
+const ROLES: { id: InviteRole; label: string; description: string }[] = [
+  { id: 'ADMIN',      label: 'Administrateur',  description: 'Accès complet à toutes les fonctionnalités' },
+  { id: 'MANAGER',    label: 'Gestionnaire',    description: 'Gestion des opérations courantes' },
+  { id: 'ACCOUNTANT', label: 'Comptable',       description: 'Accès aux modules comptables' },
+  { id: 'HR',         label: 'RH',              description: 'Gestion des ressources humaines' },
+  { id: 'SALES',      label: 'Commercial',      description: 'Gestion des ventes et clients' },
+  { id: 'READONLY',   label: 'Lecture seule',   description: 'Consultation uniquement' },
+  { id: 'CUSTOM',     label: 'Personnalisé',    description: 'Permissions configurées manuellement' },
+]
 
-const PERMISSION_LEVEL_LABELS: Record<string, string> = {
-  none:  'Aucun',
-  read:  'Lecture',
-  write: 'Écriture',
-  admin: 'Admin',
+const MODULES: { key: keyof RolePermissions; label: string }[] = [
+  { key: 'gestion',      label: 'Gestion' },
+  { key: 'comptabilite', label: 'Comptabilité' },
+  { key: 'rh',           label: 'Ressources humaines' },
+  { key: 'juridique',    label: 'Juridique' },
+  { key: 'esg',          label: 'ESG & CSRD' },
+  { key: 'settings',     label: 'Paramètres' },
+]
+
+const PERMISSION_LEVELS: { value: PermissionLevel; label: string }[] = [
+  { value: 'none',  label: 'Aucun' },
+  { value: 'read',  label: 'Lecture' },
+  { value: 'write', label: 'Écriture' },
+  { value: 'admin', label: 'Admin' },
+]
+
+const DEFAULT_PERMISSIONS: Record<InviteRole, RolePermissions> = {
+  ADMIN:      { gestion: 'admin', comptabilite: 'admin', rh: 'admin',  juridique: 'admin', esg: 'admin',  settings: 'admin'  },
+  MANAGER:    { gestion: 'write', comptabilite: 'read',  rh: 'read',   juridique: 'read',  esg: 'read',   settings: 'read'   },
+  ACCOUNTANT: { gestion: 'read',  comptabilite: 'write', rh: 'none',   juridique: 'none',  esg: 'none',   settings: 'none'   },
+  HR:         { gestion: 'none',  comptabilite: 'none',  rh: 'write',  juridique: 'read',  esg: 'none',   settings: 'none'   },
+  SALES:      { gestion: 'write', comptabilite: 'none',  rh: 'none',   juridique: 'none',  esg: 'none',   settings: 'none'   },
+  READONLY:   { gestion: 'read',  comptabilite: 'read',  rh: 'read',   juridique: 'read',  esg: 'read',   settings: 'none'   },
+  CUSTOM:     { gestion: 'none',  comptabilite: 'none',  rh: 'none',   juridique: 'none',  esg: 'none',   settings: 'none'   },
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -87,7 +106,6 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
     const t = setTimeout(onDone, 3000)
     return () => clearTimeout(t)
   }, [onDone])
-
   return (
     <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-gray-900 px-5 py-3 text-sm text-white shadow-lg">
       {message}
@@ -98,33 +116,89 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
 // ── Invite Modal ──────────────────────────────────────────────────────────────
 
 interface InviteModalProps {
-  roles: CompanyRole[]
   onClose: () => void
   onSuccess: () => void
 }
 
-function InviteModal({ roles, onClose, onSuccess }: InviteModalProps) {
+function InviteModal({ onClose, onSuccess }: InviteModalProps) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [email, setEmail] = useState('')
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [roleId, setRoleId] = useState(roles[0]?.id ?? '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const selectedRole = roles.find((r) => r.id === roleId) ?? null
+  // Step 1 — Identity
+  const [prenom, setPrenom]       = useState('')
+  const [nom, setNom]             = useState('')
+  const [email, setEmail]         = useState('')
+  const [telephone, setTelephone] = useState('')
+
+  // Step 2 — Role & Permissions
+  const [role, setRole]               = useState<InviteRole>('READONLY')
+  const [permissions, setPermissions] = useState<RolePermissions>({ ...DEFAULT_PERMISSIONS.READONLY })
+
+  // Step 3 — Agences
+  const [agences, setAgences]         = useState<Agence[]>([])
+  const [agencesLoading, setAgencesLoading] = useState(false)
+  const [selectedAgences, setSelectedAgences] = useState<Set<string>>(new Set())
+  const [isRestricted, setIsRestricted]       = useState(false)
+
+  // Load agences when reaching step 3
+  useEffect(() => {
+    if (step === 3 && agences.length === 0) {
+      setAgencesLoading(true)
+      settingsApi.listAgences()
+        .then((data) => setAgences(data))
+        .catch(() => { /* non-blocking */ })
+        .finally(() => setAgencesLoading(false))
+    }
+  }, [step, agences.length])
+
+  function handleRoleChange(r: InviteRole) {
+    setRole(r)
+    setPermissions({ ...DEFAULT_PERMISSIONS[r] })
+  }
+
+  function handlePermissionChange(mod: keyof RolePermissions, level: PermissionLevel) {
+    setPermissions((p) => ({ ...p, [mod]: level }))
+  }
+
+  function toggleAgence(id: string) {
+    setSelectedAgences((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleNext() {
+    setError(null)
+    if (step === 1) {
+      if (!prenom.trim()) { setError('Le prénom est requis');          return }
+      if (!nom.trim())    { setError('Le nom est requis');             return }
+      if (!email.trim())  { setError('L\'email est requis');           return }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setError('Email invalide'); return
+      }
+      setStep(2)
+    } else if (step === 2) {
+      setStep(3)
+    }
+  }
 
   async function handleSend() {
     setLoading(true)
     setError(null)
     try {
-      const inviteBody: { email: string; roleId: string; firstName?: string; lastName?: string } = {
-        email,
-        roleId,
-      }
-      if (firstName) inviteBody.firstName = firstName
-      if (lastName) inviteBody.lastName = lastName
-      await settingsApi.inviteUser(inviteBody)
+      await settingsApi.inviteUser({
+        prenom:       prenom.trim(),
+        nom:          nom.trim(),
+        email:        email.trim(),
+        ...(telephone.trim() ? { telephone: telephone.trim() } : {}),
+        role,
+        permissions,
+        agenceIds:    [...selectedAgences],
+        isRestricted: isRestricted && selectedAgences.size > 0,
+      })
       onSuccess()
       onClose()
     } catch (e) {
@@ -134,27 +208,15 @@ function InviteModal({ roles, onClose, onSuccess }: InviteModalProps) {
     }
   }
 
-  function handleNext() {
-    if (step === 1) {
-      if (!email.trim()) { setError('L\'email est requis'); return }
-      if (!roleId) { setError('Veuillez sélectionner un rôle'); return }
-      setError(null)
-      setStep(2)
-    } else if (step === 2) {
-      setStep(3)
-    }
-  }
+  const STEP_LABELS = ['Identité', 'Rôle & Accès', 'Agences']
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
           <h2 className="text-base font-semibold text-gray-900">Inviter un utilisateur</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-          >
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -162,36 +224,68 @@ function InviteModal({ roles, onClose, onSuccess }: InviteModalProps) {
         </div>
 
         {/* Step indicator */}
-        <div className="flex items-center justify-center gap-2 px-6 pt-4">
+        <div className="flex items-center justify-center gap-0 px-6 pt-5 shrink-0">
           {([1, 2, 3] as const).map((s, i) => (
-            <div key={s} className="flex items-center gap-2">
-              <div
-                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
-                  step === s
-                    ? 'bg-gray-900 text-white'
-                    : step > s
-                    ? 'bg-green-600 text-white'
-                    : 'bg-gray-100 text-gray-400'
-                }`}
-              >
-                {step > s ? (
-                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  s
-                )}
+            <div key={s} className="flex items-center">
+              <div className="flex flex-col items-center gap-1">
+                <div
+                  className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
+                    step === s
+                      ? 'bg-gray-900 text-white'
+                      : step > s
+                      ? 'bg-green-600 text-white'
+                      : 'bg-gray-100 text-gray-400'
+                  }`}
+                >
+                  {step > s ? (
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : s}
+                </div>
+                <span className={`text-[10px] font-medium ${step >= s ? 'text-gray-700' : 'text-gray-400'}`}>
+                  {STEP_LABELS[s - 1]}
+                </span>
               </div>
-              {i < 2 && <div className={`h-px w-8 ${step > s ? 'bg-green-600' : 'bg-gray-200'}`} />}
+              {i < 2 && (
+                <div className={`h-px w-16 mx-1 mb-4 ${step > s ? 'bg-green-500' : 'bg-gray-200'}`} />
+              )}
             </div>
           ))}
         </div>
 
         {/* Content */}
-        <div className="px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {/* ── STEP 1: Identité ── */}
           {step === 1 && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-500">Renseignez les informations de l'utilisateur à inviter.</p>
+              <p className="text-sm text-gray-500">Renseignez les coordonnées de l'utilisateur à inviter.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Prénom <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={prenom}
+                    onChange={(e) => setPrenom(e.target.value)}
+                    placeholder="Jean"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Nom <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={nom}
+                    onChange={(e) => setNom(e.target.value)}
+                    placeholder="Nkomo"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                  />
+                </div>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Email <span className="text-red-500">*</span>
@@ -200,111 +294,195 @@ function InviteModal({ roles, onClose, onSuccess }: InviteModalProps) {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="utilisateur@exemple.com"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                  placeholder="jean.nkomo@exemple.com"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Prénom</label>
-                  <input
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="Prénom"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nom</label>
-                  <input
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Nom"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent"
-                  />
-                </div>
-              </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Rôle <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={roleId}
-                  onChange={(e) => setRoleId(e.target.value)}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent bg-white"
-                >
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
+                <input
+                  type="text"
+                  value={telephone}
+                  onChange={(e) => setTelephone(e.target.value)}
+                  placeholder="+237 6XX XXX XXX"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
               </div>
             </div>
           )}
 
-          {step === 2 && selectedRole && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">
-                Permissions accordées avec le rôle <strong className="text-gray-800">{selectedRole.name}</strong>.
-              </p>
-              {selectedRole.description && (
-                <p className="text-sm text-gray-400 italic">{selectedRole.description}</p>
-              )}
-              <div className="rounded-xl border border-gray-100 overflow-hidden">
-                {(Object.entries(selectedRole.permissions) as [keyof RolePermissions, string][]).map(
-                  ([key, level], i) => (
+          {/* ── STEP 2: Rôle + Permissions ── */}
+          {step === 2 && (
+            <div className="space-y-5">
+              <p className="text-sm text-gray-500">Choisissez le rôle et configurez les accès par module.</p>
+
+              {/* Role selector */}
+              <div className="grid grid-cols-2 gap-2">
+                {ROLES.map((r) => (
+                  <label
+                    key={r.id}
+                    className={`flex flex-col gap-0.5 rounded-lg border p-3 cursor-pointer transition-all ${
+                      role === r.id
+                        ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="role"
+                        value={r.id}
+                        checked={role === r.id}
+                        onChange={() => handleRoleChange(r.id)}
+                        className="accent-gray-900"
+                      />
+                      <span className="text-xs font-semibold text-gray-900">{r.label}</span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 leading-tight pl-5">{r.description}</p>
+                  </label>
+                ))}
+              </div>
+
+              {/* Permissions grid */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Permissions par module
+                </p>
+                <div className="rounded-xl border border-gray-100 overflow-hidden">
+                  {MODULES.map(({ key, label }, i) => (
                     <div
                       key={key}
-                      className={`flex items-center justify-between px-4 py-2.5 text-sm ${
-                        i > 0 ? 'border-t border-gray-100' : ''
-                      }`}
+                      className={`flex items-center justify-between px-4 py-2.5 ${i > 0 ? 'border-t border-gray-100' : ''}`}
                     >
-                      <span className="text-gray-600">{PERMISSION_LABELS[key]}</span>
-                      <span
-                        className={`font-medium ${
-                          level === 'none'
-                            ? 'text-gray-300'
-                            : level === 'admin'
-                            ? 'text-purple-600'
-                            : level === 'write'
-                            ? 'text-blue-600'
-                            : 'text-green-600'
-                        }`}
-                      >
-                        {PERMISSION_LEVEL_LABELS[level] ?? level}
-                      </span>
+                      <span className="text-sm text-gray-700 w-36">{label}</span>
+                      <div className="flex gap-1">
+                        {PERMISSION_LEVELS.map(({ value, label: lvlLabel }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => handlePermissionChange(key, value)}
+                            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                              permissions[key] === value
+                                ? value === 'none'  ? 'bg-gray-200 text-gray-700'
+                                  : value === 'read'  ? 'bg-green-100 text-green-700'
+                                  : value === 'write' ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-purple-100 text-purple-700'
+                                : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                            }`}
+                          >
+                            {lvlLabel}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  )
-                )}
+                  ))}
+                </div>
               </div>
             </div>
           )}
 
+          {/* ── STEP 3: Agences ── */}
           {step === 3 && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">Récapitulatif avant envoi de l'invitation.</p>
-              <div className="rounded-xl border border-gray-100 overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-2.5 text-sm">
-                  <span className="text-gray-500">Email</span>
-                  <span className="font-medium text-gray-900">{email}</span>
+            <div className="space-y-5">
+              <p className="text-sm text-gray-500">
+                Assignez cet utilisateur à une ou plusieurs agences pour restreindre sa vue.
+              </p>
+
+              {agencesLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
                 </div>
-                {(firstName || lastName) && (
-                  <div className="flex items-center justify-between px-4 py-2.5 text-sm border-t border-gray-100">
-                    <span className="text-gray-500">Nom</span>
+              ) : agences.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-200 py-8 text-center">
+                  <p className="text-sm text-gray-400">Aucune agence configurée.</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Créez des agences dans <strong>Paramètres → Agences</strong> pour activer l'isolation.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-xl border border-gray-100 overflow-hidden">
+                    {agences.map((agence, i) => (
+                      <label
+                        key={agence.id}
+                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${
+                          i > 0 ? 'border-t border-gray-100' : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedAgences.has(agence.id)}
+                          onChange={() => toggleAgence(agence.id)}
+                          className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-900">{agence.nom}</span>
+                            <span className="text-xs text-gray-400">{agence.code}</span>
+                            {agence.isSiege && (
+                              <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                                SIÈGE
+                              </span>
+                            )}
+                          </div>
+                          {agence.ville && <p className="text-xs text-gray-400">{agence.ville}</p>}
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+
+                  {selectedAgences.size > 0 && (
+                    <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isRestricted}
+                        onChange={(e) => setIsRestricted(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold text-amber-900">Restreindre la vue</p>
+                        <p className="text-xs text-amber-700 mt-0.5">
+                          L'utilisateur ne pourra voir <strong>que les données des agences sélectionnées</strong>.
+                          Sans cette option, il peut voir toutes les agences mais sera quand même rattaché à celles sélectionnées.
+                        </p>
+                      </div>
+                    </label>
+                  )}
+                </>
+              )}
+
+              {/* Recap */}
+              <div className="rounded-xl border border-gray-100 overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Récapitulatif</p>
+                </div>
+                <div className="divide-y divide-gray-100">
+                  <div className="flex justify-between px-4 py-2.5 text-sm">
+                    <span className="text-gray-500">Utilisateur</span>
+                    <span className="font-medium text-gray-900">{prenom} {nom}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-2.5 text-sm">
+                    <span className="text-gray-500">Email</span>
+                    <span className="font-medium text-gray-900">{email}</span>
+                  </div>
+                  <div className="flex justify-between px-4 py-2.5 text-sm">
+                    <span className="text-gray-500">Rôle</span>
                     <span className="font-medium text-gray-900">
-                      {[firstName, lastName].filter(Boolean).join(' ')}
+                      {ROLES.find((r) => r.id === role)?.label ?? role}
                     </span>
                   </div>
-                )}
-                <div className="flex items-center justify-between px-4 py-2.5 text-sm border-t border-gray-100">
-                  <span className="text-gray-500">Rôle</span>
-                  <span className="font-medium text-gray-900">{selectedRole?.name ?? '—'}</span>
+                  <div className="flex justify-between px-4 py-2.5 text-sm">
+                    <span className="text-gray-500">Agences</span>
+                    <span className="font-medium text-gray-900">
+                      {selectedAgences.size === 0
+                        ? 'Toutes (aucune restriction)'
+                        : `${selectedAgences.size} agence${selectedAgences.size > 1 ? 's' : ''}${isRestricted ? ' (restreint)' : ''}`}
+                    </span>
+                  </div>
                 </div>
               </div>
-              {error && (
-                <p className="text-sm text-red-600">{error}</p>
-              )}
+
+              {error && <p className="text-sm text-red-600">{error}</p>}
             </div>
           )}
 
@@ -314,7 +492,7 @@ function InviteModal({ roles, onClose, onSuccess }: InviteModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4">
+        <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4 shrink-0">
           <button
             onClick={() => {
               if (step === 1) onClose()
@@ -333,9 +511,9 @@ function InviteModal({ roles, onClose, onSuccess }: InviteModalProps) {
             </button>
           ) : (
             <button
-              onClick={handleSend}
+              onClick={() => void handleSend()}
               disabled={loading}
-              className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
             >
               {loading ? 'Envoi…' : 'Envoyer l\'invitation'}
             </button>
@@ -384,67 +562,34 @@ function ConfirmDialog({ message, onConfirm, onCancel, loading }: ConfirmDialogP
 
 interface UserRowProps {
   user: SettingsUser
-  roles: CompanyRole[]
   isSelf: boolean
-  onRoleUpdated: (userId: string, roleId: string) => Promise<void>
   onStatusToggled: (userId: string, current: UserStatus) => Promise<void>
   onDeleted: (userId: string) => Promise<void>
   onCancelInvite: (userId: string) => Promise<void>
 }
 
-function UserRow({
-  user,
-  roles,
-  isSelf,
-  onRoleUpdated,
-  onStatusToggled,
-  onDeleted,
-  onCancelInvite,
-}: UserRowProps) {
-  const [editingRole, setEditingRole] = useState(false)
-  const [selectedRoleId, setSelectedRoleId] = useState(user.companyRoleId ?? '')
+function UserRow({ user, isSelf, onStatusToggled, onDeleted, onCancelInvite }: UserRowProps) {
   const [actionLoading, setActionLoading] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const displayRole = user.companyRoleName ?? user.globalRole
 
-  async function handleSaveRole() {
-    if (!selectedRoleId) return
-    setActionLoading(true)
-    try {
-      await onRoleUpdated(user.id, selectedRoleId)
-      setEditingRole(false)
-    } finally {
-      setActionLoading(false)
-    }
-  }
-
   async function handleStatusToggle() {
     setActionLoading(true)
-    try {
-      await onStatusToggled(user.id, user.status)
-    } finally {
-      setActionLoading(false)
-    }
+    try { await onStatusToggled(user.id, user.status) }
+    finally { setActionLoading(false) }
   }
 
   async function handleDelete() {
     setActionLoading(true)
-    try {
-      await onDeleted(user.id)
-      setConfirmDelete(false)
-    } finally {
-      setActionLoading(false)
-    }
+    try { await onDeleted(user.id); setConfirmDelete(false) }
+    finally { setActionLoading(false) }
   }
 
   async function handleCancelInvite() {
     setActionLoading(true)
-    try {
-      await onCancelInvite(user.id)
-    } finally {
-      setActionLoading(false)
-    }
+    try { await onCancelInvite(user.id) }
+    finally { setActionLoading(false) }
   }
 
   const lastActivity = user.isInvitation
@@ -462,7 +607,6 @@ function UserRow({
         />
       )}
       <tr className="hover:bg-gray-50 transition-colors">
-        {/* Utilisateur */}
         <td className="py-3 pl-4 pr-3">
           <div className="flex items-center gap-3">
             <div className="bg-gray-100 rounded-full h-8 w-8 flex items-center justify-center text-xs font-semibold text-gray-600 shrink-0">
@@ -471,55 +615,18 @@ function UserRow({
             <span className="text-sm font-medium text-gray-900">{getDisplayName(user)}</span>
           </div>
         </td>
-
-        {/* Email */}
         <td className="py-3 px-3">
           <span className="text-sm text-gray-500">{user.email}</span>
         </td>
-
-        {/* Rôle */}
         <td className="py-3 px-3">
-          {editingRole ? (
-            <div className="flex items-center gap-2">
-              <select
-                value={selectedRoleId}
-                onChange={(e) => setSelectedRoleId(e.target.value)}
-                className="rounded-lg border border-gray-300 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
-              >
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
-              <button
-                onClick={handleSaveRole}
-                disabled={actionLoading}
-                className="rounded px-2 py-1 text-xs font-medium bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50"
-              >
-                {actionLoading ? '…' : 'OK'}
-              </button>
-              <button
-                onClick={() => { setEditingRole(false); setSelectedRoleId(user.companyRoleId ?? '') }}
-                className="rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
-              >
-                ✕
-              </button>
-            </div>
-          ) : (
-            <RoleBadge name={displayRole} />
-          )}
+          <RoleBadge name={displayRole} />
         </td>
-
-        {/* Statut */}
         <td className="py-3 px-3">
           <StatusBadge status={user.status} />
         </td>
-
-        {/* Dernière connexion */}
         <td className="py-3 px-3">
           <span className="text-sm text-gray-500">{lastActivity}</span>
         </td>
-
-        {/* 2FA */}
         <td className="py-3 px-3 text-center">
           {user.totpEnabled ? (
             <span className="text-green-600 font-bold">✓</span>
@@ -527,8 +634,6 @@ function UserRow({
             <span className="text-gray-300 font-bold">✗</span>
           )}
         </td>
-
-        {/* Actions */}
         <td className="py-3 pl-3 pr-4">
           {isSelf ? (
             <span className="text-xs text-gray-300">Vous</span>
@@ -543,15 +648,6 @@ function UserRow({
           ) : (
             <div className="flex items-center gap-3 flex-wrap">
               <button
-                onClick={() => {
-                  setSelectedRoleId(user.companyRoleId ?? roles[0]?.id ?? '')
-                  setEditingRole(true)
-                }}
-                className="text-sm text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                Modifier rôle
-              </button>
-              <button
                 onClick={handleStatusToggle}
                 disabled={actionLoading}
                 className={`text-sm transition-colors disabled:opacity-50 ${
@@ -560,11 +656,7 @@ function UserRow({
                     : 'text-amber-600 hover:text-amber-800'
                 }`}
               >
-                {actionLoading
-                  ? '…'
-                  : user.status === 'SUSPENDED'
-                  ? 'Activer'
-                  : 'Suspendre'}
+                {actionLoading ? '…' : user.status === 'SUSPENDED' ? 'Activer' : 'Suspendre'}
               </button>
               <button
                 onClick={() => setConfirmDelete(true)}
@@ -585,7 +677,6 @@ function UserRow({
 export function UtilisateursPage() {
   const { user: authUser } = useAuth()
   const [users, setUsers] = useState<SettingsUser[]>([])
-  const [roles, setRoles] = useState<CompanyRole[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
@@ -602,12 +693,8 @@ export function UtilisateursPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [fetchedUsers, fetchedRoles] = await Promise.all([
-        settingsApi.listUsers(),
-        settingsApi.listRoles(),
-      ])
+      const fetchedUsers = await settingsApi.listUsers()
       setUsers(fetchedUsers)
-      setRoles(fetchedRoles)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur de chargement')
     } finally {
@@ -615,28 +702,12 @@ export function UtilisateursPage() {
     }
   }, [])
 
-  useEffect(() => {
-    void loadData()
-  }, [loadData])
-
-  const handleRoleUpdated = useCallback(async (userId: string, roleId: string) => {
-    await settingsApi.updateUserRole(userId, roleId)
-    const role = roles.find((r) => r.id === roleId)
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === userId
-          ? { ...u, companyRoleId: roleId, companyRoleName: role?.name ?? u.companyRoleName }
-          : u,
-      ),
-    )
-  }, [roles])
+  useEffect(() => { void loadData() }, [loadData])
 
   const handleStatusToggled = useCallback(async (userId: string, current: UserStatus) => {
     const next: UserStatus = current === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED'
     await settingsApi.updateUserStatus(userId, next)
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, status: next } : u)),
-    )
+    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, status: next } : u)))
   }, [])
 
   const handleDeleted = useCallback(async (userId: string) => {
@@ -659,21 +730,16 @@ export function UtilisateursPage() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-        {error}
-      </div>
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
     )
   }
 
   return (
     <>
-      {toast && (
-        <Toast message={toast} onDone={() => setToast(null)} />
-      )}
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
 
       {showInviteModal && (
         <InviteModal
-          roles={roles}
           onClose={() => setShowInviteModal(false)}
           onSuccess={() => {
             setToast('Invitation envoyée avec succès !')
@@ -706,7 +772,7 @@ export function UtilisateursPage() {
           )}
         </div>
 
-        {/* Limit warning banner */}
+        {/* Limit warning */}
         {limitReached && (
           <div className="border border-amber-200 bg-amber-50 rounded-xl p-4">
             <div className="flex items-start gap-3">
@@ -732,27 +798,13 @@ export function UtilisateursPage() {
             <table className="min-w-full">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="py-3 pl-4 pr-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    Utilisateur
-                  </th>
-                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    Email
-                  </th>
-                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    Rôle
-                  </th>
-                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    Statut
-                  </th>
-                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    Dernière connexion
-                  </th>
-                  <th className="py-3 px-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    2FA
-                  </th>
-                  <th className="py-3 pl-3 pr-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                    Actions
-                  </th>
+                  <th className="py-3 pl-4 pr-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Utilisateur</th>
+                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
+                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Rôle</th>
+                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Statut</th>
+                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Dernière connexion</th>
+                  <th className="py-3 px-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">2FA</th>
+                  <th className="py-3 pl-3 pr-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -767,9 +819,7 @@ export function UtilisateursPage() {
                     <UserRow
                       key={user.id}
                       user={user}
-                      roles={roles}
                       isSelf={user.email === authUser?.email}
-                      onRoleUpdated={handleRoleUpdated}
                       onStatusToggled={handleStatusToggled}
                       onDeleted={handleDeleted}
                       onCancelInvite={handleCancelInvite}

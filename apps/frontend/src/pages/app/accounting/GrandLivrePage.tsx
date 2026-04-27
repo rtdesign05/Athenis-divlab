@@ -34,7 +34,7 @@ export function GrandLivrePage() {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Grand livre</h1>
           <p className="mt-1 text-sm text-gray-500">
-            {data ? `\xc9critures par compte \u2014 exercice ${data.year}` : 'Chargement\u2026'}
+            {data ? `Écritures par compte \u2014 exercice ${data.year}` : 'Chargement\u2026'}
           </p>
         </div>
       </div>
@@ -43,19 +43,19 @@ export function GrandLivrePage() {
 
       {!yearsLoading && !fyData && (
         <div className="flex flex-col items-center justify-center py-20 gap-2 text-slate-500">
-          <p className="text-sm">S\xe9lectionnez un exercice comptable ci-dessus.</p>
+          <p className="text-sm">Sélectionnez un exercice comptable ci-dessus.</p>
         </div>
       )}
 
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          Impossible de charger le grand livre. V\xe9rifiez la connexion au serveur.
+          Impossible de charger le grand livre. Vérifiez la connexion au serveur.
         </div>
       )}
 
       {data && data.comptes.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-2 text-slate-400">
-          <p className="text-sm">Aucune \xe9criture pour l\u2019exercice {data.year}.</p>
+          <p className="text-sm">Aucune écriture pour l\u2019exercice {data.year}.</p>
         </div>
       )}
 
@@ -71,9 +71,9 @@ export function GrandLivrePage() {
               <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-500">
                 <th className="px-5 py-2.5">Date</th>
                 <th className="px-5 py-2.5">Journal</th>
-                <th className="px-5 py-2.5">Libell\xe9</th>
-                <th className="px-5 py-2.5 text-right">D\xe9bit</th>
-                <th className="px-5 py-2.5 text-right">Cr\xe9dit</th>
+                <th className="px-5 py-2.5">Libellé</th>
+                <th className="px-5 py-2.5 text-right">Débit</th>
+                <th className="px-5 py-2.5 text-right">Crédit</th>
                 <th className="px-5 py-2.5 text-right">Solde cumulatif</th>
               </tr>
             </thead>

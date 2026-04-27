@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
 const TABS: readonly SubTab[] = [
   { label: 'Entreprise',      to: '/app/settings/entreprise' },
   { label: 'Utilisateurs',    to: '/app/settings/utilisateurs' },
+  { label: 'Agences',         to: '/app/settings/agences' },
   { label: 'Rôles & Accès',   to: '/app/settings/roles' },
   { label: 'Sécurité',        to: '/app/settings/securite' },
   { label: 'Facturation',     to: '/app/settings/facturation' },
@@ -14,9 +15,9 @@ const TABS: readonly SubTab[] = [
 
 export function SettingsLayout() {
   return (
-    <div className="flex flex-col min-h-full animate-fade-in">
+    <div className="h-full flex flex-col animate-fade-in">
       <SubTabBar tabs={TABS} />
-      <div className="p-6">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6">
         <ErrorBoundary>
           <Outlet />
         </ErrorBoundary>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { settingsApi, type CompanySettings } from '@/services/settingsApi'
 import { useAuth } from '@/features/auth/useAuth'
 import { AtheisId } from '@/shared/components/ui/AtheisId'
@@ -72,7 +73,7 @@ const INPUT_CLS =
   'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500'
 const SELECT_CLS = INPUT_CLS
 
-const LEGAL_FORMS = ['SAS', 'SARL', 'SA', 'SNC', 'EI', 'EURL', 'SCP', 'Autre'] as const
+const LEGAL_FORMS = ['SARL', 'SA', 'SAS', 'SNC', 'GIE', 'EI', 'EURL', 'SCP', 'Coopérative', 'Autre'] as const
 const FONTS = ['Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Courier New'] as const
 
 function settingsToForm(s: CompanySettings): FormState {
@@ -237,55 +238,53 @@ export function EntreprisePage() {
             </select>
           </Field>
 
-          <Field label="SIREN">
+          <Field label="RCCM / SIREN">
             <input
               type="text"
               value={form.siren}
               onChange={set('siren')}
               className={INPUT_CLS}
-              placeholder="123 456 789"
-              maxLength={9}
+              placeholder="ex: RC/DLA/2024/B/1234"
             />
           </Field>
 
-          <Field label="SIRET">
+          <Field label="NIU / SIRET">
             <input
               type="text"
               value={form.siret}
               onChange={set('siret')}
               className={INPUT_CLS}
-              placeholder="123 456 789 00012"
-              maxLength={14}
+              placeholder="ex: M123456789"
             />
           </Field>
 
-          <Field label="Code NAF / APE">
+          <Field label="Code NAF / Secteur">
             <input
               type="text"
               value={form.naf}
               onChange={set('naf')}
               className={INPUT_CLS}
-              placeholder="6201Z"
+              placeholder="ex: 6201Z"
             />
           </Field>
 
-          <Field label="N° TVA intracommunautaire">
+          <Field label="N° Contribuable TVA">
             <input
               type="text"
               value={form.vatNumber}
               onChange={set('vatNumber')}
               className={INPUT_CLS}
-              placeholder="FR 12 345678901"
+              placeholder="ex: P012345678901A"
             />
           </Field>
 
-          <Field label="Capital social (€)">
+          <Field label="Capital social">
             <input
               type="number"
               value={form.capital}
               onChange={set('capital')}
               className={INPUT_CLS}
-              placeholder="10000"
+              placeholder="ex: 1 000 000"
               min={0}
             />
           </Field>
@@ -331,7 +330,7 @@ export function EntreprisePage() {
               value={form.phone}
               onChange={set('phone')}
               className={INPUT_CLS}
-              placeholder="+33 1 23 45 67 89"
+              placeholder="+237 6 XX XX XX XX"
             />
           </Field>
 
@@ -341,7 +340,7 @@ export function EntreprisePage() {
               value={form.contactEmail}
               onChange={set('contactEmail')}
               className={INPUT_CLS}
-              placeholder="contact@masociete.fr"
+              placeholder="contact@entreprise.cm"
             />
           </Field>
 
@@ -351,7 +350,7 @@ export function EntreprisePage() {
               value={form.website}
               onChange={set('website')}
               className={INPUT_CLS}
-              placeholder="https://masociete.fr"
+              placeholder="https://entreprise.cm"
             />
           </Field>
         </div>
@@ -458,6 +457,22 @@ export function EntreprisePage() {
           </Field>
         </div>
       </Section>
+
+      {/* ── SECTION 5 : Lien vers Agences ── */}
+      <Link
+        to="/app/settings/agences"
+        className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-4 hover:border-forest-300 hover:bg-forest-50/40 transition-colors group"
+      >
+        <div>
+          <h2 className="text-sm font-semibold text-gray-800 group-hover:text-forest-900">
+            🏢 Agences &amp; Succursales
+          </h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Gérez vos agences, succursales et points de vente depuis l'onglet dédié.
+          </p>
+        </div>
+        <span className="text-gray-400 group-hover:text-forest-700 text-lg">→</span>
+      </Link>
 
       {/* ── Footer : messages + save ── */}
       <div className="flex items-center justify-between pt-2">

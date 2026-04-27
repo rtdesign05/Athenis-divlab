@@ -11,7 +11,7 @@ export const FiscalYearContext = createContext<FiscalYearContextValue | null>(nu
 export function FiscalYearProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const companyId = user?.companyId ?? 'default'
-  const userId    = user?.sub ?? user?.id ?? 'anon'
+  const userId    = user?.sub ?? 'anon'
   const key = `athenis_fy_${userId}_${companyId}`
 
   const [selectedYear, setSelectedYearState] = useState<number>(() => {

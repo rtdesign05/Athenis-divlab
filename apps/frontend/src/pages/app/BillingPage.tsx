@@ -141,7 +141,7 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
   const { data: clients } = useClients()
   const create = useCreateInvoice()
   const [form, setForm] = useState<CreateInvoiceDto>({
-    subtotal: 0, taxRate: defaultVatRate,
+    clientId: '', subtotal: 0, taxRate: defaultVatRate,
     issueDate: new Date().toISOString().slice(0, 10),
     dueDate:   new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10),
   })
@@ -156,9 +156,9 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
     <Modal open={open} onClose={onClose} title="Nouvelle facture" size="lg">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="label">Client</label>
-          <select className="input mt-1" value={form.clientId ?? ''} onChange={e => setForm(f => ({ ...f, clientId: e.target.value || undefined }))}>
-            <option value="">— Sans client —</option>
+          <label className="label">Client *</label>
+          <select required className="input mt-1" value={form.clientId ?? ''} onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))}>
+            <option value="">— Sélectionner un client —</option>
             {clients?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </div>
@@ -189,7 +189,10 @@ function CreateInvoiceModal({ open, onClose }: { open: boolean; onClose: () => v
         <div>
           <label className="label">Notes</label>
           <textarea rows={2} className="input mt-1" value={form.notes ?? ''}
-            onChange={e => setForm(f => ({ ...f, notes: e.target.value || undefined }))} />
+            onChange={e => setForm(f => {
+              const v = e.target.value
+              return v ? { ...f, notes: v } : (({ notes: _n, ...rest }) => rest)(f) as typeof f
+            })} />
         </div>
         {create.isError && <p className="text-sm text-red-600">Erreur lors de la création.</p>}
         <div className="flex justify-end gap-3 pt-2">
@@ -258,7 +261,10 @@ function CreateRecurringModal({ open, onClose }: { open: boolean; onClose: () =>
         <div>
           <label className="label">Notes</label>
           <textarea rows={2} className="input mt-1" value={form.notes ?? ''}
-            onChange={e => setForm(f => ({ ...f, notes: e.target.value || undefined }))} />
+            onChange={e => setForm(f => {
+              const v = e.target.value
+              return v ? { ...f, notes: v } : (({ notes: _n, ...rest }) => rest)(f) as typeof f
+            })} />
         </div>
         {create.isError && <p className="text-sm text-red-600">Erreur lors de la création.</p>}
         <div className="flex justify-end gap-3 pt-2">

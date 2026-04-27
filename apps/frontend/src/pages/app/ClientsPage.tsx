@@ -37,7 +37,7 @@ const ClientCard = React.memo(function ClientCard({ client, onEdit, onDelete }: 
         {client._count && (
           <p className="text-xs text-gray-400">{client._count.invoices} facture{client._count.invoices !== 1 ? 's' : ''}</p>
         )}
-        <ReliabilityBadge score={client.reliabilityScore} />
+        {client.reliabilityScore !== undefined && <ReliabilityBadge score={client.reliabilityScore} />}
       </div>
     </div>
   )
@@ -48,7 +48,14 @@ const EMPTY_FORM: CreateClientDto = { name: '', email: '', phone: '', address: '
 function ClientModal({ open, initial, onClose }: { open: boolean; initial?: Client; onClose: () => void }) {
   const create = useCreateClient()
   const update = useUpdateClient()
-  const [form, setForm] = useState<CreateClientDto>(initial ?? EMPTY_FORM)
+  const [form, setForm] = useState<CreateClientDto>(() =>
+    initial
+      ? { name: initial.name, ...(initial.email    ? { email:   initial.email }   : {}),
+                               ...(initial.phone    ? { phone:   initial.phone }   : {}),
+                               ...(initial.address  ? { address: initial.address } : {}),
+                               ...(initial.siren    ? { siren:   initial.siren }   : {}) }
+      : { ...EMPTY_FORM }
+  )
 
   const f = useCallback(<K extends keyof CreateClientDto>(k: K, v: CreateClientDto[K]) =>
     setForm(p => ({ ...p, [k]: v })), [])
@@ -149,7 +156,7 @@ export function ClientsPage() {
         )}
       </div>
 
-      <ClientModal open={creating || !!editing} initial={editing} onClose={closeModal} />
+      <ClientModal open={creating || !!editing} {...(editing ? { initial: editing } : {})} onClose={closeModal} />
     </ErrorBoundary>
   )
 }

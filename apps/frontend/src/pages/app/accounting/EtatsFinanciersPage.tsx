@@ -43,7 +43,7 @@ function THead({ year, prevYear, hasPrevYear, showVariation = false }: {
   return (
     <thead>
       <tr className="border-b-2 border-slate-300 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
-        <th className="px-4 py-2 text-left w-1/2">Libell\xe9</th>
+        <th className="px-4 py-2 text-left w-1/2">Libellé</th>
         <th className="px-4 py-2 text-right">N\xa0({year})</th>
         <th className={`px-4 py-2 text-right ${!hasPrevYear ? 'italic text-slate-400' : ''}`}>{nm1Label}</th>
         {showVariation && <th className="px-4 py-2 text-right">Variation</th>}
@@ -107,8 +107,8 @@ function BalanceIndicator({ actifTotal, passifTotal }: { actifTotal: FSPair | un
     <div className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium ${balanced ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}`}>
       <span>{balanced ? '\u2705' : '\u26a0\ufe0f'}</span>
       {balanced
-        ? <>Bilan \xe9quilibr\xe9\xa0\u2014 Actif\xa0=\xa0Passif\xa0=\xa0{fmt(a)}\xa0\u20ac</>
-        : <>D\xe9s\xe9quilibre\xa0: Actif\xa0{fmt(a)}\xa0\u20ac\xa0\u2260\xa0Passif\xa0{fmt(p)}\xa0\u20ac</>}
+        ? <>Bilan équilibré\xa0\u2014 Actif\xa0=\xa0Passif\xa0=\xa0{fmt(a)}\xa0\u20ac</>
+        : <>Déséquilibre\xa0: Actif\xa0{fmt(a)}\xa0\u20ac\xa0\u2260\xa0Passif\xa0{fmt(p)}\xa0\u20ac</>}
     </div>
   )
 }
@@ -123,29 +123,29 @@ function FranceBilan({ d }: { d: FinancialStatements }) {
       <BalanceIndicator actifTotal={actif['totalActif']} passifTotal={passif['totalPassif']} />
       <div className="grid gap-6 lg:grid-cols-2">
         <StmtTable title="Actif" year={y} prevYear={p} hasPrevYear={hp} rows={[
-          { label: 'ACTIF IMMOBILIS\xc9', section: true },
+          { label: 'ACTIF IMMOBILISÉ', section: true },
           { label: 'Immobilisations incorporelles',      values: actif['immobilisationsIncorporelles'], indent: true },
           { label: 'Immobilisations corporelles',        values: actif['immobilisationsCorporelles'],   indent: true },
-          { label: 'Immobilisations financi\xe8res',     values: actif['immobilisationsFinancieres'],   indent: true },
-          { label: 'Total actif immobilis\xe9',          values: actif['totalActifImmobilise'],          bold: true },
+          { label: 'Immobilisations financières',     values: actif['immobilisationsFinancieres'],   indent: true },
+          { label: 'Total actif immobilisé',          values: actif['totalActifImmobilise'],          bold: true },
           { label: 'ACTIF CIRCULANT', section: true },
           { label: 'Stocks et en-cours',                 values: actif['stocks'],                        indent: true },
-          { label: 'Cr\xe9ances clients',                values: actif['creancesClients'],               indent: true },
-          { label: 'Autres cr\xe9ances',                 values: actif['autresCreances'],                indent: true },
-          { label: 'Tr\xe9sorerie et \xe9quivalents',    values: actif['tresorerie'],                    indent: true },
+          { label: 'Créances clients',                values: actif['creancesClients'],               indent: true },
+          { label: 'Autres créances',                 values: actif['autresCreances'],                indent: true },
+          { label: 'Trésorerie et équivalents',    values: actif['tresorerie'],                    indent: true },
           { label: 'Total actif circulant',              values: actif['totalActifCirculant'],           bold: true },
           { label: 'TOTAL ACTIF',                        values: actif['totalActif'],                    bold: true },
         ]} />
         <StmtTable title="Passif" year={y} prevYear={p} hasPrevYear={hp} rows={[
           { label: 'CAPITAUX PROPRES', section: true },
           { label: 'Capital',                            values: passif['capital'],                      indent: true },
-          { label: 'R\xe9serves',                        values: passif['reserves'],                     indent: true },
-          { label: 'Report \xe0 nouveau',                values: passif['reportANouveau'],               indent: true },
-          { label: "R\xe9sultat de l'exercice",          values: passif['resultatExercice'],             indent: true },
+          { label: 'Réserves',                        values: passif['reserves'],                     indent: true },
+          { label: 'Report à nouveau',                values: passif['reportANouveau'],               indent: true },
+          { label: "Résultat de l'exercice",          values: passif['resultatExercice'],             indent: true },
           { label: 'Total capitaux propres',             values: passif['totalCapitauxPropres'],         bold: true },
           { label: 'Provisions pour risques',            values: passif['provisions'],                   indent: true },
           { label: 'DETTES', section: true },
-          { label: 'Emprunts et dettes financi\xe8res',  values: passif['emprunts'],                     indent: true },
+          { label: 'Emprunts et dettes financières',  values: passif['emprunts'],                     indent: true },
           { label: 'Dettes fournisseurs',                values: passif['dettesFournisseurs'],           indent: true },
           { label: 'Dettes fiscales et sociales',        values: passif['dettesFiscalesSociales'],       indent: true },
           { label: 'Autres dettes',                      values: passif['autresDettes'],                 indent: true },
@@ -163,7 +163,7 @@ function FranceCR({ d }: { d: FinancialStatements }) {
   const res  = d.compteDeResultat?.resultatNet as FSPair | undefined
   if (!prod || !chg) return null
   return (
-    <StmtTable title="Compte de r\xe9sultat" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} showVariation rows={[
+    <StmtTable title="Compte de résultat" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} showVariation rows={[
       { label: "PRODUITS D'EXPLOITATION", section: true },
       { label: 'Ventes et productions',              values: prod['ventesEtProductions'],        indent: true },
       { label: "Autres produits d'exploitation",     values: prod['autresProduits'],             indent: true },
@@ -174,16 +174,16 @@ function FranceCR({ d }: { d: FinancialStatements }) {
       { label: "CHARGES D'EXPLOITATION", section: true },
       { label: 'Achats de marchandises',             values: chg['achatsMarchandises'],          indent: true },
       { label: 'Autres achats et charges ext.',      values: chg['autresAchats'],                indent: true },
-      { label: 'Imp\xf4ts et taxes',                 values: chg['impotsTaxes'],                 indent: true },
+      { label: 'Impôts et taxes',                 values: chg['impotsTaxes'],                 indent: true },
       { label: 'Charges de personnel',               values: chg['chargesPersonnel'],            indent: true },
       { label: 'Dotations aux amortissements',       values: chg['dotationsAmortissements'],     indent: true },
       { label: 'Autres charges',                     values: chg['autresCharges'],               indent: true },
-      { label: 'Charges financi\xe8res',             values: chg['chargesFinancieres'],          indent: true },
+      { label: 'Charges financières',             values: chg['chargesFinancieres'],          indent: true },
       { label: 'Charges exceptionnelles',            values: chg['chargesExceptionnelles'],      indent: true },
-      { label: "Imp\xf4t sur les b\xe9n\xe9fices",  values: chg['impotBenefices'],              indent: true },
+      { label: "Impôt sur les bénéfices",  values: chg['impotBenefices'],              indent: true },
       { label: 'Total charges',                      values: chg['totalCharges'],                bold: true },
-      { label: 'R\xc9SULTAT NET', section: true },
-      { label: "R\xe9sultat net de l'exercice",      values: res,                               bold: true },
+      { label: 'RÉSULTAT NET', section: true },
+      { label: "Résultat net de l'exercice",      values: res,                               bold: true },
     ]} />
   )
 }
@@ -192,17 +192,17 @@ function FranceAnnexe() {
   return (
     <div className="rounded-lg border border-slate-200 p-6 space-y-4">
       <p className="text-sm text-slate-600">
-        {"L'annexe compl\xe8te les informations du bilan et du compte de r\xe9sultat\xa0:"}
+        {"L'annexe complète les informations du bilan et du compte de résultat\xa0:"}
       </p>
       <ul className="space-y-2 text-sm text-slate-700">
         {[
-          "M\xe9thodes comptables et principes retenus",
+          "Méthodes comptables et principes retenus",
           'Tableau des immobilisations et amortissements',
-          '\xc9tat des provisions',
-          "Tableau des cr\xe9ances et des dettes",
+          'État des provisions',
+          "Tableau des créances et des dettes",
           'Tableau des filiales et participations',
           'Engagements hors bilan',
-          "Approbation des comptes et affectation du r\xe9sultat",
+          "Approbation des comptes et affectation du résultat",
         ].map((s) => (
           <li key={s} className="flex items-start gap-2">
             <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
@@ -211,7 +211,7 @@ function FranceAnnexe() {
         ))}
       </ul>
       <p className="mt-2 text-xs italic text-slate-400">
-        {"G\xe9n\xe9r\xe9e automatiquement \xe0 la cl\xf4ture de l'exercice."}
+        {"Générée automatiquement à la clôture de l'exercice."}
       </p>
     </div>
   )
@@ -223,7 +223,7 @@ function FranceRapport({ d }: { d: FinancialStatements }) {
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-slate-200 p-6">
-        <h4 className="mb-3 font-semibold text-slate-800">{"Analyse de l'activit\xe9"}</h4>
+        <h4 className="mb-3 font-semibold text-slate-800">{"Analyse de l'activité"}</h4>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-md bg-slate-50 p-4">
             <p className="text-xs text-slate-500 mb-1">{"Chiffre d'affaires\xa0N"}</p>
@@ -237,7 +237,7 @@ function FranceRapport({ d }: { d: FinancialStatements }) {
             )}
           </div>
           <div className="rounded-md bg-slate-50 p-4">
-            <p className="text-xs text-slate-500 mb-1">R\xe9sultat net\xa0N</p>
+            <p className="text-xs text-slate-500 mb-1">Résultat net\xa0N</p>
             <p className={`text-lg font-semibold ${res && res.n < 0 ? 'text-red-600' : 'text-green-700'}`}>
               {res ? fmt(res.n) : '\u2013'}\xa0\u20ac
             </p>
@@ -251,12 +251,12 @@ function FranceRapport({ d }: { d: FinancialStatements }) {
         <h4 className="mb-3 font-semibold text-slate-800">Informations requises</h4>
         <ul className="space-y-2 text-sm text-slate-700">
           {[
-            "Situation et activit\xe9 de la soci\xe9t\xe9 durant l'exercice",
-            "R\xe9sultats, \xe9volution pr\xe9visible et perspectives",
-            "\xc9v\xe9nements importants post\xe9rieurs \xe0 la cl\xf4ture",
-            "Activit\xe9s en mati\xe8re de recherche et d\xe9veloppement",
-            "Risques financiers\xa0: taux d'int\xe9r\xeat, change, liquidit\xe9",
-            'Tableau des r\xe9sultats des cinq derniers exercices',
+            "Situation et activité de la société durant l'exercice",
+            "Résultats, évolution prévisible et perspectives",
+            "Événements importants postérieurs à la clôture",
+            "Activités en matière de recherche et développement",
+            "Risques financiers\xa0: taux d'intérêt, change, liquidité",
+            'Tableau des résultats des cinq derniers exercices',
           ].map((s) => (
             <li key={s} className="flex items-start gap-2">
               <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
@@ -273,16 +273,16 @@ function FranceAffectation({ d }: { d: FinancialStatements }) {
   const res = d.compteDeResultat?.resultatNet as FSPair | undefined
   const net = res?.n ?? 0
   return (
-    <StmtTable title="Affectation du r\xe9sultat" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
+    <StmtTable title="Affectation du résultat" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
       { label: 'ORIGINE', section: true },
-      { label: "R\xe9sultat net de l'exercice",    values: { n: net, nm1: res?.nm1 ?? 0 } },
-      { label: 'Report \xe0 nouveau ant\xe9rieur',  values: { n: 0, nm1: 0 } },
-      { label: 'Total \xe0 affecter',              values: { n: net, nm1: res?.nm1 ?? 0 }, bold: true },
+      { label: "Résultat net de l'exercice",    values: { n: net, nm1: res?.nm1 ?? 0 } },
+      { label: 'Report à nouveau antérieur',  values: { n: 0, nm1: 0 } },
+      { label: 'Total à affecter',              values: { n: net, nm1: res?.nm1 ?? 0 }, bold: true },
       { label: 'AFFECTATION', section: true },
-      { label: 'R\xe9serve l\xe9gale (5\xa0%)',    values: { n: net > 0 ? net * 0.05 : 0, nm1: 0 } },
-      { label: 'R\xe9serves statutaires',          values: { n: 0, nm1: 0 } },
-      { label: 'Dividendes distribu\xe9s',          values: { n: 0, nm1: 0 } },
-      { label: 'Report \xe0 nouveau',              values: { n: net > 0 ? net * 0.95 : 0, nm1: 0 } },
+      { label: 'Réserve légale (5\xa0%)',    values: { n: net > 0 ? net * 0.05 : 0, nm1: 0 } },
+      { label: 'Réserves statutaires',          values: { n: 0, nm1: 0 } },
+      { label: 'Dividendes distribués',          values: { n: 0, nm1: 0 } },
+      { label: 'Report à nouveau',              values: { n: net > 0 ? net * 0.95 : 0, nm1: 0 } },
     ]} />
   )
 }
@@ -298,35 +298,35 @@ function OhadaBilan({ d }: { d: FinancialStatements }) {
       <BalanceIndicator actifTotal={a['totalActif']} passifTotal={p['totalPassif']} />
       <div className="grid gap-6 lg:grid-cols-2">
       <StmtTable title="Actif" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
-        { label: 'ACTIF IMMOBILIS\xc9', section: true },
-        { label: 'Charges immobilis\xe9es',           values: a['chargesImmobilisees'],          indent: true },
+        { label: 'ACTIF IMMOBILISÉ', section: true },
+        { label: 'Charges immobilisées',           values: a['chargesImmobilisees'],          indent: true },
         { label: 'Immobilisations incorporelles',     values: a['immobilisationsIncorporelles'], indent: true },
         { label: 'Terrains',                          values: a['terrains'],                     indent: true },
-        { label: 'B\xe2timents & agencements',        values: a['batimentsAgencements'],         indent: true },
-        { label: 'Mat\xe9riel & \xe9quipement',       values: a['materielEquipement'],           indent: true },
-        { label: 'Mat\xe9riel de transport',          values: a['materielTransport'],            indent: true },
+        { label: 'Bâtiments & agencements',        values: a['batimentsAgencements'],         indent: true },
+        { label: 'Matériel & équipement',       values: a['materielEquipement'],           indent: true },
+        { label: 'Matériel de transport',          values: a['materielTransport'],            indent: true },
         { label: 'Autres immobilisations',            values: a['autresImmobilisations'],        indent: true },
         { label: 'Avances & acomptes',                values: a['avancesAcomptesImmo'],          indent: true },
-        { label: 'Total actif immobilis\xe9',         values: a['totalActifImmobilise'],         bold: true },
+        { label: 'Total actif immobilisé',         values: a['totalActifImmobilise'],         bold: true },
         { label: 'ACTIF CIRCULANT', section: true },
         { label: 'Stocks',                            values: a['stocks'],                       indent: true },
-        { label: 'Cr\xe9ances clients',               values: a['creancesClients'],              indent: true },
-        { label: 'Autres cr\xe9ances',                values: a['autresCreances'],               indent: true },
-        { label: 'Tr\xe9sorerie active',              values: a['tresorerie'],                   indent: true },
+        { label: 'Créances clients',               values: a['creancesClients'],              indent: true },
+        { label: 'Autres créances',                values: a['autresCreances'],               indent: true },
+        { label: 'Trésorerie active',              values: a['tresorerie'],                   indent: true },
         { label: 'Total actif circulant',             values: a['totalActifCirculant'],          bold: true },
         { label: 'TOTAL ACTIF',                       values: a['totalActif'],                   bold: true },
       ]} />
       <StmtTable title="Passif" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
-        { label: 'CAPITAUX PROPRES ET RESSOURCES ASSIMIL\xc9ES', section: true },
+        { label: 'CAPITAUX PROPRES ET RESSOURCES ASSIMILÉES', section: true },
         { label: 'Capital social',                    values: p['capitalSocial'],                indent: true },
-        { label: 'R\xe9serves',                       values: p['reserves'],                     indent: true },
-        { label: 'Report \xe0 nouveau',               values: p['reportANouveau'],               indent: true },
-        { label: 'R\xe9sultat net',                   values: p['resultatNet'],                  indent: true },
+        { label: 'Réserves',                       values: p['reserves'],                     indent: true },
+        { label: 'Report à nouveau',               values: p['reportANouveau'],               indent: true },
+        { label: 'Résultat net',                   values: p['resultatNet'],                  indent: true },
         { label: "Subventions d'investissement",      values: p['subventionsInvestissement'],    indent: true },
         { label: 'Total capitaux propres',            values: p['totalCapitauxPropres'],         bold: true },
-        { label: 'DETTES FINANCI\xc8RES', section: true },
-        { label: 'Dettes financi\xe8res \xe0 LT',    values: p['dettesLongTerme'],              indent: true },
-        { label: 'Dettes \xe0 court terme',           values: p['dettesCurtTerme'],              indent: true },
+        { label: 'DETTES FINANCIÈRES', section: true },
+        { label: 'Dettes financières à LT',    values: p['dettesLongTerme'],              indent: true },
+        { label: 'Dettes à court terme',           values: p['dettesCurtTerme'],              indent: true },
         { label: 'TOTAL PASSIF',                      values: p['totalPassif'],                  bold: true },
       ]} />
       </div>
@@ -340,23 +340,23 @@ function OhadaCR({ d }: { d: FinancialStatements }) {
   const res  = d.compteDeResultat?.resultat as FSPair | undefined
   if (!prod || !chg) return null
   return (
-    <StmtTable title="Compte de r\xe9sultat (fonctionnel)" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} showVariation rows={[
+    <StmtTable title="Compte de résultat (fonctionnel)" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} showVariation rows={[
       { label: 'PRODUITS', section: true },
       { label: "Chiffre d'affaires",                 values: prod['chiffreAffaires'],            indent: true },
       { label: 'Autres produits',                    values: prod['autresProduits'],             indent: true },
       { label: 'Produits financiers',                values: prod['produitsFinanciers'],         indent: true },
       { label: 'Total produits',                     values: prod['totalProduits'],              bold: true },
       { label: 'CHARGES', section: true },
-      { label: 'Achats consomm\xe9s',                values: chg['achatsConsommes'],             indent: true },
+      { label: 'Achats consommés',                values: chg['achatsConsommes'],             indent: true },
       { label: 'Charges de personnel',               values: chg['chargesPersonnel'],            indent: true },
       { label: 'Transports',                         values: chg['transports'],                  indent: true },
       { label: 'Autres charges',                     values: chg['autresCharges'],               indent: true },
       { label: 'Dotations aux amortissements',       values: chg['dotations'],                   indent: true },
-      { label: 'Charges financi\xe8res',             values: chg['chargesFinancieres'],          indent: true },
-      { label: 'Imp\xf4t sur le r\xe9sultat',       values: chg['impotSurResultat'],            indent: true },
+      { label: 'Charges financières',             values: chg['chargesFinancieres'],          indent: true },
+      { label: 'Impôt sur le résultat',       values: chg['impotSurResultat'],            indent: true },
       { label: 'Total charges',                      values: chg['totalCharges'],                bold: true },
-      { label: 'R\xc9SULTAT NET', section: true },
-      { label: 'R\xe9sultat net',                    values: res,                               bold: true },
+      { label: 'RÉSULTAT NET', section: true },
+      { label: 'Résultat net',                    values: res,                               bold: true },
     ]} />
   )
 }
@@ -373,9 +373,9 @@ function OhadaTafire({ d }: { d: FinancialStatements }) {
       { label: "FLUX D'INVESTISSEMENT", section: true },
       { label: "Acquisitions d'immobilisations",     values: tf['investissements'],              indent: true },
       { label: 'FLUX DE FINANCEMENT', section: true },
-      { label: 'Variation des dettes financi\xe8res',values: tf['financements'],                 indent: true },
-      { label: 'VARIATION DE TR\xc9SORERIE', section: true },
-      { label: 'Variation nette de tr\xe9sorerie',   values: tf['variationTresorerie'],          bold: true },
+      { label: 'Variation des dettes financières',values: tf['financements'],                 indent: true },
+      { label: 'VARIATION DE TRÉSORERIE', section: true },
+      { label: 'Variation nette de trésorerie',   values: tf['variationTresorerie'],          bold: true },
     ]} />
   )
 }
@@ -386,13 +386,13 @@ function OhadaNotes() {
       <p className="text-sm text-slate-600">Notes annexes SYSCOHADA\xa0:</p>
       <ul className="space-y-2 text-sm text-slate-700">
         {[
-          'Note 1 \u2014 R\xe8gles et m\xe9thodes comptables',
+          'Note 1 \u2014 Règles et méthodes comptables',
           'Note 2 \u2014 Tableau des immobilisations',
           'Note 3 \u2014 Tableau des amortissements',
           'Note 4 \u2014 Tableau des provisions',
-          'Note 5 \u2014 Tableau des cr\xe9ances',
+          'Note 5 \u2014 Tableau des créances',
           'Note 6 \u2014 Tableau des dettes',
-          'Note 7 \u2014 Charges \xe0 payer / produits \xe0 recevoir',
+          'Note 7 \u2014 Charges à payer / produits à recevoir',
           'Note 8 \u2014 Effectifs et charges de personnel',
           'Note 9 \u2014 Engagements hors bilan',
         ].map((s) => (
@@ -410,12 +410,12 @@ function OhadaCP({ d }: { d: FinancialStatements }) {
   const res = d.compteDeResultat?.resultat as FSPair | undefined
   if (!p) return null
   return (
-    <StmtTable title="\xc9tat de variation des capitaux propres" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
-      { label: "Capitaux propres \xe0 l'ouverture",  values: { n: p['totalCapitauxPropres']?.nm1 ?? 0, nm1: 0 } },
-      { label: "R\xe9sultat net de l'exercice",      values: res ?? { n: 0, nm1: 0 }, indent: true },
-      { label: 'Dividendes distribu\xe9s',            values: { n: 0, nm1: 0 }, indent: true },
+    <StmtTable title="État de variation des capitaux propres" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
+      { label: "Capitaux propres à l'ouverture",  values: { n: p['totalCapitauxPropres']?.nm1 ?? 0, nm1: 0 } },
+      { label: "Résultat net de l'exercice",      values: res ?? { n: 0, nm1: 0 }, indent: true },
+      { label: 'Dividendes distribués',            values: { n: 0, nm1: 0 }, indent: true },
       { label: 'Autres variations',                  values: { n: 0, nm1: 0 }, indent: true },
-      { label: 'Capitaux propres \xe0 la cl\xf4ture',values: p['totalCapitauxPropres'], bold: true },
+      { label: 'Capitaux propres à la clôture',values: p['totalCapitauxPropres'], bold: true },
     ]} />
   )
 }
@@ -555,7 +555,7 @@ interface ZoneTab {
 function zoneTabs(zone: AccountingZone): ZoneTab[] {
   if (zone === 'OHADA') return [
     { key: 'bilan',  label: 'Bilan SYSCOHADA',        render: (d) => <OhadaBilan d={d} /> },
-    { key: 'cr',     label: 'Compte de r\xe9sultat',  render: (d) => <OhadaCR d={d} /> },
+    { key: 'cr',     label: 'Compte de résultat',  render: (d) => <OhadaCR d={d} /> },
     { key: 'tafire', label: 'TAFIRE',                 render: (d) => <OhadaTafire d={d} /> },
     { key: 'notes',  label: 'Notes annexes',          render: () => <OhadaNotes /> },
     { key: 'cp',     label: 'Variation CP',           render: (d) => <OhadaCP d={d} /> },
@@ -570,10 +570,10 @@ function zoneTabs(zone: AccountingZone): ZoneTab[] {
   // France PCG (default)
   return [
     { key: 'bilan',  label: 'Bilan (2050)',           render: (d) => <FranceBilan d={d} /> },
-    { key: 'cr',     label: 'R\xe9sultat (2052/53)',  render: (d) => <FranceCR d={d} /> },
+    { key: 'cr',     label: 'Résultat (2052/53)',  render: (d) => <FranceCR d={d} /> },
     { key: 'annexe', label: 'Annexe',                 render: () => <FranceAnnexe /> },
     { key: 'rapport',label: 'Rapport de gestion',     render: (d) => <FranceRapport d={d} /> },
-    { key: 'affec',  label: 'Affectation r\xe9sultat',render: (d) => <FranceAffectation d={d} /> },
+    { key: 'affec',  label: 'Affectation résultat',render: (d) => <FranceAffectation d={d} /> },
   ]
 }
 
@@ -582,8 +582,8 @@ function zoneTabs(zone: AccountingZone): ZoneTab[] {
 function StatusBadge({ status }: { status: string }) {
   const [cls, lbl] =
     status === 'OPEN'   ? ['bg-green-100 text-green-800', 'En cours']     :
-    status === 'CLOSED' ? ['bg-gray-100  text-gray-600',  'Cl\xf4tur\xe9'] :
-    status === 'LOCKED' ? ['bg-amber-100 text-amber-800', 'Verrouill\xe9'] :
+    status === 'CLOSED' ? ['bg-gray-100  text-gray-600',  'Clôturé'] :
+    status === 'LOCKED' ? ['bg-amber-100 text-amber-800', 'Verrouillé'] :
                           ['bg-blue-100  text-blue-800',  'Brouillon']
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${cls}`}>{lbl}</span>
 }
@@ -630,9 +630,9 @@ export function EtatsFinanciersPage() {
   const current = tabs.find((t) => t.key === activeTab) ?? tabs[0]!
 
   const pageTitle =
-    zone === 'OHADA' ? '\xc9tats financiers SYSCOHADA'  :
+    zone === 'OHADA' ? 'États financiers SYSCOHADA'  :
     zone === 'IFRS'  ? 'Financial Statements (IFRS)'    :
-    'Plaquette financi\xe8re — France PCG'
+    'Plaquette financière — France PCG'
 
   // ── Content area ────────────────────────────────────────────────────────────
   function Content() {
@@ -643,8 +643,8 @@ export function EtatsFinanciersPage() {
           <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6M3 21h18M3 10.5V5a2 2 0 012-2h14a2 2 0 012 2v5.5" />
           </svg>
-          <p className="text-sm font-medium">S\xe9lectionnez un exercice comptable</p>
-          <p className="text-xs text-slate-400">Utilisez le s\xe9lecteur d'exercice en haut de page.</p>
+          <p className="text-sm font-medium">Sélectionnez un exercice comptable</p>
+          <p className="text-xs text-slate-400">Utilisez le sélecteur d'exercice en haut de page.</p>
         </div>
       )
     }
@@ -652,7 +652,7 @@ export function EtatsFinanciersPage() {
     if (isError || !fsData) {
       return (
         <div className="flex items-center justify-center py-20 text-red-500 text-sm">
-          Impossible de charger les \xe9tats financiers. V\xe9rifiez la connexion au serveur.
+          Impossible de charger les états financiers. Vérifiez la connexion au serveur.
         </div>
       )
     }
@@ -662,13 +662,13 @@ export function EtatsFinanciersPage() {
           <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6M3 21h18M3 10.5V5a2 2 0 012-2h14a2 2 0 012 2v5.5" />
           </svg>
-          <p className="text-sm font-medium">Aucune \xe9criture pour {fsData.year}</p>
+          <p className="text-sm font-medium">Aucune écriture pour {fsData.year}</p>
           <p className="text-xs text-slate-400">
-            Saisissez des \xe9critures dans le{' '}
+            Saisissez des écritures dans le{' '}
             <Link to="/app/accounting/journal" className="text-[#1b4332] underline underline-offset-2 hover:opacity-80">
               journal comptable
             </Link>
-            {' '}pour g\xe9n\xe9rer les \xe9tats financiers.
+            {' '}pour générer les états financiers.
           </p>
         </div>
       )
@@ -689,7 +689,7 @@ export function EtatsFinanciersPage() {
               ? <>Exercice {fsData.year} · comparatif N\xa0/\xa0N-1 ({fsData.prevYear}) <StatusBadge status={fsData.status} /></>
               : fyData
               ? <>Exercice {fyData.year} <StatusBadge status={fyData.status} /></>
-              : 'Aucun exercice s\xe9lectionn\xe9'}
+              : 'Aucun exercice sélectionné'}
           </p>
         </div>
         {fsData && (

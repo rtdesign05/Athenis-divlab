@@ -740,6 +740,8 @@ export async function getJournalByFiscalYear(companyId: string, fiscalYearId: st
       id:          e.id,
       date:        e.date,
       journalCode: e.journal,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pieceId:     (e as any).pieceId ?? null,
       account:     e.compte,
       label:       e.libelle,
       debit:       Number(e.debit),
@@ -747,6 +749,173 @@ export async function getJournalByFiscalYear(companyId: string, fiscalYearId: st
       reference:   e.reference,
     })),
   }
+}
+
+export async function createJournalEntry(
+  companyId: string,
+  fiscalYearId: string,
+  data: { date: Date; journal: string; compte: string; libelle: string; debit: number; credit: number; reference?: string | null },
+  userId: string,
+) {
+  const fy = await getFiscalYear(companyId, fiscalYearId)
+  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
+    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  return prisma.journalEntry.create({
+    data: {
+      companyId,
+      fiscalYearId,
+      date: data.date,
+      journal: data.journal.toUpperCase(),
+      compte: data.compte,
+      libelle: data.libelle,
+      debit: data.debit,
+      credit: data.credit,
+      ...(data.reference ? { reference: data.reference } : {}),
+      createdBy: userId,
+    },
+  })
+}
+
+export async function createJournalEntryBatch(
+  companyId: string,
+  fiscalYearId: string,
+  data: {
+    date: Date
+    journal: string
+    reference: string | null
+    lines: { compte: string; libelle: string; debit: number; credit: number }[]
+  },
+  userId: string,
+) {
+  const fy = await getFiscalYear(companyId, fiscalYearId)
+  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
+    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  if (data.lines.length < 2) {
+    throw new AppError('Au moins 2 lignes sont requises pour une écriture comptable', 400, 'VALIDATION_ERROR')
+  }
+  const totalDebit  = data.lines.reduce((s, l) => s + l.debit,  0)
+  const totalCredit = data.lines.reduce((s, l) => s + l.credit, 0)
+  if (Math.abs(totalDebit - totalCredit) > 0.001) {
+    throw new AppError(
+      `L'écriture n'est pas équilibrée (débit ${totalDebit.toFixed(2)} ≠ crédit ${totalCredit.toFixed(2)})`,
+      400,
+      'UNBALANCED_ENTRY',
+    )
+  }
+  const pieceId = `PC-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+  return prisma.$transaction(
+    data.lines.map(line =>
+      prisma.journalEntry.create({
+        data: {
+          companyId,
+          fiscalYearId,
+          date:    data.date,
+          journal: data.journal.toUpperCase(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          pieceId: pieceId as any,
+          compte:  line.compte,
+          libelle: line.libelle,
+          debit:   line.debit,
+          credit:  line.credit,
+          ...(data.reference ? { reference: data.reference } : {}),
+          createdBy: userId,
+        } as Parameters<typeof prisma.journalEntry.create>[0]['data'],
+      }),
+    ),
+  )
+}
+
+export async function updateJournalPiece(
+  companyId: string,
+  pieceId: string,
+  data: {
+    date: Date
+    journal: string
+    reference: string | null
+    lines: { compte: string; libelle: string; debit: number; credit: number }[]
+  },
+  userId: string,
+) {
+  // Verify piece belongs to this company
+  const existing = await prisma.journalEntry.findFirst({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    where: { companyId, pieceId: pieceId as any },
+    select: { fiscalYearId: true },
+  })
+  if (!existing) throw new AppError('Écriture introuvable', 404, 'NOT_FOUND')
+
+  const fy = await getFiscalYear(companyId, existing.fiscalYearId)
+  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
+    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  if (data.lines.length < 2) {
+    throw new AppError('Au moins 2 lignes sont requises', 400, 'VALIDATION_ERROR')
+  }
+  const totalDebit  = data.lines.reduce((s, l) => s + l.debit,  0)
+  const totalCredit = data.lines.reduce((s, l) => s + l.credit, 0)
+  if (Math.abs(totalDebit - totalCredit) > 0.001) {
+    throw new AppError(
+      `Écriture déséquilibrée (débit ${totalDebit.toFixed(2)} ≠ crédit ${totalCredit.toFixed(2)})`,
+      400,
+      'UNBALANCED_ENTRY',
+    )
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await tx.journalEntry.deleteMany({ where: { companyId, pieceId: pieceId as any } })
+    return Promise.all(
+      data.lines.map(line =>
+        tx.journalEntry.create({
+          data: {
+            companyId,
+            fiscalYearId: existing.fiscalYearId,
+            date:    data.date,
+            journal: data.journal.toUpperCase(),
+            pieceId: pieceId as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+            compte:  line.compte,
+            libelle: line.libelle,
+            debit:   line.debit,
+            credit:  line.credit,
+            ...(data.reference ? { reference: data.reference } : {}),
+            createdBy: userId,
+          } as Parameters<typeof prisma.journalEntry.create>[0]['data'],
+        }),
+      ),
+    )
+  })
+}
+
+export async function deleteJournalPiece(companyId: string, pieceId: string) {
+  const existing = await prisma.journalEntry.findFirst({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    where: { companyId, pieceId: pieceId as any },
+    select: { fiscalYearId: true },
+  })
+  if (!existing) throw new AppError('Écriture introuvable', 404, 'NOT_FOUND')
+
+  const fy = await getFiscalYear(companyId, existing.fiscalYearId)
+  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
+    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return prisma.journalEntry.deleteMany({ where: { companyId, pieceId: pieceId as any } })
+}
+
+export async function deleteJournalEntry(companyId: string, entryId: string) {
+  const entry = await prisma.journalEntry.findFirst({
+    where: { id: entryId, companyId },
+    select: { fiscalYearId: true },
+  })
+  if (!entry) throw new AppError('Ligne introuvable', 404, 'NOT_FOUND')
+
+  const fy = await getFiscalYear(companyId, entry.fiscalYearId)
+  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
+    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  return prisma.journalEntry.delete({ where: { id: entryId } })
 }
 
 export async function getBalanceByFiscalYear(companyId: string, fiscalYearId: string) {
