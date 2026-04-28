@@ -15,32 +15,28 @@ import { cn } from '@/shared/utils/cn'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
+export function fmt(n: number) {
   return n.toLocaleString('fr-FR') + ' F CFA'
 }
 
-function fmtDate(d: string | Date) {
+export function fmtDate(d: string | Date) {
   return new Date(d).toLocaleDateString('fr-FR')
 }
 
-function calcCumulAmort(asset: Asset, upToYear: number): number {
+export function calcCumulAmort(asset: Asset, upToYear: number): number {
   return asset.depreciations
     .filter(d => d.year <= upToYear)
     .reduce((s, d) => s + Number(d.depreciationAmt), 0)
 }
 
-// ── Sub-tab type ──────────────────────────────────────────────────────────────
-
-type SubTab = 'dashboard' | 'registre' | 'amortissements'
-
 // ── Status badge ──────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: AssetStatus }) {
+export function StatusBadge({ status }: { status: AssetStatus }) {
   const map: Record<AssetStatus, { label: string; cls: string }> = {
-    IN_SERVICE:  { label: 'En service',  cls: 'bg-green-100 text-green-700'  },
-    DISPOSED:    { label: 'Cédé',        cls: 'bg-gray-100 text-gray-500'    },
-    SCRAPPED:    { label: 'Mis au rebut',cls: 'bg-red-100 text-red-700'      },
-    IN_PROGRESS: { label: 'En cours',    cls: 'bg-amber-100 text-amber-700'  },
+    IN_SERVICE:  { label: 'En service',   cls: 'bg-green-100 text-green-700'  },
+    DISPOSED:    { label: 'Cédé',         cls: 'bg-gray-100 text-gray-500'    },
+    SCRAPPED:    { label: 'Mis au rebut', cls: 'bg-red-100 text-red-700'      },
+    IN_PROGRESS: { label: 'En cours',     cls: 'bg-amber-100 text-amber-700'  },
   }
   const { label, cls } = map[status]
   return (
@@ -64,10 +60,10 @@ function KpiCard({ label, value, sub }: { label: string; value: string; sub?: st
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
 
-function Spinner() {
+export function Spinner() {
   return (
     <div className="flex items-center justify-center py-16">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+      <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#1b4332]/20 border-t-[#1b4332]" />
     </div>
   )
 }
@@ -81,7 +77,7 @@ interface AssetFormProps {
   loading: boolean
 }
 
-function AssetForm({ initial, onClose, onSubmit, loading }: AssetFormProps) {
+export function AssetForm({ initial, onClose, onSubmit, loading }: AssetFormProps) {
   const [form, setForm] = useState<AssetInput>({
     designation:      initial?.designation      ?? '',
     accountNumber:    initial?.accountNumber    ?? '',
@@ -111,7 +107,7 @@ function AssetForm({ initial, onClose, onSubmit, loading }: AssetFormProps) {
     await onSubmit(form)
   }
 
-  const inp = 'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/30'
+  const inp = 'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1b4332]/20'
   const lbl = 'block text-xs font-medium text-gray-700 mb-1'
 
   return (
@@ -225,7 +221,7 @@ function AssetForm({ initial, onClose, onSubmit, loading }: AssetFormProps) {
               Annuler
             </button>
             <button type="submit" disabled={loading}
-              className="flex-1 h-9 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60 transition-colors">
+              className="flex-1 h-9 rounded-lg bg-[#1b4332] text-white text-sm font-medium hover:bg-[#1b4332]/90 disabled:opacity-60 transition-colors">
               {loading ? 'Enregistrement…' : (initial ? 'Modifier' : 'Ajouter')}
             </button>
           </div>
@@ -237,7 +233,7 @@ function AssetForm({ initial, onClose, onSubmit, loading }: AssetFormProps) {
 
 // ── Schedule modal ────────────────────────────────────────────────────────────
 
-function ScheduleModal({ assetId, onClose }: { assetId: string; onClose: () => void }) {
+export function ScheduleModal({ assetId, onClose }: { assetId: string; onClose: () => void }) {
   const { data, isLoading } = useAssetSchedule(assetId)
 
   return (
@@ -304,9 +300,10 @@ function ScheduleModal({ assetId, onClose }: { assetId: string; onClose: () => v
   )
 }
 
-// ── Tab: Tableau de bord ──────────────────────────────────────────────────────
+// ── PAGE: Vue d'ensemble (index) ──────────────────────────────────────────────
 
-function DashboardTab({ year }: { year: number }) {
+export function ImmobilisationsPage() {
+  const { selectedYear: year } = useFiscalYear()
   const { data, isLoading, error } = useAssetSummary(year)
 
   if (isLoading) return <Spinner />
@@ -316,7 +313,14 @@ function DashboardTab({ year }: { year: number }) {
   const maxBrut = Math.max(...data.byCategory.map(c => c.brut), 1)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">Immobilisations</h1>
+        <p className="mt-0.5 text-sm text-gray-500">
+          Registre des immobilisations et amortissements — exercice {year}
+        </p>
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
@@ -341,11 +345,18 @@ function DashboardTab({ year }: { year: number }) {
         />
       </div>
 
-      {/* Category breakdown */}
+      {/* Répartition par catégorie */}
       <div className="rounded-xl border border-gray-100 bg-white p-6 shadow-sm">
         <h3 className="text-sm font-semibold text-gray-900 mb-4">Répartition par catégorie</h3>
         {data.byCategory.length === 0 ? (
-          <p className="text-sm text-gray-400">Aucune immobilisation enregistrée.</p>
+          <div className="flex flex-col items-center gap-3 py-12 text-gray-400">
+            <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            <p className="text-sm">Aucune immobilisation enregistrée.</p>
+            <p className="text-xs">Utilisez l'onglet <strong>Registre</strong> pour en ajouter.</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -362,13 +373,13 @@ function DashboardTab({ year }: { year: number }) {
                 {data.byCategory.map(cat => (
                   <tr key={cat.category} className="border-b border-gray-50">
                     <td className="py-3 font-medium text-gray-900">{cat.category}</td>
-                    <td className="py-3 text-right text-gray-700">{fmt(cat.brut)}</td>
-                    <td className="py-3 text-right text-gray-500">{fmt(cat.amort)}</td>
-                    <td className="py-3 text-right font-semibold text-gray-900">{fmt(cat.net)}</td>
+                    <td className="py-3 text-right text-gray-700 tabular-nums">{fmt(cat.brut)}</td>
+                    <td className="py-3 text-right text-gray-500 tabular-nums">{fmt(cat.amort)}</td>
+                    <td className="py-3 text-right font-semibold text-gray-900 tabular-nums">{fmt(cat.net)}</td>
                     <td className="py-3 pl-4 w-40">
                       <div className="h-2 w-full rounded-full bg-gray-100">
                         <div
-                          className="h-2 rounded-full bg-blue-500"
+                          className="h-2 rounded-full bg-[#1b4332]"
                           style={{ width: `${Math.round((cat.brut / maxBrut) * 100)}%` }}
                         />
                       </div>
@@ -376,6 +387,15 @@ function DashboardTab({ year }: { year: number }) {
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
+                  <td className="py-3 text-gray-900">Total</td>
+                  <td className="py-3 text-right text-gray-900 tabular-nums">{fmt(data.grossTotal)}</td>
+                  <td className="py-3 text-right text-gray-500 tabular-nums">{fmt(data.cumulAmort)}</td>
+                  <td className="py-3 text-right text-gray-900 tabular-nums">{fmt(data.netValue)}</td>
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
@@ -384,17 +404,18 @@ function DashboardTab({ year }: { year: number }) {
   )
 }
 
-// ── Tab: Registre ─────────────────────────────────────────────────────────────
+// ── PAGE: Registre ────────────────────────────────────────────────────────────
 
 const CAT_FILTERS: { label: string; value: AssetCategory | undefined }[] = [
-  { label: 'Toutes',        value: undefined     },
-  { label: 'Corporelles',   value: 'CORPOREL'    },
-  { label: 'Incorporelles', value: 'INCORPOREL'  },
-  { label: 'Financières',   value: 'FINANCIER'   },
-  { label: 'En cours',      value: 'EN_COURS'    },
+  { label: 'Toutes',        value: undefined    },
+  { label: 'Corporelles',   value: 'CORPOREL'   },
+  { label: 'Incorporelles', value: 'INCORPOREL' },
+  { label: 'Financières',   value: 'FINANCIER'  },
+  { label: 'En cours',      value: 'EN_COURS'   },
 ]
 
-function RegistreTab({ year }: { year: number }) {
+export function ImmobilisationsRegistrePage() {
+  const { selectedYear: year } = useFiscalYear()
   const [catFilter, setCatFilter] = useState<AssetCategory | undefined>(undefined)
   const [showForm, setShowForm]   = useState(false)
   const [editing, setEditing]     = useState<Asset | null>(null)
@@ -424,19 +445,19 @@ function RegistreTab({ year }: { year: number }) {
   if (error)     return <p className="text-sm text-red-600">Erreur lors du chargement.</p>
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1.5">
           {CAT_FILTERS.map(f => (
             <button
               key={f.label}
               onClick={() => setCatFilter(f.value)}
               className={cn(
-                'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                'rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
                 catFilter === f.value
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                  ? 'bg-[#1b4332] text-white'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50',
               )}
             >
               {f.label}
@@ -445,7 +466,7 @@ function RegistreTab({ year }: { year: number }) {
         </div>
         <button
           onClick={() => setShowForm(true)}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white hover:bg-blue-700 transition-colors"
+          className="rounded-lg bg-[#1b4332] px-4 py-2 text-xs font-medium text-white hover:bg-[#1b4332]/90 transition-colors"
         >
           + Ajouter une immobilisation
         </button>
@@ -454,48 +475,63 @@ function RegistreTab({ year }: { year: number }) {
       {/* Table */}
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         {assets.length === 0 ? (
-          <div className="py-16 text-center text-sm text-gray-400">
-            Aucune immobilisation enregistrée.
+          <div className="flex flex-col items-center gap-3 py-16 text-gray-400">
+            <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            <p className="text-sm">Aucune immobilisation enregistrée.</p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="rounded-lg bg-[#1b4332] px-4 py-2 text-xs font-medium text-white hover:bg-[#1b4332]/90 transition-colors"
+            >
+              + Ajouter la première immobilisation
+            </button>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-xs text-gray-500">
-                <th className="px-4 py-3 text-left font-medium">N°</th>
-                <th className="px-4 py-3 text-left font-medium">Désignation</th>
-                <th className="px-4 py-3 text-left font-medium">N° compte</th>
-                <th className="px-4 py-3 text-left font-medium">Date acq.</th>
-                <th className="px-4 py-3 text-right font-medium">Valeur brute</th>
-                <th className="px-4 py-3 text-right font-medium">Taux</th>
-                <th className="px-4 py-3 text-right font-medium">Amort. cumulé</th>
-                <th className="px-4 py-3 text-right font-medium">VNC</th>
-                <th className="px-4 py-3 text-left font-medium">Statut</th>
-                <th className="px-4 py-3 text-center font-medium">Actions</th>
+              <tr className="border-b border-gray-100 bg-gray-50/80 text-xs text-gray-500">
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">N°</th>
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">Désignation</th>
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">N° compte</th>
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">Catégorie</th>
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">Date acq.</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Valeur brute</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Taux</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Amort. cumulé</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">VNC</th>
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">Statut</th>
+                <th className="px-4 py-3 text-center font-semibold uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody>
               {assets.map((a, i) => {
-                const gv     = Number(a.grossValue)
-                const cumul  = calcCumulAmort(a, year)
-                const vnc    = gv - cumul
+                const gv    = Number(a.grossValue)
+                const cumul = calcCumulAmort(a, year)
+                const vnc   = gv - cumul
                 return (
-                  <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                    <td className="px-4 py-3 text-gray-500 text-xs">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{a.designation}</td>
+                  <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
+                    <td className="px-4 py-3 text-gray-400 text-xs tabular-nums">{i + 1}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px]">
+                      <div className="truncate" title={a.designation}>{a.designation}</div>
+                      {a.location && <div className="text-xs text-gray-400 truncate">{a.location}</div>}
+                    </td>
                     <td className="px-4 py-3 text-gray-600 font-mono text-xs">{a.accountNumber}</td>
+                    <td className="px-4 py-3 text-gray-600 text-xs">{a.category}</td>
                     <td className="px-4 py-3 text-gray-600">{fmtDate(a.acquisitionDate)}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{fmt(gv)}</td>
-                    <td className="px-4 py-3 text-right text-gray-600">
+                    <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{fmt(gv)}</td>
+                    <td className="px-4 py-3 text-right text-gray-600 tabular-nums">
                       {(Number(a.depreciationRate) * 100).toFixed(2)}%
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-500">{fmt(Math.round(cumul))}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">{fmt(Math.round(vnc))}</td>
+                    <td className="px-4 py-3 text-right text-gray-500 tabular-nums">{fmt(Math.round(cumul))}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900 tabular-nums">{fmt(Math.round(vnc))}</td>
                     <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center gap-2">
                         <button
                           onClick={() => setEditing(a)}
-                          className="rounded p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                          className="rounded p-1 text-gray-400 hover:text-[#1b4332] hover:bg-[#1b4332]/10 transition-colors"
                           title="Modifier"
                         >
                           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -543,9 +579,10 @@ function RegistreTab({ year }: { year: number }) {
   )
 }
 
-// ── Tab: Amortissements ───────────────────────────────────────────────────────
+// ── PAGE: Amortissements ──────────────────────────────────────────────────────
 
-function AmortissementsTab({ year }: { year: number }) {
+export function ImmobilisationsAmortPage() {
+  const { selectedYear: year } = useFiscalYear()
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const { data: table, isLoading, error } = useDepreciationTable(year)
@@ -563,60 +600,65 @@ function AmortissementsTab({ year }: { year: number }) {
   if (!table)    return null
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Toolbar */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-gray-900">
-          Tableau d'amortissement — exercice {year}
-        </h3>
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Tableau d'amortissement</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Exercice {year} — cliquez sur une ligne pour voir le plan complet</p>
+        </div>
         <button
           onClick={() => void handleGenerate()}
           disabled={generateEntries.isPending}
-          className="rounded-lg bg-green-600 px-4 py-2 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-60 transition-colors"
+          className="rounded-lg bg-[#1b4332] px-4 py-2 text-xs font-medium text-white hover:bg-[#1b4332]/90 disabled:opacity-60 transition-colors"
         >
-          {generateEntries.isPending ? 'Génération…' : 'Générer les écritures'}
+          {generateEntries.isPending ? 'Génération…' : '✦ Générer les écritures'}
         </button>
       </div>
 
       {/* Table */}
       <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
         {table.rows.length === 0 ? (
-          <div className="py-16 text-center text-sm text-gray-400">
-            Aucune immobilisation à amortir pour cet exercice.
+          <div className="flex flex-col items-center gap-3 py-16 text-gray-400">
+            <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 11h.01M12 11h.01M15 11h.01M4 19h16a2 2 0 002-2V7a2 2 0 00-2-2H4a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <p className="text-sm">Aucune immobilisation à amortir pour cet exercice.</p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 text-xs text-gray-500">
-                <th className="px-4 py-3 text-left font-medium">Désignation</th>
-                <th className="px-4 py-3 text-right font-medium">Valeur brute</th>
-                <th className="px-4 py-3 text-right font-medium">Amort. déb. ex.</th>
-                <th className="px-4 py-3 text-right font-medium">Dotation</th>
-                <th className="px-4 py-3 text-right font-medium">Amort. fin ex.</th>
-                <th className="px-4 py-3 text-right font-medium">VNC fin ex.</th>
-                <th className="px-4 py-3 text-center font-medium">Écriture</th>
+              <tr className="border-b border-gray-100 bg-gray-50/80 text-xs text-gray-500">
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">Désignation</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Valeur brute</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Amort. déb. ex.</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Dotation {year}</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Amort. fin ex.</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">VNC fin ex.</th>
+                <th className="px-4 py-3 text-center font-semibold uppercase tracking-wide">Écriture</th>
               </tr>
             </thead>
             <tbody>
               {table.rows.map(row => (
                 <tr
                   key={row.id}
-                  className="border-b border-gray-50 hover:bg-blue-50/30 cursor-pointer"
+                  className="border-b border-gray-50 hover:bg-[#1b4332]/5 cursor-pointer transition-colors"
                   onClick={() => setSelectedId(row.id)}
                 >
                   <td className="px-4 py-3 font-medium text-gray-900">
                     <div>{row.designation}</div>
                     <div className="text-xs text-gray-400 font-mono">{row.accountNumber}</div>
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-700">{fmt(row.grossValue)}</td>
-                  <td className="px-4 py-3 text-right text-gray-500">{fmt(row.openingAmort)}</td>
-                  <td className="px-4 py-3 text-right text-blue-700 font-medium">{fmt(row.dotation)}</td>
-                  <td className="px-4 py-3 text-right text-gray-500">{fmt(row.closingAmort)}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-gray-900">{fmt(row.closingValue)}</td>
+                  <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{fmt(row.grossValue)}</td>
+                  <td className="px-4 py-3 text-right text-gray-500 tabular-nums">{fmt(row.openingAmort)}</td>
+                  <td className="px-4 py-3 text-right text-[#1b4332] font-medium tabular-nums">{fmt(row.dotation)}</td>
+                  <td className="px-4 py-3 text-right text-gray-500 tabular-nums">{fmt(row.closingAmort)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-gray-900 tabular-nums">{fmt(row.closingValue)}</td>
                   <td className="px-4 py-3 text-center">
                     {row.entryGenerated ? (
                       <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                        Générée
+                        ✓ Générée
                       </span>
                     ) : (
                       <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-400">
@@ -627,15 +669,14 @@ function AmortissementsTab({ year }: { year: number }) {
                 </tr>
               ))}
             </tbody>
-            {/* Totals */}
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
                 <td className="px-4 py-3 text-gray-900">Total</td>
-                <td className="px-4 py-3 text-right text-gray-900">{fmt(table.totals.grossValue)}</td>
-                <td className="px-4 py-3 text-right text-gray-500">{fmt(table.totals.openingAmort)}</td>
-                <td className="px-4 py-3 text-right text-blue-700">{fmt(table.totals.dotation)}</td>
-                <td className="px-4 py-3 text-right text-gray-500">{fmt(table.totals.closingAmort)}</td>
-                <td className="px-4 py-3 text-right text-gray-900">{fmt(table.totals.closingValue)}</td>
+                <td className="px-4 py-3 text-right text-gray-900 tabular-nums">{fmt(table.totals.grossValue)}</td>
+                <td className="px-4 py-3 text-right text-gray-500 tabular-nums">{fmt(table.totals.openingAmort)}</td>
+                <td className="px-4 py-3 text-right text-[#1b4332] tabular-nums">{fmt(table.totals.dotation)}</td>
+                <td className="px-4 py-3 text-right text-gray-500 tabular-nums">{fmt(table.totals.closingAmort)}</td>
+                <td className="px-4 py-3 text-right text-gray-900 tabular-nums">{fmt(table.totals.closingValue)}</td>
                 <td />
               </tr>
             </tfoot>
@@ -651,49 +692,71 @@ function AmortissementsTab({ year }: { year: number }) {
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── PAGE: Cessions ────────────────────────────────────────────────────────────
 
-export function ImmobilisationsPage() {
+export function ImmobilisationsCessionsPage() {
   const { selectedYear: year } = useFiscalYear()
-  const [tab, setTab] = useState<SubTab>('dashboard')
+  const { data: assets = [], isLoading } = useAssets({ status: 'DISPOSED' })
 
-  const tabs: { id: SubTab; label: string }[] = [
-    { id: 'dashboard',      label: 'Tableau de bord'  },
-    { id: 'registre',       label: 'Registre'          },
-    { id: 'amortissements', label: 'Amortissements'    },
-  ]
+  if (isLoading) return <Spinner />
+
+  const disposed = assets.filter(a => {
+    if (!a.disposalDate) return false
+    return new Date(a.disposalDate).getFullYear() === year
+  })
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-4 animate-fade-in">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Immobilisations</h1>
-        <p className="mt-0.5 text-sm text-gray-500">
-          Gestion du registre des immobilisations et des amortissements — exercice {year}
-        </p>
+        <h2 className="text-base font-semibold text-gray-900">Cessions d'immobilisations</h2>
+        <p className="text-xs text-gray-500 mt-0.5">Exercice {year}</p>
       </div>
 
-      {/* Sub-tab bar */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
-              tab === t.id
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-x-auto">
+        {disposed.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-16 text-gray-400">
+            <svg className="h-10 w-10 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            <p className="text-sm">Aucune cession enregistrée pour l'exercice {year}.</p>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/80 text-xs text-gray-500">
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">Désignation</th>
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">N° compte</th>
+                <th className="px-4 py-3 text-left font-semibold uppercase tracking-wide">Date cession</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Valeur brute</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Amort. cumulés</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">VNC cession</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Prix cession</th>
+                <th className="px-4 py-3 text-right font-semibold uppercase tracking-wide">Plus/Moins-value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {disposed.map(a => {
+                const gv         = Number(a.grossValue)
+                const cumul      = calcCumulAmort(a, year)
+                const vnc        = gv - cumul
+                return (
+                  <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-900">{a.designation}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{a.accountNumber}</td>
+                    <td className="px-4 py-3 text-gray-600">{a.disposalDate ? fmtDate(a.disposalDate) : '—'}</td>
+                    <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{fmt(gv)}</td>
+                    <td className="px-4 py-3 text-right text-gray-500 tabular-nums">{fmt(Math.round(cumul))}</td>
+                    <td className="px-4 py-3 text-right text-gray-700 tabular-nums">{fmt(Math.round(vnc))}</td>
+                    <td className="px-4 py-3 text-right text-gray-400 tabular-nums">—</td>
+                    <td className="px-4 py-3 text-right text-gray-400 tabular-nums">—</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
-
-      {/* Tab content */}
-      {tab === 'dashboard'      && <DashboardTab      year={year} />}
-      {tab === 'registre'       && <RegistreTab       year={year} />}
-      {tab === 'amortissements' && <AmortissementsTab year={year} />}
     </div>
   )
 }

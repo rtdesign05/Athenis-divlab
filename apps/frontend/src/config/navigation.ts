@@ -25,17 +25,6 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    module: 'rh',
-    label: 'Ressources humaines',
-    items: [
-      { label: 'Vue d\'ensemble', path: '/app/hr',            icon: '▦',  end: true },
-      { label: 'Employés',        path: '/app/hr/employes',   icon: '👤' },
-      { label: 'Congés',          path: '/app/hr/conges',     icon: '🏖️' },
-      { label: 'Paie',            path: '/app/hr/paie',       icon: '💶' },
-      { label: 'Planning',        path: '/app/hr/planning',   icon: '📅' },
-    ],
-  },
-  {
     module: 'comptabilite',
     label: 'Comptabilité',
     items: [
@@ -145,7 +134,8 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
     { label: 'Extournes',            to: '/app/accounting/journal/extournes' },
   ],
   '/app/accounting/immobilisations': [
-    { label: 'Registre',             to: '/app/accounting/immobilisations',      end: true },
+    { label: 'Vue d\'ensemble',      to: '/app/accounting/immobilisations',                  end: true },
+    { label: 'Registre',             to: '/app/accounting/immobilisations/registre' },
     { label: 'Amortissements',       to: '/app/accounting/immobilisations/amortissements' },
     { label: 'Cessions',             to: '/app/accounting/immobilisations/cessions' },
   ],
