@@ -25,6 +25,27 @@ export interface Achat {
   reception:   string | null // ISO date or null
 }
 
+// ── Types articles ────────────────────────────────────────────────────────────
+
+export type ArticleCategorie = 'Produit fini' | 'Matière première' | 'Service' | 'Consommable' | 'Équipement'
+export type ArticleUnite     = 'pièce' | 'kg' | 'litre' | 'm²' | 'heure' | 'forfait'
+
+export interface Article {
+  id:           string
+  reference:    string
+  nom:          string
+  categorie:    ArticleCategorie
+  unite:        ArticleUnite
+  prixVenteHT:  number   // XAF HT
+  prixAchatHT:  number   // XAF HT
+  stock:        number
+  stockMin:     number   // seuil alerte rupture
+  agence:       string
+  description:  string
+  actif:        boolean
+  createdAt:    string   // ISO date
+}
+
 // ── Types clients / fournisseurs ──────────────────────────────────────────────
 
 export type ClientType = 'entreprise' | 'particulier'
@@ -304,6 +325,23 @@ const INIT_FACTURES_ACHATS: FactureAchat[] = [
   { id: 'FAA-0001', commande: 'ACH-0014', fournisseur: 'Import Express',      agence: 'Siège',                       date: '2026-04-10', echeance: '2026-05-10', montantHT:   163_556, tva: 19.25, montantTTC:   195_000, statut: 'Annulée' },
 ]
 
+// ── Données canoniques — articles ────────────────────────────────────────────
+
+const INIT_ARTICLES: Article[] = [
+  { id: 'ART-001', reference: 'PF-0011', nom: 'Groupe électrogène 10 kVA',     categorie: 'Produit fini',    unite: 'pièce',   prixVenteHT: 2_800_000, prixAchatHT: 1_900_000, stock: 8,   stockMin: 3,  agence: 'Siège',                       description: 'Groupe électrogène diesel 10 kVA monophasé',        actif: true,  createdAt: '2025-01-10' },
+  { id: 'ART-002', reference: 'PF-0012', nom: 'Pompe submersible 2"',           categorie: 'Produit fini',    unite: 'pièce',   prixVenteHT:   420_000, prixAchatHT:   280_000, stock: 15,  stockMin: 5,  agence: 'Siège',                       description: 'Pompe submersible inox 2 pouces 750W',              actif: true,  createdAt: '2025-01-10' },
+  { id: 'ART-003', reference: 'MP-0021', nom: 'Ciment CPA 42.5 (sac 50 kg)',   categorie: 'Matière première', unite: 'pièce',   prixVenteHT:     7_500, prixAchatHT:     5_800, stock: 500, stockMin: 100, agence: 'Siège',                      description: 'Ciment Portland artificiel 42.5 MPa',               actif: true,  createdAt: '2025-02-01' },
+  { id: 'ART-004', reference: 'MP-0022', nom: 'Fer à béton ø12 (barre 12 m)',  categorie: 'Matière première', unite: 'pièce',   prixVenteHT:    18_000, prixAchatHT:    13_500, stock: 200, stockMin: 50,  agence: 'Siège',                      description: 'Barre de fer à béton diamètre 12 mm longueur 12 m', actif: true,  createdAt: '2025-02-01' },
+  { id: 'ART-005', reference: 'SV-0031', nom: 'Maintenance préventive annuelle', categorie: 'Service',        unite: 'forfait', prixVenteHT:   350_000, prixAchatHT:         0, stock: 0,   stockMin: 0,  agence: 'Siège',                       description: 'Contrat maintenance préventive matériel industriel', actif: true,  createdAt: '2025-03-15' },
+  { id: 'ART-006', reference: 'SV-0032', nom: 'Prestation installation électrique', categorie: 'Service',    unite: 'heure',   prixVenteHT:    25_000, prixAchatHT:         0, stock: 0,   stockMin: 0,  agence: 'Siège',                       description: 'Main d\'œuvre installation et câblage électrique',  actif: true,  createdAt: '2025-03-15' },
+  { id: 'ART-007', reference: 'CS-0041', nom: 'Huile moteur 15W40 (bidon 5L)',  categorie: 'Consommable',    unite: 'pièce',   prixVenteHT:    14_000, prixAchatHT:     9_500, stock: 2,   stockMin: 10, agence: 'Agence Douala — Akwa',        description: 'Huile moteur minérale 15W40 bidon 5 litres',        actif: true,  createdAt: '2025-04-01' },
+  { id: 'ART-008', reference: 'CS-0042', nom: 'Filtre à air universel',         categorie: 'Consommable',    unite: 'pièce',   prixVenteHT:     8_500, prixAchatHT:     5_200, stock: 25,  stockMin: 10, agence: 'Agence Douala — Akwa',        description: 'Filtre à air universel pour moteurs thermiques',    actif: true,  createdAt: '2025-04-01' },
+  { id: 'ART-009', reference: 'EQ-0051', nom: 'Chariot élévateur 2T',           categorie: 'Équipement',     unite: 'pièce',   prixVenteHT: 8_500_000, prixAchatHT: 6_200_000, stock: 2,   stockMin: 1,  agence: 'Agence Douala — Akwa',        description: 'Chariot élévateur électrique 2 tonnes 4,5 m',      actif: true,  createdAt: '2025-05-20' },
+  { id: 'ART-010', reference: 'CS-0043', nom: 'Câble électrique H07V-K 2.5mm²', categorie: 'Consommable',   unite: 'm²',      prixVenteHT:       650, prixAchatHT:       420, stock: 0,   stockMin: 50, agence: 'Succursale Yaoundé — Centre', description: 'Câble souple cuivre 2.5mm² gaine rouge',            actif: true,  createdAt: '2025-06-10' },
+  { id: 'ART-011', reference: 'MP-0023', nom: 'Sable de rivière (m³)',          categorie: 'Matière première', unite: 'm²',    prixVenteHT:    22_000, prixAchatHT:    14_000, stock: 80,  stockMin: 20, agence: 'Succursale Yaoundé — Centre', description: 'Sable de rivière lavé pour béton et maçonnerie',    actif: true,  createdAt: '2025-07-01' },
+  { id: 'ART-012', reference: 'PF-0013', nom: 'Climatiseur split 12 000 BTU',   categorie: 'Produit fini',    unite: 'pièce',  prixVenteHT:   480_000, prixAchatHT:   320_000, stock: 6,   stockMin: 2,  agence: 'Succursale Yaoundé — Centre', description: 'Climatiseur inverter 12 000 BTU R32',               actif: false, createdAt: '2025-08-15' },
+]
+
 const INIT_BONS_RECEPTION: BonReception[] = [
   { id: 'BR-0010', commande: 'ACH-0034', fournisseur: 'Import Express',      agence: 'Siège',                       dateCreation: '2026-04-22', datePrevue: '2026-04-25', dateReception: '2026-04-25', statut: 'Reçu' },
   { id: 'BR-0009', commande: 'ACH-0031', fournisseur: 'Manutention Pro',     agence: 'Succursale Yaoundé — Centre', dateCreation: '2026-04-20', datePrevue: '2026-04-22', dateReception: '2026-04-22', statut: 'Reçu' },
@@ -324,11 +362,15 @@ interface GestionContextValue {
   achats:         Achat[]
   clients:        Client[]
   fournisseurs:   Fournisseur[]
+  articles:       Article[]
   facturesVentes: FactureVente[]
   bonsLivraison:  BonLivraison[]
   retoursClients: RetourClient[]
   facturesAchats: FactureAchat[]
   bonsReception:  BonReception[]
+  addArticle(a: Omit<Article, 'id' | 'createdAt'>): Article
+  updateArticle(id: string, patch: Partial<Omit<Article, 'id' | 'createdAt'>>): void
+  deleteArticle(id: string): void
   addCommande(c: Omit<Commande, 'id'>): Commande
   addAchat(a: Omit<Achat, 'id'>): Achat
   addClient(c: Omit<Client, 'id' | 'createdAt'>): Client
@@ -355,11 +397,28 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   const [achats,         setAchats]         = useState<Achat[]>(INIT_ACHATS)
   const [clients,        setClients]        = useState<Client[]>(INIT_CLIENTS)
   const [fournisseurs,   setFournisseurs]   = useState<Fournisseur[]>(INIT_FOURNISSEURS)
+  const [articles,       setArticles]       = useState<Article[]>(INIT_ARTICLES)
   const [facturesVentes, setFacturesVentes] = useState<FactureVente[]>(INIT_FACTURES_VENTES)
   const [bonsLivraison,  setBonsLivraison]  = useState<BonLivraison[]>(INIT_BONS_LIVRAISON)
   const [retoursClients, setRetoursClients] = useState<RetourClient[]>(INIT_RETOURS_CLIENTS)
   const [facturesAchats, setFacturesAchats] = useState<FactureAchat[]>(INIT_FACTURES_ACHATS)
   const [bonsReception,  setBonsReception]  = useState<BonReception[]>(INIT_BONS_RECEPTION)
+
+  function addArticle(a: Omit<Article, 'id' | 'createdAt'>): Article {
+    const num  = articles.length + 1
+    const id   = `ART-${String(num).padStart(3, '0')}`
+    const next: Article = { id, ...a, createdAt: new Date().toISOString().slice(0, 10) }
+    setArticles(prev => [next, ...prev])
+    return next
+  }
+
+  function updateArticle(id: string, patch: Partial<Omit<Article, 'id' | 'createdAt'>>) {
+    setArticles(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
+  }
+
+  function deleteArticle(id: string) {
+    setArticles(prev => prev.filter(a => a.id !== id))
+  }
 
   function addCommande(c: Omit<Commande, 'id'>): Commande {
     const last = commandes[0]?.id ?? 'CMD-0000'
@@ -441,8 +500,9 @@ export function GestionProvider({ children }: { children: ReactNode }) {
 
   return (
     <GestionContext.Provider value={{
-      commandes, achats, clients, fournisseurs,
+      commandes, achats, clients, fournisseurs, articles,
       facturesVentes, bonsLivraison, retoursClients, facturesAchats, bonsReception,
+      addArticle, updateArticle, deleteArticle,
       addCommande, addAchat,
       addClient, updateClient, deleteClient,
       addFournisseur, updateFournisseur, deleteFournisseur,

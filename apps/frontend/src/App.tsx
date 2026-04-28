@@ -66,6 +66,7 @@ const router = createBrowserRouter([
             children: [
               { index: true,           lazy: lz(() => import('@/pages/app/gestion/VentesPage'),         'VentesPage') },
               { path: 'factures',      lazy: lz(() => import('@/pages/app/gestion/FacturesVentesPage'), 'FacturesVentesPage') },
+              { path: 'articles',      lazy: lz(() => import('@/pages/app/gestion/ArticlesPage'),       'ArticlesPage') },
               { path: 'clients',       lazy: lz(() => import('@/pages/app/gestion/ClientsPage'),        'ClientsPage') },
               { path: 'livraisons',    lazy: lz(() => import('@/pages/app/gestion/BonsLivraisonPage'),  'BonsLivraisonPage') },
               { path: 'retours',       lazy: lz(() => import('@/pages/app/gestion/RetoursClientsPage'), 'RetoursClientsPage') },
@@ -76,6 +77,7 @@ const router = createBrowserRouter([
             children: [
               { index: true,           lazy: lz(() => import('@/pages/app/gestion/AchatsPage'),         'AchatsPage') },
               { path: 'factures',      lazy: lz(() => import('@/pages/app/gestion/FacturesAchatsPage'), 'FacturesAchatsPage') },
+              { path: 'articles',      lazy: lz(() => import('@/pages/app/gestion/ArticlesPage'),       'ArticlesPage') },
               { path: 'receptions',    lazy: lz(() => import('@/pages/app/gestion/BonsReceptionPage'),  'BonsReceptionPage') },
               { path: 'fournisseurs',  lazy: lz(() => import('@/pages/app/gestion/FournisseursPage'),   'FournisseursPage') },
             ],
