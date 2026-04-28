@@ -149,11 +149,8 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
     { label: 'Amortissements',       to: '/app/accounting/immobilisations/amortissements' },
     { label: 'Cessions',             to: '/app/accounting/immobilisations/cessions' },
   ],
-  '/app/accounting/etats-financiers': [
-    { label: 'Bilan',                to: '/app/accounting/etats-financiers',     end: true },
-    { label: 'Compte de résultat',   to: '/app/accounting/etats-financiers/resultat' },
-    { label: 'Flux de trésorerie',   to: '/app/accounting/etats-financiers/flux' },
-  ],
+  // Note: /app/accounting/etats-financiers n'a pas de CONTEXTUAL_TABS car la page
+  // gère elle-même ses onglets (Bilan, CR, TAFIRE…) en fonction de la zone comptable.
 
   // ── RH ────────────────────────────────────────────────────────────────────
   '/app/hr/employes': [
