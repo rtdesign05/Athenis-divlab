@@ -134,7 +134,7 @@ function CompanyHeader({ S: s, fs, zoneLabel, refText }: { S: S; fs: FinancialSt
 
 // ── OHADA — SYSCOHADA révisé ──────────────────────────────────────────────────
 
-function OhadaDoc({ fs }: { fs: FinancialStatements }) {
+function OhadaDoc({ fs, tab }: { fs: FinancialStatements; tab?: string | undefined }) {
   const s  = makeStyles(C.ohada)
   const a  = fs.bilan?.actif  as Record<string, FSPair> | undefined
   const p  = fs.bilan?.passif as Record<string, FSPair> | undefined
@@ -209,46 +209,71 @@ function OhadaDoc({ fs }: { fs: FinancialStatements }) {
     { label: 'VARIATION NETTE DE TRÉSORERIE',           values: tf['variationTresorerie'], total: true },
   ] : []
 
+  const cpRows: RowDef[] = p ? [
+    { label: "Capitaux propres à l'ouverture", values: { n: p['totalCapitauxPropres']?.nm1 ?? 0, nm1: 0 } },
+    { label: "Résultat net de l'exercice",      values: res ?? { n: 0, nm1: 0 }, indent: 1 },
+    { label: 'Dividendes distribués',           values: { n: 0, nm1: 0 }, indent: 1 },
+    { label: 'Autres variations',               values: { n: 0, nm1: 0 }, indent: 1 },
+    { label: 'Capitaux propres à la clôture',   values: p['totalCapitauxPropres'], bold: true },
+  ] : []
+
+  // ── Visibilité par onglet ─────────────────────────────────────────────────
+  const all    = !tab
+  const showB  = all || tab === 'bilan'
+  const showCR = all || tab === 'cr'
+  const showTF = all || tab === 'tafire'
+  const showN  = all || tab === 'notes'
+  const showCP = all || tab === 'cp'
+
+  const TAB_LABELS: Record<string, string> = {
+    bilan: 'Bilan', cr: 'Compte de résultat', tafire: 'TAFIRE',
+    notes: 'Notes annexes', cp: 'Variation CP',
+  }
+  const tabLabel = tab ? (TAB_LABELS[tab] ?? tab) : undefined
+
   return (
     <Document>
       <Page size="A4" style={s.page} wrap>
         <CompanyHeader S={s} fs={fs}
-          zoneLabel="ÉTATS FINANCIERS SYSCOHADA — Acte Uniforme OHADA (révisé 2017)"
+          zoneLabel={`ÉTATS FINANCIERS SYSCOHADA${tabLabel ? ` — ${tabLabel}` : ''} — Acte Uniforme OHADA (révisé 2017)`}
           refText="Établi conformément au Système Comptable OHADA — SYSCOHADA révisé | Acte Uniforme relatif au Droit Comptable et à l'Information Financière"
         />
 
-        {/* Bilan côte à côte */}
-        {(a || p) && (
-          <View style={s.grid2}>
-            {a && <View style={s.col}><TableBlock S={s} title="BILAN — ACTIF" rows={bilanRows} year={fs.year} prevYear={fs.prevYear} /></View>}
-            {p && <View style={s.col}><TableBlock S={s} title="BILAN — PASSIF" rows={passifRows} year={fs.year} prevYear={fs.prevYear} /></View>}
-          </View>
-        )}
+        {/* Bilan : Actif pleine largeur, puis Passif pleine largeur */}
+        {showB && a && <TableBlock S={s} title="BILAN — ACTIF" rows={bilanRows} year={fs.year} prevYear={fs.prevYear} />}
+        {showB && p && <TableBlock S={s} title="BILAN — PASSIF" rows={passifRows} year={fs.year} prevYear={fs.prevYear} />}
 
         {/* Compte de résultat */}
-        {crRows.length > 0 && (
+        {showCR && crRows.length > 0 && (
           <TableBlock S={s} title="COMPTE DE RÉSULTAT — PRÉSENTATION FONCTIONNELLE" rows={crRows} year={fs.year} prevYear={fs.prevYear} showVar />
         )}
 
         {/* TAFIRE */}
-        {tafireRows.length > 0 && (
+        {showTF && tafireRows.length > 0 && (
           <TableBlock S={s} title="TAFIRE — Tableau de Financement par les Ressources" rows={tafireRows} year={fs.year} prevYear={fs.prevYear} />
         )}
 
-        {/* Note légale OHADA */}
-        <View style={s.note}>
-          <Text style={{ fontFamily: 'Helvetica-Bold', marginBottom: 2 }}>Notes annexes requises (SYSCOHADA) :</Text>
-          {[
-            'Note 1 — Règles et méthodes comptables applicables',
-            'Note 2 — Tableau des immobilisations et amortissements (réf. AI)',
-            'Note 3 — État des provisions pour risques et charges',
-            'Note 4 — Tableau des créances et dettes (réf. BB/DB)',
-            'Note 5 — Charges à payer et produits à recevoir',
-            'Note 6 — Effectifs et charges de personnel',
-            'Note 7 — Engagements hors bilan (cautions, avals)',
-            'Note 8 — Tableau de passage du résultat à la CAF',
-          ].map(n => <Text key={n} style={{ marginTop: 1 }}>• {n}</Text>)}
-        </View>
+        {/* Variation des capitaux propres */}
+        {showCP && cpRows.length > 0 && (
+          <TableBlock S={s} title="ÉTAT DE VARIATION DES CAPITAUX PROPRES" rows={cpRows} year={fs.year} prevYear={fs.prevYear} />
+        )}
+
+        {/* Notes annexes */}
+        {showN && (
+          <View style={s.note}>
+            <Text style={{ fontFamily: 'Helvetica-Bold', marginBottom: 2 }}>Notes annexes requises (SYSCOHADA) :</Text>
+            {[
+              'Note 1 — Règles et méthodes comptables applicables',
+              'Note 2 — Tableau des immobilisations et amortissements (réf. AI)',
+              'Note 3 — État des provisions pour risques et charges',
+              'Note 4 — Tableau des créances et dettes (réf. BB/DB)',
+              'Note 5 — Charges à payer et produits à recevoir',
+              'Note 6 — Effectifs et charges de personnel',
+              'Note 7 — Engagements hors bilan (cautions, avals)',
+              'Note 8 — Tableau de passage du résultat à la CAF',
+            ].map(n => <Text key={n} style={{ marginTop: 1 }}>• {n}</Text>)}
+          </View>
+        )}
 
         <Text style={s.legalMention}>
           Document établi conformément à l'Acte Uniforme de l'OHADA relatif au Droit Comptable et à l'Information Financière (AUDCIF).
@@ -257,7 +282,7 @@ function OhadaDoc({ fs }: { fs: FinancialStatements }) {
         </Text>
 
         <Text style={s.footer} render={({ pageNumber, totalPages }) =>
-          `SYSCOHADA — États financiers ${fs.year} — Page ${pageNumber}/${totalPages} — Généré le ${new Date().toLocaleString('fr-FR')}`
+          `SYSCOHADA — États financiers ${fs.year}${tabLabel ? ` — ${tabLabel}` : ''} — Page ${pageNumber}/${totalPages} — Généré le ${new Date().toLocaleString('fr-FR')}`
         } fixed />
       </Page>
     </Document>
@@ -266,7 +291,7 @@ function OhadaDoc({ fs }: { fs: FinancialStatements }) {
 
 // ── France — Plan Comptable Général ──────────────────────────────────────────
 
-function FranceDoc({ fs }: { fs: FinancialStatements }) {
+function FranceDoc({ fs, tab }: { fs: FinancialStatements; tab?: string | undefined }) {
   const s  = makeStyles(C.pcg)
   const a  = fs.bilan?.actif  as Record<string, FSPair> | undefined
   const p  = fs.bilan?.passif as Record<string, FSPair> | undefined
@@ -330,6 +355,13 @@ function FranceDoc({ fs }: { fs: FinancialStatements }) {
 
   const net = res?.n ?? 0
 
+  // ── Visibilité par onglet (France PCG) ───────────────────────────────────
+  const all     = !tab
+  const showB   = all || tab === 'bilan'
+  const showCR  = all || tab === 'cr'
+  const showAff = all || tab === 'affec'
+  const showAnn = all || tab === 'annexe'
+
   const affectRows: RowDef[] = [
     { label: 'ORIGINE', section: true },
     { label: 'Résultat net de l\'exercice',         values: { n: net, nm1: res?.nm1 ?? 0 }, indent: 1 },
@@ -342,45 +374,58 @@ function FranceDoc({ fs }: { fs: FinancialStatements }) {
     { label: 'Report à nouveau',                    values: { n: net > 0 ? +(net * 0.95).toFixed(0) : net, nm1: 0 }, indent: 1 },
   ]
 
+  const TAB_LABELS_FR: Record<string, string> = {
+    bilan: 'Bilan', cr: 'Compte de résultat', affec: 'Affectation',
+    annexe: 'Annexe', rapport: 'Rapport de gestion',
+  }
+  const tabLabel = tab ? (TAB_LABELS_FR[tab] ?? tab) : undefined
+
   return (
     <Document>
       <Page size="A4" style={s.page} wrap>
         <CompanyHeader S={s} fs={fs}
-          zoneLabel="ÉTATS FINANCIERS — Plan Comptable Général (PCG)"
+          zoneLabel={`ÉTATS FINANCIERS — Plan Comptable Général (PCG)${tabLabel ? ` — ${tabLabel}` : ''}`}
           refText="Établi conformément au Règlement ANC n° 2014-03 relatif au PCG | Arrêté au 31 décembre — Comparatif N / N-1"
         />
 
-        {/* Bilan */}
-        {(a || p) && (
-          <View style={s.grid2}>
-            {a && <View style={s.col}><TableBlock S={s} title="BILAN — ACTIF (Cerfa 2050)" rows={actifRows} year={fs.year} prevYear={fs.prevYear} /></View>}
-            {p && <View style={s.col}><TableBlock S={s} title="BILAN — PASSIF (Cerfa 2050)" rows={passifRows} year={fs.year} prevYear={fs.prevYear} /></View>}
-          </View>
+        {/* Bilan : Actif côte à côte Passif (doc complet) ou séquentiels (onglet bilan) */}
+        {showB && (a || p) && (
+          all
+            ? <View style={s.grid2}>
+                {a && <View style={s.col}><TableBlock S={s} title="BILAN — ACTIF (Cerfa 2050)" rows={actifRows} year={fs.year} prevYear={fs.prevYear} /></View>}
+                {p && <View style={s.col}><TableBlock S={s} title="BILAN — PASSIF (Cerfa 2050)" rows={passifRows} year={fs.year} prevYear={fs.prevYear} /></View>}
+              </View>
+            : <View>
+                {a && <TableBlock S={s} title="BILAN — ACTIF (Cerfa 2050)" rows={actifRows} year={fs.year} prevYear={fs.prevYear} />}
+                {p && <TableBlock S={s} title="BILAN — PASSIF (Cerfa 2050)" rows={passifRows} year={fs.year} prevYear={fs.prevYear} />}
+              </View>
         )}
-      </Page>
 
-      <Page size="A4" style={s.page} wrap>
         {/* Compte de résultat */}
-        {crRows.length > 0 && (
+        {showCR && crRows.length > 0 && (
           <TableBlock S={s} title="COMPTE DE RÉSULTAT (Cerfa 2052 / 2053)" rows={crRows} year={fs.year} prevYear={fs.prevYear} showVar />
         )}
 
-        {/* Affectation */}
-        <TableBlock S={s} title="AFFECTATION DU RÉSULTAT" rows={affectRows} year={fs.year} prevYear={fs.prevYear} />
+        {/* Affectation du résultat */}
+        {showAff && (
+          <TableBlock S={s} title="AFFECTATION DU RÉSULTAT" rows={affectRows} year={fs.year} prevYear={fs.prevYear} />
+        )}
 
-        {/* Note légale PCG */}
-        <View style={s.note}>
-          <Text style={{ fontFamily: 'Helvetica-Bold', marginBottom: 2 }}>Annexe et éléments complémentaires (art. L. 123-14 C. com.) :</Text>
-          {[
-            'Méthodes comptables et principes retenus (continuité d\'exploitation, coûts historiques)',
-            'Tableau des immobilisations et amortissements (art. R. 123-200)',
-            'État des provisions (dotations, reprises)',
-            'Tableau des créances et dettes par échéance',
-            'Tableau des engagements hors bilan (art. L. 233-23)',
-            'Informations relatives aux parties liées (IAS 24 si applicable)',
-            'Événements postérieurs à la clôture (art. L. 232-1)',
-          ].map(n => <Text key={n} style={{ marginTop: 1 }}>• {n}</Text>)}
-        </View>
+        {/* Annexe */}
+        {showAnn && (
+          <View style={s.note}>
+            <Text style={{ fontFamily: 'Helvetica-Bold', marginBottom: 2 }}>Annexe et éléments complémentaires (art. L. 123-14 C. com.) :</Text>
+            {[
+              'Méthodes comptables et principes retenus (continuité d\'exploitation, coûts historiques)',
+              'Tableau des immobilisations et amortissements (art. R. 123-200)',
+              'État des provisions (dotations, reprises)',
+              'Tableau des créances et dettes par échéance',
+              'Tableau des engagements hors bilan (art. L. 233-23)',
+              'Informations relatives aux parties liées (IAS 24 si applicable)',
+              'Événements postérieurs à la clôture (art. L. 232-1)',
+            ].map(n => <Text key={n} style={{ marginTop: 1 }}>• {n}</Text>)}
+          </View>
+        )}
 
         <Text style={s.legalMention}>
           Les présents états financiers ont été établis conformément aux dispositions du Code de commerce (art. L. 123-12 à L. 123-28)
@@ -388,7 +433,7 @@ function FranceDoc({ fs }: { fs: FinancialStatements }) {
         </Text>
 
         <Text style={s.footer} render={({ pageNumber, totalPages }) =>
-          `PCG France — États financiers ${fs.year} — Page ${pageNumber}/${totalPages} — Généré le ${new Date().toLocaleString('fr-FR')}`
+          `PCG France — États financiers ${fs.year}${tabLabel ? ` — ${tabLabel}` : ''} — Page ${pageNumber}/${totalPages} — Généré le ${new Date().toLocaleString('fr-FR')}`
         } fixed />
       </Page>
     </Document>
@@ -397,7 +442,7 @@ function FranceDoc({ fs }: { fs: FinancialStatements }) {
 
 // ── IFRS ──────────────────────────────────────────────────────────────────────
 
-function IfrsDoc({ fs }: { fs: FinancialStatements }) {
+function IfrsDoc({ fs, tab }: { fs: FinancialStatements; tab?: string | undefined }) {
   const s   = makeStyles(C.ifrs)
   const as_ = fs.statementOfFinancialPosition?.assets              as Record<string, FSPair> | undefined
   const eq  = fs.statementOfFinancialPosition?.equityAndLiabilities as Record<string, FSPair> | undefined
@@ -470,38 +515,57 @@ function IfrsDoc({ fs }: { fs: FinancialStatements }) {
     { label: 'EQUITY AT END OF PERIOD',             values: ce['closingEquity'],             total: true },
   ] : []
 
+  // ── Visibilité par onglet (IFRS) ──────────────────────────────────────────
+  const all      = !tab
+  const showSOFP = all || tab === 'sofp'
+  const showPL   = all || tab === 'pl'
+  const showCF   = all || tab === 'cf'
+  const showCE   = all || tab === 'equity'
+  const showN    = all || tab === 'notes'
+
+  const TAB_LABELS_IFRS: Record<string, string> = {
+    sofp: 'Financial Position', pl: 'Profit or Loss',
+    cf: 'Cash Flows', equity: 'Changes in Equity', notes: 'Notes',
+  }
+  const tabLabel = tab ? (TAB_LABELS_IFRS[tab] ?? tab) : undefined
+
   return (
     <Document>
       <Page size="A4" style={s.page} wrap>
         <CompanyHeader S={s} fs={fs}
-          zoneLabel="FINANCIAL STATEMENTS — International Financial Reporting Standards (IFRS)"
+          zoneLabel={`FINANCIAL STATEMENTS — IFRS${tabLabel ? ` — ${tabLabel}` : ''}`}
           refText="Prepared in accordance with IAS 1 (Presentation of Financial Statements) | IASB Standards as adopted"
         />
 
-        <View style={s.grid2}>
-          {as_ && <View style={s.col}><TableBlock S={s} title="STATEMENT OF FINANCIAL POSITION — ASSETS" rows={assetRows} year={fs.year} prevYear={fs.prevYear} /></View>}
-          {eq  && <View style={s.col}><TableBlock S={s} title="EQUITY AND LIABILITIES" rows={eqRows} year={fs.year} prevYear={fs.prevYear} /></View>}
-        </View>
+        {/* SOFP */}
+        {showSOFP && (
+          <View style={s.grid2}>
+            {as_ && <View style={s.col}><TableBlock S={s} title="STATEMENT OF FINANCIAL POSITION — ASSETS" rows={assetRows} year={fs.year} prevYear={fs.prevYear} /></View>}
+            {eq  && <View style={s.col}><TableBlock S={s} title="EQUITY AND LIABILITIES" rows={eqRows} year={fs.year} prevYear={fs.prevYear} /></View>}
+          </View>
+        )}
 
-        {pl && <TableBlock S={s} title="STATEMENT OF PROFIT OR LOSS (IAS 1)" rows={plRows} year={fs.year} prevYear={fs.prevYear} showVar />}
-        {cf && <TableBlock S={s} title="STATEMENT OF CASH FLOWS — indirect method (IAS 7)" rows={cfRows} year={fs.year} prevYear={fs.prevYear} />}
-        {ce && <TableBlock S={s} title="STATEMENT OF CHANGES IN EQUITY" rows={ceRows} year={fs.year} prevYear={fs.prevYear} />}
+        {showPL && pl && <TableBlock S={s} title="STATEMENT OF PROFIT OR LOSS (IAS 1)" rows={plRows} year={fs.year} prevYear={fs.prevYear} showVar />}
+        {showCF && cf && <TableBlock S={s} title="STATEMENT OF CASH FLOWS — indirect method (IAS 7)" rows={cfRows} year={fs.year} prevYear={fs.prevYear} />}
+        {showCE && ce && <TableBlock S={s} title="STATEMENT OF CHANGES IN EQUITY" rows={ceRows} year={fs.year} prevYear={fs.prevYear} />}
 
-        <View style={s.note}>
-          <Text style={{ fontFamily: 'Helvetica-Bold', marginBottom: 2 }}>Required IFRS disclosures (IAS 1 §112):</Text>
-          {[
-            'Note 1 — Basis of preparation and statement of compliance with IFRS',
-            'Note 2 — Significant accounting policies and judgements',
-            'Note 3 — Property, plant and equipment — reconciliation (IAS 16)',
-            'Note 4 — Intangible assets (IAS 38)',
-            'Note 5 — Financial instruments and risk management (IFRS 7 / IFRS 9)',
-            'Note 6 — Employee benefits (IAS 19)',
-            'Note 7 — Income taxes and deferred taxes (IAS 12)',
-            'Note 8 — Related party transactions (IAS 24)',
-            'Note 9 — Contingent liabilities and provisions (IAS 37)',
-            'Note 10 — Events after the reporting period (IAS 10)',
-          ].map(n => <Text key={n} style={{ marginTop: 1 }}>• {n}</Text>)}
-        </View>
+        {showN && (
+          <View style={s.note}>
+            <Text style={{ fontFamily: 'Helvetica-Bold', marginBottom: 2 }}>Required IFRS disclosures (IAS 1 §112):</Text>
+            {[
+              'Note 1 — Basis of preparation and statement of compliance with IFRS',
+              'Note 2 — Significant accounting policies and judgements',
+              'Note 3 — Property, plant and equipment — reconciliation (IAS 16)',
+              'Note 4 — Intangible assets (IAS 38)',
+              'Note 5 — Financial instruments and risk management (IFRS 7 / IFRS 9)',
+              'Note 6 — Employee benefits (IAS 19)',
+              'Note 7 — Income taxes and deferred taxes (IAS 12)',
+              'Note 8 — Related party transactions (IAS 24)',
+              'Note 9 — Contingent liabilities and provisions (IAS 37)',
+              'Note 10 — Events after the reporting period (IAS 10)',
+            ].map(n => <Text key={n} style={{ marginTop: 1 }}>• {n}</Text>)}
+          </View>
+        )}
 
         <Text style={s.legalMention}>
           These financial statements have been prepared in accordance with International Financial Reporting Standards (IFRS)
@@ -509,7 +573,7 @@ function IfrsDoc({ fs }: { fs: FinancialStatements }) {
         </Text>
 
         <Text style={s.footer} render={({ pageNumber, totalPages }) =>
-          `IFRS Financial Statements ${fs.year} — Page ${pageNumber}/${totalPages} — Generated ${new Date().toLocaleString('en-GB')}`
+          `IFRS Financial Statements ${fs.year}${tabLabel ? ` — ${tabLabel}` : ''} — Page ${pageNumber}/${totalPages} — Generated ${new Date().toLocaleString('en-GB')}`
         } fixed />
       </Page>
     </Document>
@@ -518,8 +582,12 @@ function IfrsDoc({ fs }: { fs: FinancialStatements }) {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-export function EtatsFinanciersPdf({ fs }: { fs: FinancialStatements }) {
-  if (fs.zone === 'OHADA')  return <OhadaDoc  fs={fs} />
-  if (fs.zone === 'IFRS')   return <IfrsDoc   fs={fs} />
-  return <FranceDoc fs={fs} />
+/**
+ * @param tab  Clé de l'onglet actif (ex: 'bilan', 'cr', 'tafire'…).
+ *             Si omis, génère le document complet avec toutes les sections.
+ */
+export function EtatsFinanciersPdf({ fs, tab }: { fs: FinancialStatements; tab?: string | undefined }) {
+  if (fs.zone === 'OHADA')  return <OhadaDoc  fs={fs} tab={tab} />
+  if (fs.zone === 'IFRS')   return <IfrsDoc   fs={fs} tab={tab} />
+  return <FranceDoc fs={fs} tab={tab} />
 }

@@ -1,11 +1,10 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
-import { accountingApi, type FSPair, type FinancialStatements, type AccountingZone } from '@/services/accountingApi'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSelectedFiscalYearData, useFiscalYears, useCloseFiscalYear } from '@/hooks/useFiscalYear'
+import { accountingApi, type FSPair, type FinancialStatements, type AccountingZone, type FiscalYear } from '@/services/accountingApi'
 import { settingsApi } from '@/services/settingsApi'
-import { PdfButton } from '@/shared/components/ui/PdfButton'
-import { usePdf } from '@/shared/hooks/usePdf'
+import { FiscalYearSelector } from '@/components/accounting/FiscalYearSelector'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -597,11 +596,174 @@ function Spinner() {
   )
 }
 
+// ── Clôture modal ─────────────────────────────────────────────────────────────
+
+function ClotureModal({
+  fy,
+  nextFY,
+  onClose,
+  onDone,
+}: {
+  fy:      FiscalYear
+  nextFY:  FiscalYear | undefined
+  onClose: () => void
+  onDone:  () => void
+}) {
+  const qc       = useQueryClient()
+  const closeFY  = useCloseFiscalYear()
+  const [step, setStep]     = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [errMsg, setErrMsg] = useState('')
+
+  const { data: balance, isLoading: balanceLoading } = useQuery({
+    queryKey: ['balance-journal', fy.id],
+    queryFn:  () => accountingApi.getBalanceByFiscalYear(fy.id),
+    staleTime: 30_000,
+  })
+
+  const bilanRows = balance?.rows.filter(r => {
+    const cls = r.account.charAt(0)
+    return ['1','2','3','4','5'].includes(cls) &&
+      (r.soldeDebiteur > 0.005 || r.soldeCrediteur > 0.005)
+  }) ?? []
+
+  const handleCloture = useCallback(async () => {
+    if (!balance) return
+    setStep('loading')
+    setErrMsg('')
+    try {
+      // 1. Générer les écritures À NOUVEAUX dans l'exercice N+1
+      if (nextFY && bilanRows.length > 0) {
+        await accountingApi.createJournalEntryBatch({
+          fiscalYearId: nextFY.id,
+          date:         nextFY.startDate.slice(0, 10),
+          journal:      'AN',
+          reference:    `AN-${fy.year}`,
+          lines: bilanRows.map(r => ({
+            compte:  r.account,
+            libelle: `À NOUVEAUX — ${r.label}`,
+            debit:   r.soldeDebiteur  > 0.005 ? r.soldeDebiteur  : 0,
+            credit:  r.soldeCrediteur > 0.005 ? r.soldeCrediteur : 0,
+          })),
+        })
+      }
+      // 2. Clôturer l'exercice
+      await closeFY.mutateAsync(fy.id)
+      // 3. Invalider les caches concernés
+      qc.invalidateQueries({ queryKey: ['fiscal-years'] })
+      qc.invalidateQueries({ queryKey: ['journal'] })
+      qc.invalidateQueries({ queryKey: ['balance-journal'] })
+      qc.invalidateQueries({ queryKey: ['financial-statements'] })
+      setStep('done')
+    } catch (e) {
+      setErrMsg(e instanceof Error ? e.message : 'Erreur lors de la clôture')
+      setStep('error')
+    }
+  }, [balance, nextFY, bilanRows, fy, closeFY, qc])
+
+  const canClose = !balanceLoading && !!balance && balance.equilibre && !!nextFY && step !== 'loading'
+
+  if (step === 'done') {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-xl bg-white shadow-2xl p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl">✅</span>
+            <div>
+              <h3 className="text-base font-semibold text-green-800">Exercice {fy.year} clôturé</h3>
+              {nextFY && (
+                <p className="text-sm text-slate-500 mt-0.5">
+                  {bilanRows.length} écriture(s) À Nouveaux passée(s) dans le journal AN
+                  de l'exercice {nextFY.year} (date\xa0: {nextFY.startDate.slice(0, 10)}).
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button onClick={onDone}
+              className="rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-white hover:bg-[#1b4332]/90">
+              Fermer
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl p-6 space-y-4">
+
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <span className="text-2xl">⚠️</span>
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">Clôturer l'exercice {fy.year}</h3>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Cette opération est <strong>irréversible</strong>. L'exercice passera en statut « Clôturé ».
+            </p>
+          </div>
+        </div>
+
+        {/* Résumé de la balance */}
+        {balanceLoading ? (
+          <div className="h-16 rounded-lg bg-slate-100 animate-pulse" />
+        ) : balance && (
+          <div className="rounded-lg border border-slate-200 p-3 space-y-1 text-sm">
+            <p className="font-medium text-slate-700">
+              Balance au {fy.endDate.slice(0, 10)} :
+            </p>
+            <p className="text-slate-600">
+              {bilanRows.length} compte(s) de bilan à reporter (classes 1–5 avec solde non nul)
+            </p>
+            <p className={`font-semibold ${balance.equilibre ? 'text-green-700' : 'text-red-600'}`}>
+              {balance.equilibre
+                ? '✓ Balance équilibrée — prêt pour la clôture'
+                : '⚠ Balance déséquilibrée — résoudre avant de clôturer'}
+            </p>
+          </div>
+        )}
+
+        {/* Exercice N+1 */}
+        {nextFY ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+            📋 Les <strong>{bilanRows.length} écriture(s) À Nouveaux</strong> seront passées dans
+            le journal <code className="font-mono bg-blue-100 px-1 rounded">AN</code> de
+            l'exercice <strong>{nextFY.year}</strong> à la date du <strong>{nextFY.startDate.slice(0, 10)}</strong>.
+          </div>
+        ) : (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            ⚠️ Aucun exercice {fy.year + 1} trouvé.
+            Les écritures À Nouveaux ne pourront pas être générées automatiquement.
+            Créez l'exercice {fy.year + 1} avant de clôturer.
+          </div>
+        )}
+
+        {step === 'error' && (
+          <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{errMsg}</p>
+        )}
+
+        {/* Actions */}
+        <div className="flex justify-end gap-3 pt-1">
+          <button onClick={onClose} disabled={step === 'loading'}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+            Annuler
+          </button>
+          <button onClick={handleCloture} disabled={!canClose}
+            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 transition-colors">
+            {step === 'loading' ? 'Clôture en cours…' : `Clôturer l'exercice ${fy.year}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function EtatsFinanciersPage() {
-  const [activeTab, setActiveTab] = useState<TabKey>('bilan')
-  const { downloadEtatsFinanciers } = usePdf()
+  const [activeTab,    setActiveTab]    = useState<TabKey>('bilan')
+  const [showCloture,  setShowCloture]  = useState(false)
+  const [downloading,  setDownloading]  = useState(false)
 
   // Preload company settings so the spinner fires while they're in flight.
   const { isLoading: companyLoading } = useQuery({
@@ -611,8 +773,9 @@ export function EtatsFinanciersPage() {
   })
 
   // Fiscal year selection
-  const { isLoading: yearsLoading } = useFiscalYears()
+  const { data: allFY, isLoading: yearsLoading } = useFiscalYears()
   const fyData = useSelectedFiscalYearData()
+  const nextFY = allFY?.find(f => f.year === (fyData?.year ?? 0) + 1)
 
   // Financial statements data
   const { data: fsData, isLoading: fsLoading, isError } = useQuery({
@@ -628,6 +791,33 @@ export function EtatsFinanciersPage() {
   const zone: AccountingZone = fsData?.zone ?? 'FRANCE'
   const tabs = zoneTabs(zone)
   const current = tabs.find((t) => t.key === activeTab) ?? tabs[0]!
+
+  // ── Téléchargement PDF de l'onglet actif uniquement ──────────────────────
+  const handleDownloadPdf = useCallback(async () => {
+    if (!fsData) return
+    setDownloading(true)
+    try {
+      const [{ pdf }, { saveAs }, { EtatsFinanciersPdf: PDFComp }, { default: React }] =
+        await Promise.all([
+          import('@react-pdf/renderer'),
+          import('file-saver'),
+          import('@/features/accounting/pdf/EtatsFinanciersPdf'),
+          import('react'),
+        ])
+      // pdf() attend un ReactElement<DocumentProps> ; le cast est sûr car
+      // EtatsFinanciersPdf retourne toujours un <Document>.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const el   = React.createElement(PDFComp, { fs: fsData, tab: activeTab }) as any
+      const blob = await pdf(el).toBlob()
+      const lbl  = (tabs.find(t => t.key === activeTab)?.label ?? activeTab)
+        .toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-')
+      saveAs(blob, `${lbl}-${fsData.year}.pdf`)
+    } catch (e) {
+      console.error('PDF export error:', e)
+    } finally {
+      setDownloading(false)
+    }
+  }, [fsData, activeTab, tabs])
 
   const pageTitle =
     zone === 'OHADA' ? 'États financiers SYSCOHADA'  :
@@ -681,6 +871,16 @@ export function EtatsFinanciersPage() {
   return (
     <div className="space-y-5">
 
+      {/* Clôture modal */}
+      {showCloture && fyData && fyData.status === 'OPEN' && (
+        <ClotureModal
+          fy={fyData}
+          nextFY={nextFY}
+          onClose={() => setShowCloture(false)}
+          onDone={() => { setShowCloture(false) }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -693,9 +893,40 @@ export function EtatsFinanciersPage() {
               : 'Aucun exercice sélectionné'}
           </p>
         </div>
-        {fsData && (
-          <PdfButton onDownload={() => downloadEtatsFinanciers(fsData)} label="Télécharger PDF" />
-        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Sélecteur d'exercice */}
+          <FiscalYearSelector />
+
+          {/* Bouton clôturer — seulement si exercice ouvert */}
+          {fyData?.status === 'OPEN' && (
+            <button
+              onClick={() => setShowCloture(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+            >
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              Clôturer l'exercice
+            </button>
+          )}
+
+          {/* Télécharger PDF — seulement l'onglet actif */}
+          {fsData && (
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloading}
+              className="flex items-center gap-1.5 rounded-lg bg-[#1b4332] px-3 py-2 text-sm font-medium text-white hover:bg-[#1b4332]/90 disabled:opacity-50 transition-colors"
+            >
+              <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {downloading ? 'Export…' : 'Télécharger PDF'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sub-tabs — shown immediately based on zone, not waiting for data */}
