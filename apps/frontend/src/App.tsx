@@ -64,20 +64,20 @@ const router = createBrowserRouter([
           {
             path: 'ventes',
             children: [
-              { index: true,           lazy: lz(() => import('@/pages/app/gestion/VentesPage'),        'VentesPage') },
-              { path: 'factures',      lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
-              { path: 'clients',       lazy: lz(() => import('@/pages/app/gestion/ClientsPage'),       'ClientsPage') },
-              { path: 'livraisons',    lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
-              { path: 'retours',       lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
+              { index: true,           lazy: lz(() => import('@/pages/app/gestion/VentesPage'),         'VentesPage') },
+              { path: 'factures',      lazy: lz(() => import('@/pages/app/gestion/FacturesVentesPage'), 'FacturesVentesPage') },
+              { path: 'clients',       lazy: lz(() => import('@/pages/app/gestion/ClientsPage'),        'ClientsPage') },
+              { path: 'livraisons',    lazy: lz(() => import('@/pages/app/gestion/BonsLivraisonPage'),  'BonsLivraisonPage') },
+              { path: 'retours',       lazy: lz(() => import('@/pages/app/gestion/RetoursClientsPage'), 'RetoursClientsPage') },
             ],
           },
           {
             path: 'achats',
             children: [
-              { index: true,           lazy: lz(() => import('@/pages/app/gestion/AchatsPage'),        'AchatsPage') },
-              { path: 'factures',      lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
-              { path: 'receptions',    lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
-              { path: 'fournisseurs',  lazy: lz(() => import('@/pages/app/gestion/FournisseursPage'),  'FournisseursPage') },
+              { index: true,           lazy: lz(() => import('@/pages/app/gestion/AchatsPage'),         'AchatsPage') },
+              { path: 'factures',      lazy: lz(() => import('@/pages/app/gestion/FacturesAchatsPage'), 'FacturesAchatsPage') },
+              { path: 'receptions',    lazy: lz(() => import('@/pages/app/gestion/BonsReceptionPage'),  'BonsReceptionPage') },
+              { path: 'fournisseurs',  lazy: lz(() => import('@/pages/app/gestion/FournisseursPage'),   'FournisseursPage') },
             ],
           },
           {
