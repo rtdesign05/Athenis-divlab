@@ -288,11 +288,12 @@ function InvoiceView({
 // ── ModalNouvelleFacture ──────────────────────────────────────────────────────
 
 interface ModalNouvelleFactureProps {
-  onClose:  () => void
-  onCreated: (id: string) => void
-  agenceNom: string | null
-  clients:   string[]
-  agences:   string[]
+  onClose:       () => void
+  onCreated:     (id: string) => void
+  agenceNom:     string | null
+  clients:       string[]
+  agences:       string[]
+  defaultVatRate: number
 }
 
 interface LigneForm {
@@ -304,14 +305,14 @@ interface LigneForm {
   tvaRate:        string
 }
 
-function emptyLigne(idx: number): LigneForm {
+function emptyLigne(idx: number, vatRate: number): LigneForm {
   return {
     id:             `nl-${Date.now()}-${idx}`,
     description:    '',
     quantite:       '1',
     unite:          'pièce',
     prixUnitaireHT: '',
-    tvaRate:        '19.25',
+    tvaRate:        String(vatRate),
   }
 }
 
@@ -331,7 +332,7 @@ function defaultsForModele(modele: ModeleFacture): { notes: string; conditionsPa
   }
 }
 
-function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences }: ModalNouvelleFactureProps) {
+function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences, defaultVatRate }: ModalNouvelleFactureProps) {
   const { addFactureVente } = useGestion()
 
   const [step,     setStep]     = useState<1 | 2>(1)
@@ -347,7 +348,7 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences 
   const [commande,           setCommande]           = useState('')
   const [notes,              setNotes]              = useState(defaults.notes)
   const [conditionsPaiement, setConditionsPaiement] = useState(defaults.conditionsPaiement)
-  const [lignes,             setLignes]             = useState<LigneForm[]>([emptyLigne(0)])
+  const [lignes,             setLignes]             = useState<LigneForm[]>([emptyLigne(0, defaultVatRate)])
 
   // When modele changes (before step 2 is committed), update defaults
   function goToStep2(m: ModeleFacture) {
@@ -367,7 +368,7 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences 
   }
 
   function addLigne() {
-    setLignes(prev => [...prev, emptyLigne(prev.length)])
+    setLignes(prev => [...prev, emptyLigne(prev.length, defaultVatRate)])
   }
 
   // Compute line montantHT from form
@@ -732,7 +733,7 @@ interface ParsedRow {
   facture:    Omit<FactureVente, 'id'> | null
 }
 
-function parseCSV(text: string): ParsedRow[] {
+function parseCSV(text: string, defaultVat: number): ParsedRow[] {
   const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim())
   if (lines.length < 2) return []
 
@@ -769,9 +770,9 @@ function parseCSV(text: string): ParsedRow[] {
     const montantHT    = parseFloat(montantHTRaw.replace(/\s/g, '').replace(',', '.'))
     if (isNaN(montantHT) || montantHT <= 0) errors.push('Montant HT invalide (doit être > 0)')
 
-    // tva
-    const tvaRaw = raw['tva']?.trim() ?? ''
-    const tva    = tvaRaw ? parseFloat(tvaRaw.replace(',', '.')) : 19.25
+    // tva — uses caller-supplied default so company vatRate is respected
+    const tvaRaw    = raw['tva']?.trim() ?? ''
+    const tva       = tvaRaw ? parseFloat(tvaRaw.replace(',', '.')) : defaultVat
     if (isNaN(tva) || tva < 0 || tva > 100) errors.push('TVA invalide (0–100)')
 
     // statut
@@ -814,10 +815,11 @@ function parseCSV(text: string): ParsedRow[] {
   })
 }
 
-function downloadTemplate() {
+function downloadTemplate(vatRate: number) {
   const header = CSV_COLUMNS.join(';')
-  const row1   = 'ACME Corp;CMD-0051;2026-05-01;2026-05-31;1000000;19.25;Brouillon;standard;;Paiement à 30 jours'
-  const row2   = 'Groupe Delta;CMD-0049;2026-05-02;;2500000;19.25;Envoyée;proforma;Pro forma chariot;;'
+  const vat    = String(vatRate)
+  const row1   = `ACME Corp;CMD-0051;2026-05-01;2026-05-31;1000000;${vat};Brouillon;standard;;Paiement à 30 jours`
+  const row2   = `Groupe Delta;CMD-0049;2026-05-02;;2500000;${vat};Envoyée;proforma;Pro forma chariot;;`
   const blob   = new Blob([`${header}\n${row1}\n${row2}`], { type: 'text/csv;charset=utf-8;' })
   const url    = URL.createObjectURL(blob)
   const a      = document.createElement('a')
@@ -828,13 +830,14 @@ function downloadTemplate() {
 }
 
 interface ModalImportProps {
-  agenceNom:     string | null
-  defaultAgence: string
-  onImported:    (factures: Omit<FactureVente, 'id'>[]) => void
-  onClose:       () => void
+  agenceNom:      string | null
+  defaultAgence:  string
+  defaultVatRate: number
+  onImported:     (factures: Omit<FactureVente, 'id'>[]) => void
+  onClose:        () => void
 }
 
-function ModalImportFacture({ agenceNom, defaultAgence, onImported, onClose }: ModalImportProps) {
+function ModalImportFacture({ agenceNom, defaultAgence, defaultVatRate, onImported, onClose }: ModalImportProps) {
   const [step,     setStep]     = useState<'upload' | 'preview'>('upload')
   const [rows,     setRows]     = useState<ParsedRow[]>([])
   const [dragging, setDragging] = useState(false)
@@ -851,7 +854,7 @@ function ModalImportFacture({ agenceNom, defaultAgence, onImported, onClose }: M
     const reader = new FileReader()
     reader.onload = e => {
       const text   = e.target?.result as string ?? ''
-      const parsed = parseCSV(text)
+      const parsed = parseCSV(text, defaultVatRate)
       if (parsed.length === 0) {
         setFileErr('Fichier vide ou format non reconnu')
         return
@@ -912,7 +915,7 @@ function ModalImportFacture({ agenceNom, defaultAgence, onImported, onClose }: M
               </div>
 
               {/* Template download */}
-              <button type="button" onClick={downloadTemplate}
+              <button type="button" onClick={() => downloadTemplate(defaultVatRate)}
                 className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition">
                 <span>📥</span>
                 Télécharger le modèle CSV
@@ -1045,7 +1048,8 @@ export function FacturesVentesPage() {
   const { fmt }  = useCurrency()
   const { user } = useAuth()
   const { facturesVentes, updateFactureVenteStatut, clients, addFactureVente } = useGestion()
-  const { agences: agencesList } = useCompanySettings()
+  const { agences: agencesList, vatRate } = useCompanySettings()
+  const effectiveVatRate = vatRate ?? 19.25
 
   const agenceNom = user?.agenceNom ?? null
 
@@ -1246,6 +1250,7 @@ export function FacturesVentesPage() {
           agenceNom={agenceNom}
           clients={clientNames}
           agences={agenceNames}
+          defaultVatRate={effectiveVatRate}
         />
       )}
 
@@ -1254,6 +1259,7 @@ export function FacturesVentesPage() {
         <ModalImportFacture
           agenceNom={agenceNom}
           defaultAgence={agenceNames[0] ?? 'Siège'}
+          defaultVatRate={effectiveVatRate}
           onClose={() => setShowImportModal(false)}
           onImported={factures => {
             factures.forEach(f => addFactureVente(f))
