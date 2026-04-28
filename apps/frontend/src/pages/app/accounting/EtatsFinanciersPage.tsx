@@ -1,10 +1,13 @@
-import { useState, useCallback } from 'react'
+﻿import { useState, useCallback, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSelectedFiscalYearData, useFiscalYears, useCloseFiscalYear } from '@/hooks/useFiscalYear'
 import { accountingApi, type FSPair, type FinancialStatements, type AccountingZone, type FiscalYear } from '@/services/accountingApi'
 import { settingsApi } from '@/services/settingsApi'
 import { FiscalYearSelector } from '@/components/accounting/FiscalYearSelector'
+import { useEmployeeStats } from '@/hooks/useHr'
+import { useCurrency } from '@/hooks/useCurrency'
+import { toSafeAmount } from '@/shared/utils/currency'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +19,15 @@ function fmt(n: number): string {
 
 function neg(n: number): string {
   return n < 0 ? 'text-red-600' : ''
+}
+
+// ── HR type labels (SYSCOHADA Note 6) ────────────────────────────────────────
+
+const TYPE_LABEL_HR: Record<string, string> = {
+  FULL_TIME: 'Temps plein',
+  PART_TIME: 'Temps partiel',
+  CONTRACT:  'Contractuel',
+  INTERN:    'Stagiaire',
 }
 
 // ── table primitives ──────────────────────────────────────────────────────────
@@ -378,27 +390,168 @@ function OhadaTafire({ d }: { d: FinancialStatements }) {
   )
 }
 
-function OhadaNotes() {
+function OhadaNotesEditor({ d, fyId }: { d: FinancialStatements; fyId: string }) {
+  const { data: balance } = useQuery({
+    queryKey: ['balance-journal', fyId],
+    queryFn:  () => accountingApi.getBalanceByFiscalYear(fyId),
+    staleTime: 5 * 60_000,
+  })
+  const statsQ          = useEmployeeStats()
+  const { fmt: fmtCur } = useCurrency()
+  const hrStats         = statsQ.data
+  const tafire          = d.tafire as Record<string, FSPair> | undefined
+
+  const immoRows = useMemo(() =>
+    balance?.rows.filter(r => r.account.startsWith('2') && !r.account.startsWith('28') && !r.account.startsWith('29')) ?? [],
+    [balance])
+  const amortRows = useMemo(() =>
+    balance?.rows.filter(r => r.account.startsWith('28') || r.account.startsWith('29') || r.account.startsWith('15')) ?? [],
+    [balance])
+  const cranceRows = useMemo(() =>
+    balance?.rows.filter(r => r.account.startsWith('4') && r.soldeDebiteur > 0.005) ?? [],
+    [balance])
+  const detteRows = useMemo(() =>
+    balance?.rows.filter(r => r.account.startsWith('4') && r.soldeCrediteur > 0.005) ?? [],
+    [balance])
+
+  const autoContent = useMemo<Record<string, string>>(() => ({
+    note1: [
+      `Les états financiers ont été établis conformément aux dispositions du Système Comptable`,
+      `OHADA (SYSCOHADA révisé), règlement n°01/2017/CM/UEMOA.\n`,
+      `Principes appliqués :`,
+      `  - Continuité de l'exploitation`,
+      `  - Permanence des méthodes`,
+      `  - Spécialisation des exercices`,
+      `  - Prudence`,
+      `  - Coût historique`,
+    ].join('\n'),
+
+    note2: immoRows.length > 0
+      ? `Immobilisations au 31/12/${d.year} :\n\n` +
+        immoRows.map(r => `  ${r.account}  ${r.label}  ->  ${fmt(r.soldeDebiteur || r.soldeCrediteur)}`).join('\n')
+      : `Néant — aucune immobilisation enregistrée sur l'exercice ${d.year}.`,
+
+    note3: amortRows.length > 0
+      ? `Amortissements et provisions au 31/12/${d.year} :\n\n` +
+        amortRows.map(r => `  ${r.account}  ${r.label}  ->  ${fmt(r.soldeDebiteur || r.soldeCrediteur)}`).join('\n')
+      : `Néant — aucun amortissement ou provision enregistré.`,
+
+    note4: (cranceRows.length > 0 || detteRows.length > 0)
+      ? [
+          `Créances au 31/12/${d.year} :`,
+          ...(cranceRows.length > 0
+            ? cranceRows.map(r => `  ${r.account}  ${r.label}  ->  ${fmt(r.soldeDebiteur)}`)
+            : ['  Néant']),
+          ``,
+          `Dettes au 31/12/${d.year} :`,
+          ...(detteRows.length > 0
+            ? detteRows.map(r => `  ${r.account}  ${r.label}  ->  ${fmt(r.soldeCrediteur)}`)
+            : ['  Néant']),
+        ].join('\n')
+      : `Néant — aucune créance ou dette significative au 31/12/${d.year}.`,
+
+    note5: [
+      `Engagements hors bilan au 31/12/${d.year} :`,
+      `  - Cautions et garanties données : néant`,
+      `  - Engagements de crédit-bail    : néant`,
+      `  - Autres engagements hors bilan : néant`,
+    ].join('\n'),
+
+    note6: hrStats
+      ? [
+          `Effectifs et charges de personnel — exercice ${d.year} :`,
+          ``,
+          `  Effectif total actif    : ${hrStats.active.count} employé(s)`,
+          `  Masse salariale / mois  : ${fmtCur(toSafeAmount(hrStats.active.totalMonthly))}`,
+          ...(hrStats.byType.length > 0
+            ? [``, `  Répartition par contrat :`,
+               ...hrStats.byType.map(b => `    - ${(TYPE_LABEL_HR[b.employmentType] ?? b.employmentType).padEnd(18)} : ${b._count}`)]
+            : []),
+        ].join('\n')
+      : `Données RH non disponibles — vérifiez le module Ressources Humaines.`,
+
+    note7: [
+      `Événements postérieurs à la clôture ${d.year} :`,
+      ``,
+      `  Aucun événement significatif postérieur à la date de clôture n'est à signaler`,
+      `  à la date d'établissement des présents états financiers.`,
+    ].join('\n'),
+
+    note8: tafire
+      ? [
+          `Flux de trésorerie — exercice ${d.year} (TAFIRE) :`,
+          ``,
+          tafire['cafBrute']            ? `  CAF brute                     : ${fmt(tafire['cafBrute'].n)}`            : '',
+          tafire['variationStocks']     ? `  Variation des stocks          : ${fmt(tafire['variationStocks'].n)}`     : '',
+          tafire['fluxExploitation']    ? `  Flux nets d'exploitation      : ${fmt(tafire['fluxExploitation'].n)}`    : '',
+          tafire['investissements']     ? `  Flux d'investissement         : ${fmt(tafire['investissements'].n)}`     : '',
+          tafire['financements']        ? `  Flux de financement           : ${fmt(tafire['financements'].n)}`        : '',
+          tafire['variationTresorerie'] ? `  Variation nette de trésorerie : ${fmt(tafire['variationTresorerie'].n)}` : '',
+        ].filter(Boolean).join('\n')
+      : `Données TAFIRE non disponibles pour l'exercice ${d.year}.`,
+  }), [d.year, immoRows, amortRows, cranceRows, detteRows, hrStats, tafire, fmtCur])
+
+  const storageKey = `ohada-notes-${fyId}`
+  const [remarks, setRemarks] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(storageKey) ?? '{}') } catch { return {} }
+  })
+  useEffect(() => {
+    localStorage.setItem(storageKey, JSON.stringify(remarks))
+  }, [remarks, storageKey])
+
+  const [openNote, setOpenNote] = useState<string | null>('note1')
+
+  const NOTES = [
+    { key: 'note1', label: 'Note 1 — Règles et méthodes comptables' },
+    { key: 'note2', label: 'Note 2 — Tableau des immobilisations' },
+    { key: 'note3', label: 'Note 3 — Amortissements et provisions' },
+    { key: 'note4', label: 'Note 4 — Créances et dettes' },
+    { key: 'note5', label: 'Note 5 — Engagements hors bilan' },
+    { key: 'note6', label: 'Note 6 — Effectifs et charges de personnel' },
+    { key: 'note7', label: 'Note 7 — Événements postérieurs à la clôture' },
+    { key: 'note8', label: 'Note 8 — Flux de trésorerie (TAFIRE)' },
+  ]
+
   return (
-    <div className="rounded-lg border border-slate-200 p-6 space-y-4">
-      <p className="text-sm text-slate-600">Notes annexes SYSCOHADA\xa0:</p>
-      <ul className="space-y-2 text-sm text-slate-700">
-        {[
-          'Note 1 \u2014 Règles et méthodes comptables',
-          'Note 2 \u2014 Tableau des immobilisations',
-          'Note 3 \u2014 Tableau des amortissements',
-          'Note 4 \u2014 Tableau des provisions',
-          'Note 5 \u2014 Tableau des créances',
-          'Note 6 \u2014 Tableau des dettes',
-          'Note 7 \u2014 Charges à payer / produits à recevoir',
-          'Note 8 \u2014 Effectifs et charges de personnel',
-          'Note 9 \u2014 Engagements hors bilan',
-        ].map((s) => (
-          <li key={s} className="flex items-start gap-2">
-            <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />{s}
-          </li>
-        ))}
-      </ul>
+    <div className="space-y-2">
+      <p className="text-xs text-slate-500 mb-3">
+        Informations pré-remplies depuis les modules Comptabilité et RH — conformes SYSCOHADA révisé.
+        Complétez chaque note avec vos observations additionnelles (sauvegarde automatique).
+      </p>
+      {NOTES.map(n => (
+        <div key={n.key} className="rounded-lg border border-slate-200 overflow-hidden">
+          <button
+            onClick={() => setOpenNote(openNote === n.key ? null : n.key)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-[#1b4332] text-white text-sm font-semibold text-left hover:bg-[#1b4332]/90 transition-colors"
+          >
+            <span>{n.label}</span>
+            <span className="text-base leading-none select-none">{openNote === n.key ? '-' : '+'}</span>
+          </button>
+          {openNote === n.key && (
+            <div className="p-4 space-y-3 bg-white">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Données pré-remplies
+                </p>
+                <pre className="text-xs text-slate-700 whitespace-pre-wrap font-sans leading-relaxed">
+                  {autoContent[n.key] ?? '-'}
+                </pre>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Observations complémentaires
+                </label>
+                <textarea
+                  className="w-full min-h-[90px] resize-y rounded-md border border-slate-200 p-3 text-sm text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30"
+                  placeholder="Ajoutez vos observations..."
+                  value={remarks[n.key] ?? ''}
+                  onChange={e => setRemarks(prev => ({ ...prev, [n.key]: e.target.value }))}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   )
 }
@@ -415,6 +568,178 @@ function OhadaCP({ d }: { d: FinancialStatements }) {
       { label: 'Autres variations',                  values: { n: 0, nm1: 0 }, indent: true },
       { label: 'Capitaux propres à la clôture',values: p['totalCapitauxPropres'], bold: true },
     ]} />
+  )
+}
+
+// ── OHADA Situation (états financiers intermédiaires) ─────────────────────────
+
+function OhadaSituation({ d, fyData }: { d: FinancialStatements; fyData: FiscalYear }) {
+  const fyStart = fyData.startDate.slice(0, 10)
+  const fyEnd   = fyData.endDate.slice(0, 10)
+  const today   = new Date().toISOString().slice(0, 10)
+  const todayCapped = today < fyEnd ? today : fyEnd
+
+  const [dateFrom, setDateFrom] = useState(fyStart)
+  const [dateTo,   setDateTo]   = useState(todayCapped)
+
+  const { data: glData, isLoading } = useQuery({
+    queryKey: ['grand-livre-situation', fyData.id],
+    queryFn:  () => accountingApi.getGrandLivreByFiscalYear(fyData.id),
+    staleTime: 2 * 60_000,
+  })
+
+  // Compute interim bilan and P&L from Grand Livre entries
+  const { bilanRows, crRows, resultatNet } = useMemo(() => {
+    if (!glData) return { bilanRows: [] as RowDef[], crRows: [] as RowDef[], resultatNet: 0 }
+
+    // Per-account cumulative for bilan classes (1-5) up to dateTo
+    // Per-account for P&L classes (6-7) within [dateFrom, dateTo]
+    const bilanMap: Record<string, { label: string; debit: number; credit: number }> = {}
+    const crMap:    Record<string, { label: string; debit: number; credit: number }> = {}
+
+    for (const compte of glData.comptes) {
+      const cls = compte.account.charAt(0)
+      if (['1','2','3','4','5'].includes(cls)) {
+        let db = 0, cr = 0
+        for (const l of compte.lignes) {
+          if (l.date <= dateTo) { db += l.debit; cr += l.credit }
+        }
+        if (Math.abs(db - cr) > 0.005)
+          bilanMap[compte.account] = { label: compte.label, debit: db, credit: cr }
+      } else if (['6','7'].includes(cls)) {
+        let db = 0, cr = 0
+        for (const l of compte.lignes) {
+          if (l.date >= dateFrom && l.date <= dateTo) { db += l.debit; cr += l.credit }
+        }
+        if (Math.abs(db - cr) > 0.005)
+          crMap[compte.account] = { label: compte.label, debit: db, credit: cr }
+      }
+    }
+
+    // ── Bilan rows ──────────────────────────────────────────────────────────
+    const bRows: RowDef[] = [{ label: 'ACTIF', section: true }]
+    for (const [acc, v] of Object.entries(bilanMap).sort(([a],[b]) => a.localeCompare(b))) {
+      const cls = acc.charAt(0)
+      if (['2','3'].includes(cls) || (cls === '5' && v.debit > v.credit) || (cls === '4' && v.debit > v.credit)) {
+        const solde = v.debit - v.credit
+        if (solde > 0.005) bRows.push({ label: `${acc}  ${v.label}`, values: { n: solde, nm1: 0 }, indent: true })
+      }
+    }
+    bRows.push({ label: 'PASSIF', section: true })
+    for (const [acc, v] of Object.entries(bilanMap).sort(([a],[b]) => a.localeCompare(b))) {
+      const cls = acc.charAt(0)
+      if (cls === '1' || (cls === '4' && v.credit > v.debit) || (cls === '5' && v.credit > v.debit)) {
+        const solde = v.credit - v.debit
+        if (solde > 0.005) bRows.push({ label: `${acc}  ${v.label}`, values: { n: solde, nm1: 0 }, indent: true })
+      }
+    }
+
+    // ── P&L rows ────────────────────────────────────────────────────────────
+    const crRowDefs: RowDef[] = []
+    let totalProd = 0, totalChg = 0
+
+    crRowDefs.push({ label: 'PRODUITS (classe 7)', section: true })
+    for (const [acc, v] of Object.entries(crMap).sort(([a],[b]) => a.localeCompare(b))) {
+      if (acc.startsWith('7')) {
+        const s = v.credit - v.debit
+        crRowDefs.push({ label: `${acc}  ${v.label}`, values: { n: s, nm1: 0 }, indent: true })
+        totalProd += s
+      }
+    }
+    crRowDefs.push({ label: 'Total produits', values: { n: totalProd, nm1: 0 }, bold: true })
+
+    crRowDefs.push({ label: 'CHARGES (classe 6)', section: true })
+    for (const [acc, v] of Object.entries(crMap).sort(([a],[b]) => a.localeCompare(b))) {
+      if (acc.startsWith('6')) {
+        const s = v.debit - v.credit
+        crRowDefs.push({ label: `${acc}  ${v.label}`, values: { n: s, nm1: 0 }, indent: true })
+        totalChg += s
+      }
+    }
+    crRowDefs.push({ label: 'Total charges', values: { n: totalChg, nm1: 0 }, bold: true })
+
+    const res = totalProd - totalChg
+    crRowDefs.push({ label: 'RÉSULTAT DE LA PÉRIODE', section: true })
+    crRowDefs.push({ label: 'Résultat intermédiaire', values: { n: res, nm1: 0 }, bold: true })
+
+    return { bilanRows: bRows, crRows: crRowDefs, resultatNet: res }
+  }, [glData, dateFrom, dateTo])
+
+  return (
+    <div className="space-y-5">
+      {/* Period selector */}
+      <div className="flex flex-wrap items-end gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Du</label>
+          <input type="date" value={dateFrom} min={fyStart} max={dateTo}
+            onChange={e => setDateFrom(e.target.value)}
+            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Au</label>
+          <input type="date" value={dateTo} min={dateFrom} max={fyEnd}
+            onChange={e => setDateTo(e.target.value)}
+            className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30" />
+        </div>
+        <button
+          onClick={() => window.print()}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+        >
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />
+          </svg>
+          Imprimer
+        </button>
+      </div>
+
+      {isLoading ? (
+        <Spinner />
+      ) : (
+        <>
+          {/* Result summary */}
+          <div className={`flex items-center gap-3 rounded-lg p-4 border ${
+            resultatNet >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+          }`}>
+            <span className="text-2xl">{resultatNet >= 0 ? '📈' : '📉'}</span>
+            <div>
+              <p className="text-xs font-medium text-slate-500">
+                Résultat de la période ({dateFrom} → {dateTo})
+              </p>
+              <p className={`text-xl font-bold ${resultatNet >= 0 ? 'text-green-800' : 'text-red-700'}`}>
+                {fmt(resultatNet)}
+              </p>
+            </div>
+          </div>
+
+          {bilanRows.length > 1 && (
+            <StmtTable
+              title={`Situation du bilan — au ${dateTo}`}
+              year={d.year} prevYear={d.prevYear} hasPrevYear={false}
+              rows={bilanRows}
+            />
+          )}
+
+          {crRows.length > 1 && (
+            <StmtTable
+              title={`Compte de résultat intermédiaire — du ${dateFrom} au ${dateTo}`}
+              year={d.year} prevYear={d.prevYear} hasPrevYear={false}
+              rows={crRows}
+            />
+          )}
+
+          {bilanRows.length <= 1 && crRows.length <= 1 && (
+            <div className="flex flex-col items-center justify-center py-12 text-slate-400 gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 17v-2m3 2v-4m3 4v-6M3 21h18M3 10.5V5a2 2 0 012-2h14a2 2 0 012 2v5.5" />
+              </svg>
+              <p className="text-sm">Aucune écriture sur la période sélectionnée.</p>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   )
 }
 
@@ -550,13 +875,14 @@ interface ZoneTab {
   render: (d: FinancialStatements) => React.ReactNode
 }
 
-function zoneTabs(zone: AccountingZone): ZoneTab[] {
+function zoneTabs(zone: AccountingZone, fyData: FiscalYear | null): ZoneTab[] {
   if (zone === 'OHADA') return [
-    { key: 'bilan',  label: 'Bilan SYSCOHADA',        render: (d) => <OhadaBilan d={d} /> },
-    { key: 'cr',     label: 'Compte de résultat',  render: (d) => <OhadaCR d={d} /> },
-    { key: 'tafire', label: 'TAFIRE',                 render: (d) => <OhadaTafire d={d} /> },
-    { key: 'notes',  label: 'Notes annexes',          render: () => <OhadaNotes /> },
-    { key: 'cp',     label: 'Variation CP',           render: (d) => <OhadaCP d={d} /> },
+    { key: 'bilan',     label: 'Bilan SYSCOHADA',   render: (d) => <OhadaBilan d={d} /> },
+    { key: 'cr',        label: 'Compte de résultat', render: (d) => <OhadaCR d={d} /> },
+    { key: 'tafire',    label: 'TAFIRE',             render: (d) => <OhadaTafire d={d} /> },
+    { key: 'notes',     label: 'Notes annexes',      render: (d) => fyData ? <OhadaNotesEditor d={d} fyId={fyData.id} /> : null },
+    { key: 'cp',        label: 'Variation CP',       render: (d) => <OhadaCP d={d} /> },
+    { key: 'situation', label: 'Situation',          render: (d) => fyData ? <OhadaSituation d={d} fyData={fyData} /> : null },
   ]
   if (zone === 'IFRS') return [
     { key: 'sofp',   label: 'Financial Position',     render: (d) => <IfrsSOFP d={d} /> },
@@ -789,7 +1115,7 @@ export function EtatsFinanciersPage() {
   // Derive zone from the financial statements data (authoritative source).
   // Falls back to FRANCE while loading — company settings have no accountingZone field.
   const zone: AccountingZone = fsData?.zone ?? 'FRANCE'
-  const tabs = zoneTabs(zone)
+  const tabs = zoneTabs(zone, fyData ?? null)
   const current = tabs.find((t) => t.key === activeTab) ?? tabs[0]!
 
   // ── Téléchargement PDF de l'onglet actif uniquement ──────────────────────
