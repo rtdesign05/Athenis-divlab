@@ -521,6 +521,10 @@ interface GestionContextValue {
   bonsReception:    BonReception[]
   mouvementsStock:  MouvementStock[]
   addMouvementStock(m: Omit<MouvementStock, 'id'>): MouvementStock
+  addBonLivraison(b: Omit<BonLivraison, 'id'>): BonLivraison
+  addRetourClient(r: Omit<RetourClient, 'id'>): RetourClient
+  addFactureAchat(f: Omit<FactureAchat, 'id'>): FactureAchat
+  addBonReception(b: Omit<BonReception, 'id'>): BonReception
   addArticle(a: Omit<Article, 'id' | 'createdAt'>): Article
   updateArticle(id: string, patch: Partial<Omit<Article, 'id' | 'createdAt'>>): void
   deleteArticle(id: string): void
@@ -558,6 +562,42 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   const [facturesAchats, setFacturesAchats] = useState<FactureAchat[]>(INIT_FACTURES_ACHATS)
   const [bonsReception,    setBonsReception]    = useState<BonReception[]>(INIT_BONS_RECEPTION)
   const [mouvementsStock,  setMouvementsStock]  = useState<MouvementStock[]>(INIT_MOUVEMENTS_STOCK)
+
+  function addBonLivraison(b: Omit<BonLivraison, 'id'>): BonLivraison {
+    const last = bonsLivraison[0]?.id ?? 'BL-0000'
+    const num  = parseInt(last.replace('BL-', ''), 10) + 1
+    const id   = `BL-${String(num).padStart(4, '0')}`
+    const next: BonLivraison = { id, ...b }
+    setBonsLivraison(prev => [next, ...prev])
+    return next
+  }
+
+  function addRetourClient(r: Omit<RetourClient, 'id'>): RetourClient {
+    const last = retoursClients[0]?.id ?? 'RET-0000'
+    const num  = parseInt(last.replace('RET-', ''), 10) + 1
+    const id   = `RET-${String(num).padStart(4, '0')}`
+    const next: RetourClient = { id, ...r }
+    setRetoursClients(prev => [next, ...prev])
+    return next
+  }
+
+  function addFactureAchat(f: Omit<FactureAchat, 'id'>): FactureAchat {
+    const last = facturesAchats[0]?.id ?? 'FAA-0000'
+    const num  = parseInt(last.replace('FAA-', ''), 10) + 1
+    const id   = `FAA-${String(num).padStart(4, '0')}`
+    const next: FactureAchat = { id, ...f }
+    setFacturesAchats(prev => [next, ...prev])
+    return next
+  }
+
+  function addBonReception(b: Omit<BonReception, 'id'>): BonReception {
+    const last = bonsReception[0]?.id ?? 'BR-0000'
+    const num  = parseInt(last.replace('BR-', ''), 10) + 1
+    const id   = `BR-${String(num).padStart(4, '0')}`
+    const next: BonReception = { id, ...b }
+    setBonsReception(prev => [next, ...prev])
+    return next
+  }
 
   function addMouvementStock(m: Omit<MouvementStock, 'id'>): MouvementStock {
     const last = mouvementsStock[0]?.id ?? 'MVT-000'
@@ -680,6 +720,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       commandes, achats, clients, fournisseurs, articles,
       facturesVentes, bonsLivraison, retoursClients, facturesAchats, bonsReception,
       mouvementsStock, addMouvementStock,
+      addBonLivraison, addRetourClient, addFactureAchat, addBonReception,
       addArticle, updateArticle, deleteArticle,
       addCommande, addAchat, addFactureVente,
       addClient, updateClient, deleteClient,
