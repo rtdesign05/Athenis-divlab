@@ -296,40 +296,39 @@ function OhadaBilan({ d }: { d: FinancialStatements }) {
   return (
     <div className="space-y-4">
       <BalanceIndicator actifTotal={a['totalActif']} passifTotal={p['totalPassif']} />
-      <div className="grid gap-6 lg:grid-cols-2">
-      <StmtTable title="Actif" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
+      {/* OHADA : Actif pleine largeur, puis Passif pleine largeur */}
+      <StmtTable title="Bilan — Actif" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
         { label: 'ACTIF IMMOBILISÉ', section: true },
-        { label: 'Charges immobilisées',           values: a['chargesImmobilisees'],          indent: true },
-        { label: 'Immobilisations incorporelles',     values: a['immobilisationsIncorporelles'], indent: true },
-        { label: 'Terrains',                          values: a['terrains'],                     indent: true },
-        { label: 'Bâtiments & agencements',        values: a['batimentsAgencements'],         indent: true },
-        { label: 'Matériel & équipement',       values: a['materielEquipement'],           indent: true },
-        { label: 'Matériel de transport',          values: a['materielTransport'],            indent: true },
-        { label: 'Autres immobilisations',            values: a['autresImmobilisations'],        indent: true },
-        { label: 'Avances & acomptes',                values: a['avancesAcomptesImmo'],          indent: true },
-        { label: 'Total actif immobilisé',         values: a['totalActifImmobilise'],         bold: true },
+        { label: 'Charges immobilisées',              values: a['chargesImmobilisees'],          indent: true },
+        { label: 'Immobilisations incorporelles',      values: a['immobilisationsIncorporelles'], indent: true },
+        { label: 'Terrains',                           values: a['terrains'],                     indent: true },
+        { label: 'Bâtiments & agencements',            values: a['batimentsAgencements'],         indent: true },
+        { label: 'Matériel & équipement',              values: a['materielEquipement'],           indent: true },
+        { label: 'Matériel de transport',              values: a['materielTransport'],            indent: true },
+        { label: 'Autres immobilisations',             values: a['autresImmobilisations'],        indent: true },
+        { label: 'Avances & acomptes',                 values: a['avancesAcomptesImmo'],          indent: true },
+        { label: 'Total actif immobilisé',             values: a['totalActifImmobilise'],         bold: true },
         { label: 'ACTIF CIRCULANT', section: true },
-        { label: 'Stocks',                            values: a['stocks'],                       indent: true },
-        { label: 'Créances clients',               values: a['creancesClients'],              indent: true },
-        { label: 'Autres créances',                values: a['autresCreances'],               indent: true },
-        { label: 'Trésorerie active',              values: a['tresorerie'],                   indent: true },
-        { label: 'Total actif circulant',             values: a['totalActifCirculant'],          bold: true },
-        { label: 'TOTAL ACTIF',                       values: a['totalActif'],                   bold: true },
+        { label: 'Stocks',                             values: a['stocks'],                       indent: true },
+        { label: 'Créances clients',                   values: a['creancesClients'],              indent: true },
+        { label: 'Autres créances',                    values: a['autresCreances'],               indent: true },
+        { label: 'Trésorerie active',                  values: a['tresorerie'],                   indent: true },
+        { label: 'Total actif circulant',              values: a['totalActifCirculant'],          bold: true },
+        { label: 'TOTAL ACTIF',                        values: a['totalActif'],                   bold: true },
       ]} />
-      <StmtTable title="Passif" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
+      <StmtTable title="Bilan — Passif" year={d.year} prevYear={d.prevYear} hasPrevYear={d.hasPrevYear} rows={[
         { label: 'CAPITAUX PROPRES ET RESSOURCES ASSIMILÉES', section: true },
-        { label: 'Capital social',                    values: p['capitalSocial'],                indent: true },
-        { label: 'Réserves',                       values: p['reserves'],                     indent: true },
-        { label: 'Report à nouveau',               values: p['reportANouveau'],               indent: true },
-        { label: 'Résultat net',                   values: p['resultatNet'],                  indent: true },
-        { label: "Subventions d'investissement",      values: p['subventionsInvestissement'],    indent: true },
-        { label: 'Total capitaux propres',            values: p['totalCapitauxPropres'],         bold: true },
+        { label: 'Capital social',                     values: p['capitalSocial'],                indent: true },
+        { label: 'Réserves',                           values: p['reserves'],                     indent: true },
+        { label: 'Report à nouveau',                   values: p['reportANouveau'],               indent: true },
+        { label: 'Résultat net',                       values: p['resultatNet'],                  indent: true },
+        { label: "Subventions d'investissement",       values: p['subventionsInvestissement'],    indent: true },
+        { label: 'Total capitaux propres',             values: p['totalCapitauxPropres'],         bold: true },
         { label: 'DETTES FINANCIÈRES', section: true },
-        { label: 'Dettes financières à LT',    values: p['dettesLongTerme'],              indent: true },
-        { label: 'Dettes à court terme',           values: p['dettesCurtTerme'],              indent: true },
-        { label: 'TOTAL PASSIF',                      values: p['totalPassif'],                  bold: true },
+        { label: 'Dettes financières à LT',            values: p['dettesLongTerme'],              indent: true },
+        { label: 'Dettes à court terme',               values: p['dettesCurtTerme'],              indent: true },
+        { label: 'TOTAL PASSIF',                       values: p['totalPassif'],                  bold: true },
       ]} />
-      </div>
     </div>
   )
 }
