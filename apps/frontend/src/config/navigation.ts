@@ -123,6 +123,7 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
   ],
   '/app/gestion/ventes': [
     { label: 'Commandes clients',  to: '/app/gestion/ventes',              end: true },
+    { label: 'Clients',            to: '/app/gestion/ventes/clients' },
     { label: 'Bons de livraison',  to: '/app/gestion/ventes/livraisons' },
     { label: 'Retours clients',    to: '/app/gestion/ventes/retours' },
   ],

@@ -64,17 +64,18 @@ const router = createBrowserRouter([
           {
             path: 'ventes',
             children: [
-              { index: true,           lazy: lz(() => import('@/pages/app/gestion/VentesPage'),    'VentesPage') },
-              { path: 'livraisons',    lazy: lz(() => import('@/pages/app/Placeholder'),           'Placeholder') },
-              { path: 'retours',       lazy: lz(() => import('@/pages/app/Placeholder'),           'Placeholder') },
+              { index: true,           lazy: lz(() => import('@/pages/app/gestion/VentesPage'),        'VentesPage') },
+              { path: 'clients',       lazy: lz(() => import('@/pages/app/gestion/ClientsPage'),       'ClientsPage') },
+              { path: 'livraisons',    lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
+              { path: 'retours',       lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
             ],
           },
           {
             path: 'achats',
             children: [
-              { index: true,           lazy: lz(() => import('@/pages/app/gestion/AchatsPage'),    'AchatsPage') },
-              { path: 'receptions',    lazy: lz(() => import('@/pages/app/Placeholder'),           'Placeholder') },
-              { path: 'fournisseurs',  lazy: lz(() => import('@/pages/app/Placeholder'),           'Placeholder') },
+              { index: true,           lazy: lz(() => import('@/pages/app/gestion/AchatsPage'),        'AchatsPage') },
+              { path: 'receptions',    lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
+              { path: 'fournisseurs',  lazy: lz(() => import('@/pages/app/gestion/FournisseursPage'),  'FournisseursPage') },
             ],
           },
           {
