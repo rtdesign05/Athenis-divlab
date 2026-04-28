@@ -110,15 +110,28 @@ export interface FactureVente {
 
 // ── Bons de livraison ─────────────────────────────────────────────────────────
 export type BLStatut = 'En préparation' | 'Expédié' | 'Livré' | 'Retourné'
+
+export interface LigneLivraison {
+  id:          string
+  articleId:   string
+  reference:   string
+  designation: string
+  quantite:    number
+  unite:       string
+}
+
 export interface BonLivraison {
-  id:            string
-  commande:      string
-  client:        string
-  agence:        string
-  dateCreation:  string
-  datePrevue:    string
-  dateLivraison: string | null
-  statut:        BLStatut
+  id:               string
+  commande:         string
+  client:           string
+  agence:           string
+  dateCreation:     string
+  datePrevue:       string
+  dateLivraison:    string | null
+  statut:           BLStatut
+  lignes:           LigneLivraison[]
+  adresseLivraison: string
+  notes:            string
 }
 
 // ── Retours clients ───────────────────────────────────────────────────────────
@@ -420,14 +433,76 @@ const INIT_FACTURES_VENTES: FactureVente[] = [
 ]
 
 const INIT_BONS_LIVRAISON: BonLivraison[] = [
-  { id: 'BL-0008', commande: 'CMD-0050', client: 'TechX Sarl',          agence: 'Agence Douala — Akwa',        dateCreation: '2026-04-24', datePrevue: '2026-04-28', dateLivraison: '2026-04-28', statut: 'Livré' },
-  { id: 'BL-0007', commande: 'CMD-0047', client: 'Mengueme & Fils',      agence: 'Agence Douala — Akwa',        dateCreation: '2026-04-21', datePrevue: '2026-04-26', dateLivraison: '2026-04-26', statut: 'Livré' },
-  { id: 'BL-0006', commande: 'CMD-0040', client: 'TechX Sarl',           agence: 'Agence Douala — Akwa',        dateCreation: '2026-04-22', datePrevue: '2026-04-25', dateLivraison: '2026-04-25', statut: 'Livré' },
-  { id: 'BL-0005', commande: 'CMD-0038', client: 'Sonatec SA',           agence: 'Succursale Yaoundé — Centre', dateCreation: '2026-04-18', datePrevue: '2026-04-22', dateLivraison: '2026-04-22', statut: 'Livré' },
-  { id: 'BL-0004', commande: 'CMD-0051', client: 'ACME Corp',            agence: 'Siège',                       dateCreation: '2026-04-25', datePrevue: '2026-05-05', dateLivraison: null,          statut: 'En préparation' },
-  { id: 'BL-0003', commande: 'CMD-0049', client: 'Groupe Delta',         agence: 'Siège',                       dateCreation: '2026-04-23', datePrevue: '2026-05-10', dateLivraison: null,          statut: 'En préparation' },
-  { id: 'BL-0002', commande: 'CMD-0048', client: 'Sodiko Distribution',  agence: 'Succursale Yaoundé — Centre', dateCreation: '2026-04-22', datePrevue: '2026-05-08', dateLivraison: null,          statut: 'Expédié' },
-  { id: 'BL-0001', commande: 'CMD-0041', client: 'ACME Corp',            agence: 'Siège',                       dateCreation: '2026-04-24', datePrevue: '2026-04-30', dateLivraison: null,          statut: 'Expédié' },
+  {
+    id: 'BL-0008', commande: 'CMD-0050', client: 'TechX Sarl', agence: 'Agence Douala — Akwa',
+    dateCreation: '2026-04-24', datePrevue: '2026-04-28', dateLivraison: '2026-04-28', statut: 'Livré',
+    adresseLivraison: 'Quartier Akwa, Douala', notes: '',
+    lignes: [
+      { id: 'l1', articleId: 'ART-002', reference: 'PF-0012', designation: 'Pompe submersible 2"',            quantite: 5, unite: 'pièce' },
+      { id: 'l2', articleId: '',        reference: 'DIV-001', designation: 'Câbles et accessoires',           quantite: 1, unite: 'forfait' },
+      { id: 'l3', articleId: 'ART-006', reference: 'SV-0032', designation: 'Installation et mise en service', quantite: 17, unite: 'heure' },
+    ],
+  },
+  {
+    id: 'BL-0007', commande: 'CMD-0047', client: 'Mengueme & Fils', agence: 'Agence Douala — Akwa',
+    dateCreation: '2026-04-21', datePrevue: '2026-04-26', dateLivraison: '2026-04-26', statut: 'Livré',
+    adresseLivraison: 'Bassa, Douala', notes: 'Livraison avec camion — déchargement client',
+    lignes: [
+      { id: 'l1', articleId: 'ART-003', reference: 'MP-0021', designation: 'Ciment CPA 42.5 (sac 50 kg)',   quantite: 120, unite: 'pièce' },
+      { id: 'l2', articleId: 'ART-004', reference: 'MP-0022', designation: 'Fer à béton ø12 (barre 12 m)',  quantite: 38,  unite: 'pièce' },
+    ],
+  },
+  {
+    id: 'BL-0006', commande: 'CMD-0040', client: 'TechX Sarl', agence: 'Agence Douala — Akwa',
+    dateCreation: '2026-04-22', datePrevue: '2026-04-25', dateLivraison: '2026-04-25', statut: 'Livré',
+    adresseLivraison: 'Quartier Akwa, Douala', notes: 'Groupe à tester sur site avant réception définitive',
+    lignes: [
+      { id: 'l1', articleId: 'ART-001', reference: 'PF-0011', designation: 'Groupe électrogène 10 kVA', quantite: 1, unite: 'pièce' },
+      { id: 'l2', articleId: '',        reference: 'DIV-002', designation: 'Livraison et installation',   quantite: 1, unite: 'forfait' },
+    ],
+  },
+  {
+    id: 'BL-0005', commande: 'CMD-0038', client: 'Sonatec SA', agence: 'Succursale Yaoundé — Centre',
+    dateCreation: '2026-04-18', datePrevue: '2026-04-22', dateLivraison: '2026-04-22', statut: 'Livré',
+    adresseLivraison: 'Nlongkak, Yaoundé', notes: '',
+    lignes: [
+      { id: 'l1', articleId: 'ART-010', reference: 'CS-0043', designation: 'Câble électrique H07V-K 2.5mm²',        quantite: 500, unite: 'm²' },
+      { id: 'l2', articleId: '',        reference: 'DIV-003', designation: 'Fournitures et consommables électriques', quantite: 1,   unite: 'forfait' },
+    ],
+  },
+  {
+    id: 'BL-0004', commande: 'CMD-0051', client: 'ACME Corp', agence: 'Siège',
+    dateCreation: '2026-04-25', datePrevue: '2026-05-05', dateLivraison: null, statut: 'En préparation',
+    adresseLivraison: 'Rue de la Réunification, Douala', notes: 'Vérifier la puissance secteur avant installation',
+    lignes: [
+      { id: 'l1', articleId: 'ART-001', reference: 'PF-0011', designation: 'Groupe électrogène 10 kVA', quantite: 3, unite: 'pièce' },
+    ],
+  },
+  {
+    id: 'BL-0003', commande: 'CMD-0049', client: 'Groupe Delta', agence: 'Siège',
+    dateCreation: '2026-04-23', datePrevue: '2026-05-10', dateLivraison: null, statut: 'En préparation',
+    adresseLivraison: 'Avenue Kennedy, Yaoundé', notes: 'Formation opérateur 2 jours incluse',
+    lignes: [
+      { id: 'l1', articleId: 'ART-009', reference: 'EQ-0051', designation: 'Chariot élévateur 2T', quantite: 1, unite: 'pièce' },
+    ],
+  },
+  {
+    id: 'BL-0002', commande: 'CMD-0048', client: 'Sodiko Distribution', agence: 'Succursale Yaoundé — Centre',
+    dateCreation: '2026-04-22', datePrevue: '2026-05-08', dateLivraison: null, statut: 'Expédié',
+    adresseLivraison: 'Centre commercial Yaoundé', notes: '',
+    lignes: [
+      { id: 'l1', articleId: 'ART-011', reference: 'MP-0023', designation: 'Sable de rivière (m³)',          quantite: 80, unite: 'm²' },
+      { id: 'l2', articleId: 'ART-004', reference: 'MP-0022', designation: 'Fer à béton ø12 (barre 12 m)',  quantite: 49, unite: 'pièce' },
+    ],
+  },
+  {
+    id: 'BL-0001', commande: 'CMD-0041', client: 'ACME Corp', agence: 'Siège',
+    dateCreation: '2026-04-24', datePrevue: '2026-04-30', dateLivraison: null, statut: 'Expédié',
+    adresseLivraison: 'Rue de la Réunification, Douala', notes: '',
+    lignes: [
+      { id: 'l1', articleId: 'ART-012', reference: 'PF-0013', designation: 'Climatiseur split 12 000 BTU', quantite: 3, unite: 'pièce' },
+    ],
+  },
 ]
 
 const INIT_RETOURS_CLIENTS: RetourClient[] = [
