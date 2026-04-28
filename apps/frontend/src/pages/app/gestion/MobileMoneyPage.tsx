@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
+import { useTresorerie } from '@/contexts/TresorerieContext'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -311,6 +312,7 @@ export function MobileMoneyPage() {
   const { fmt } = useCurrency()
   const { user } = useAuth()
   const agenceNom = user?.agenceNom ?? null
+  const { addTransaction } = useTresorerie()
 
   const [portefeuilles, setPortefeuilles] = useState<Portefeuille[]>(INITIAL)
   const [showAddPorte, setShowAddPorte]   = useState(false)
@@ -341,6 +343,14 @@ export function MobileMoneyPage() {
         ? { ...p, solde: p.solde + op.montant, operations: [newOp, ...p.operations] }
         : p
     ))
+    // Propager vers le contexte trésorerie → visible dans Transactions comptabilité
+    addTransaction(
+      { date: op.date, libelle: op.libelle, montant: op.montant },
+      selected.operateur,
+      'mobile-money',
+      selected.agence,
+      op.piece?.name,
+    )
     setShowAddOp(false)
   }
 

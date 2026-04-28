@@ -4,6 +4,7 @@ import { AppSidebar } from './AppSidebar'
 import { Topbar } from './Topbar'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
 import { AiWidget } from '@/features/ai/AiWidget'
+import { TresorerieProvider } from '@/contexts/TresorerieContext'
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -34,7 +35,9 @@ export function AppLayout() {
         <Topbar onMenuClick={() => setSidebarOpen((v) => !v)} />
         <main className="flex-1 overflow-hidden">
           <ErrorBoundary>
-            <Outlet />
+            <TresorerieProvider>
+              <Outlet />
+            </TresorerieProvider>
           </ErrorBoundary>
         </main>
       </div>

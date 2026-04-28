@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
+import { useTresorerie } from '@/contexts/TresorerieContext'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -288,6 +289,7 @@ export function CaissesPage() {
   const { fmt } = useCurrency()
   const { user } = useAuth()
   const agenceNom = user?.agenceNom ?? null
+  const { addTransaction } = useTresorerie()
 
   const [caisses, setCaisses]       = useState<Caisse[]>(INITIAL)
   const [showAddCaisse, setShowAddCaisse] = useState(false)
@@ -320,6 +322,14 @@ export function CaissesPage() {
         ? { ...c, solde: c.solde + op.montant, operations: [newOp, ...c.operations] }
         : c
     ))
+    // Propager vers le contexte trésorerie → visible dans Transactions comptabilité
+    addTransaction(
+      { date: op.date, libelle: op.libelle, montant: op.montant },
+      selected.nom,
+      'caisse',
+      selected.agence,
+      op.piece?.name,
+    )
     setShowAddOp(false)
   }
 

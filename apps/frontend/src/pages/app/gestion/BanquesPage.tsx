@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
+import { useTresorerie } from '@/contexts/TresorerieContext'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -276,6 +277,7 @@ export function BanquesPage() {
   const { fmt } = useCurrency()
   const { user } = useAuth()
   const agenceNom = user?.agenceNom ?? null
+  const { addTransaction } = useTresorerie()
 
   const [comptes, setComptes] = useState<Compte[]>(INITIAL)
   const [selectedId, setSelectedId] = useState<string>(INITIAL[0]!.id)
@@ -319,6 +321,16 @@ export function BanquesPage() {
         ? { ...c, solde: c.solde + op.montant, operations: [newOp, ...c.operations] }
         : c
     ))
+    // Propager vers le contexte trésorerie → visible dans Transactions comptabilité
+    if (selected) {
+      addTransaction(
+        { date: op.date, libelle: op.libelle, montant: op.montant },
+        `${selected.banque} — ${selected.intitule}`,
+        'banque',
+        selected.agence,
+        op.piece?.name,
+      )
+    }
     setShowAddOp(false)
   }
 
