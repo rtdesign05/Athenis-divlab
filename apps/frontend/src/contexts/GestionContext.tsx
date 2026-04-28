@@ -149,6 +149,20 @@ export interface FactureAchat {
   statut:      FactureAchatStatut
 }
 
+// ── Mouvements de stock ───────────────────────────────────────────────────────
+export type MouvementType = 'Entrée' | 'Sortie' | 'Ajustement'
+export interface MouvementStock {
+  id:          string
+  articleId:   string
+  articleNom:  string
+  type:        MouvementType
+  quantite:    number   // positif = entrée/ajust+, négatif = sortie/ajust-
+  reference:   string   // CMD-xxxx / ACH-xxxx / BR-xxxx / manuel
+  agence:      string
+  date:        string   // ISO date
+  notes:       string
+}
+
 // ── Bons de réception ─────────────────────────────────────────────────────────
 export type BRStatut = 'Attendu' | 'Reçu partiel' | 'Reçu' | 'Litige'
 export interface BonReception {
@@ -453,6 +467,32 @@ const INIT_ARTICLES: Article[] = [
   { id: 'ART-012', reference: 'PF-0013', nom: 'Climatiseur split 12 000 BTU',   categorie: 'Produit fini',    unite: 'pièce',  prixVenteHT:   480_000, prixAchatHT:   320_000, stock: 6,   stockMin: 2,  agence: 'Succursale Yaoundé — Centre', description: 'Climatiseur inverter 12 000 BTU R32',               actif: false, createdAt: '2025-08-15' },
 ]
 
+const INIT_MOUVEMENTS_STOCK: MouvementStock[] = [
+  // Entrées liées aux réceptions
+  { id: 'MVT-020', articleId: 'ART-001', articleNom: 'Groupe électrogène 10 kVA',      type: 'Entrée',     quantite:  3, reference: 'BR-0010', agence: 'Siège',                       date: '2026-04-25', notes: 'Réception ACH-0034' },
+  { id: 'MVT-019', articleId: 'ART-003', articleNom: 'Ciment CPA 42.5 (sac 50 kg)',    type: 'Entrée',     quantite: 200, reference: 'BR-0008', agence: 'Siège',                      date: '2026-04-24', notes: 'Réception ACH-0017' },
+  { id: 'MVT-018', articleId: 'ART-004', articleNom: 'Fer à béton ø12 (barre 12 m)',   type: 'Entrée',     quantite:  80, reference: 'BR-0008', agence: 'Siège',                      date: '2026-04-24', notes: 'Réception ACH-0017' },
+  { id: 'MVT-017', articleId: 'ART-009', articleNom: 'Chariot élévateur 2T',            type: 'Entrée',     quantite:  1, reference: 'BR-0009', agence: 'Succursale Yaoundé — Centre', date: '2026-04-22', notes: 'Réception ACH-0031' },
+  { id: 'MVT-016', articleId: 'ART-002', articleNom: 'Pompe submersible 2"',             type: 'Entrée',     quantite: 10, reference: 'BR-0007', agence: 'Siège',                      date: '2026-04-19', notes: 'Réception ACH-0015' },
+  { id: 'MVT-015', articleId: 'ART-008', articleNom: 'Filtre à air universel',           type: 'Entrée',     quantite: 30, reference: 'BR-0007', agence: 'Siège',                      date: '2026-04-19', notes: 'Réception ACH-0015' },
+  { id: 'MVT-014', articleId: 'ART-007', articleNom: 'Huile moteur 15W40 (bidon 5L)',   type: 'Entrée',     quantite: 15, reference: 'BR-0003', agence: 'Siège',                      date: '2026-04-23', notes: 'Réception partielle ACH-0018' },
+  // Sorties liées aux livraisons
+  { id: 'MVT-013', articleId: 'ART-002', articleNom: 'Pompe submersible 2"',             type: 'Sortie',     quantite: -5, reference: 'BL-0008', agence: 'Agence Douala — Akwa',       date: '2026-04-28', notes: 'Livraison CMD-0050' },
+  { id: 'MVT-012', articleId: 'ART-003', articleNom: 'Ciment CPA 42.5 (sac 50 kg)',    type: 'Sortie',     quantite: -120, reference: 'BL-0007', agence: 'Agence Douala — Akwa',      date: '2026-04-26', notes: 'Livraison CMD-0047' },
+  { id: 'MVT-011', articleId: 'ART-004', articleNom: 'Fer à béton ø12 (barre 12 m)',   type: 'Sortie',     quantite: -38, reference: 'BL-0007', agence: 'Agence Douala — Akwa',       date: '2026-04-26', notes: 'Livraison CMD-0047' },
+  { id: 'MVT-010', articleId: 'ART-001', articleNom: 'Groupe électrogène 10 kVA',      type: 'Sortie',     quantite: -1, reference: 'BL-0006', agence: 'Agence Douala — Akwa',        date: '2026-04-25', notes: 'Livraison CMD-0040' },
+  { id: 'MVT-009', articleId: 'ART-010', articleNom: 'Câble électrique H07V-K 2.5mm²', type: 'Sortie',     quantite: -500, reference: 'BL-0005', agence: 'Succursale Yaoundé — Centre', date: '2026-04-22', notes: 'Livraison CMD-0038' },
+  { id: 'MVT-008', articleId: 'ART-011', articleNom: 'Sable de rivière (m³)',           type: 'Sortie',     quantite: -80, reference: 'BL-0002', agence: 'Succursale Yaoundé — Centre', date: '2026-04-22', notes: 'Livraison CMD-0048' },
+  // Ajustements manuels
+  { id: 'MVT-007', articleId: 'ART-007', articleNom: 'Huile moteur 15W40 (bidon 5L)',   type: 'Ajustement', quantite: -13, reference: 'INV-2026-04', agence: 'Agence Douala — Akwa',   date: '2026-04-20', notes: 'Inventaire — écart constaté' },
+  { id: 'MVT-006', articleId: 'ART-010', articleNom: 'Câble électrique H07V-K 2.5mm²', type: 'Ajustement', quantite: -50, reference: 'INV-2026-04', agence: 'Succursale Yaoundé — Centre', date: '2026-04-20', notes: 'Inventaire — stock consommé chantier' },
+  { id: 'MVT-005', articleId: 'ART-012', articleNom: 'Climatiseur split 12 000 BTU',    type: 'Entrée',     quantite:  6, reference: 'BR-0001', agence: 'Succursale Yaoundé — Centre', date: '2026-04-15', notes: 'Réception initiale' },
+  { id: 'MVT-004', articleId: 'ART-009', articleNom: 'Chariot élévateur 2T',            type: 'Entrée',     quantite:  2, reference: 'BR-0001', agence: 'Agence Douala — Akwa',        date: '2026-04-12', notes: 'Stock initial magasin' },
+  { id: 'MVT-003', articleId: 'ART-008', articleNom: 'Filtre à air universel',           type: 'Sortie',     quantite: -20, reference: 'BL-0001', agence: 'Agence Douala — Akwa',       date: '2026-04-16', notes: 'Retour client CMD-0037 annulée' },
+  { id: 'MVT-002', articleId: 'ART-007', articleNom: 'Huile moteur 15W40 (bidon 5L)',   type: 'Sortie',     quantite: -21, reference: 'BL-0001', agence: 'Agence Douala — Akwa',        date: '2026-04-16', notes: 'Retour client CMD-0037 annulée' },
+  { id: 'MVT-001', articleId: 'ART-011', articleNom: 'Sable de rivière (m³)',           type: 'Entrée',     quantite: 160, reference: 'BR-0007', agence: 'Succursale Yaoundé — Centre', date: '2026-04-10', notes: 'Stock initial' },
+]
+
 const INIT_BONS_RECEPTION: BonReception[] = [
   { id: 'BR-0010', commande: 'ACH-0034', fournisseur: 'Import Express',      agence: 'Siège',                       dateCreation: '2026-04-22', datePrevue: '2026-04-25', dateReception: '2026-04-25', statut: 'Reçu' },
   { id: 'BR-0009', commande: 'ACH-0031', fournisseur: 'Manutention Pro',     agence: 'Succursale Yaoundé — Centre', dateCreation: '2026-04-20', datePrevue: '2026-04-22', dateReception: '2026-04-22', statut: 'Reçu' },
@@ -474,11 +514,13 @@ interface GestionContextValue {
   clients:        Client[]
   fournisseurs:   Fournisseur[]
   articles:       Article[]
-  facturesVentes: FactureVente[]
-  bonsLivraison:  BonLivraison[]
-  retoursClients: RetourClient[]
-  facturesAchats: FactureAchat[]
-  bonsReception:  BonReception[]
+  facturesVentes:   FactureVente[]
+  bonsLivraison:    BonLivraison[]
+  retoursClients:   RetourClient[]
+  facturesAchats:   FactureAchat[]
+  bonsReception:    BonReception[]
+  mouvementsStock:  MouvementStock[]
+  addMouvementStock(m: Omit<MouvementStock, 'id'>): MouvementStock
   addArticle(a: Omit<Article, 'id' | 'createdAt'>): Article
   updateArticle(id: string, patch: Partial<Omit<Article, 'id' | 'createdAt'>>): void
   deleteArticle(id: string): void
@@ -514,7 +556,21 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   const [bonsLivraison,  setBonsLivraison]  = useState<BonLivraison[]>(INIT_BONS_LIVRAISON)
   const [retoursClients, setRetoursClients] = useState<RetourClient[]>(INIT_RETOURS_CLIENTS)
   const [facturesAchats, setFacturesAchats] = useState<FactureAchat[]>(INIT_FACTURES_ACHATS)
-  const [bonsReception,  setBonsReception]  = useState<BonReception[]>(INIT_BONS_RECEPTION)
+  const [bonsReception,    setBonsReception]    = useState<BonReception[]>(INIT_BONS_RECEPTION)
+  const [mouvementsStock,  setMouvementsStock]  = useState<MouvementStock[]>(INIT_MOUVEMENTS_STOCK)
+
+  function addMouvementStock(m: Omit<MouvementStock, 'id'>): MouvementStock {
+    const last = mouvementsStock[0]?.id ?? 'MVT-000'
+    const num  = parseInt(last.replace('MVT-', ''), 10) + 1
+    const id   = `MVT-${String(num).padStart(3, '0')}`
+    const next: MouvementStock = { id, ...m }
+    setMouvementsStock(prev => [next, ...prev])
+    // Met à jour le stock de l'article correspondant
+    setArticles(prev => prev.map(a =>
+      a.id === m.articleId ? { ...a, stock: Math.max(0, a.stock + m.quantite) } : a
+    ))
+    return next
+  }
 
   function addArticle(a: Omit<Article, 'id' | 'createdAt'>): Article {
     const num  = articles.length + 1
@@ -623,6 +679,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     <GestionContext.Provider value={{
       commandes, achats, clients, fournisseurs, articles,
       facturesVentes, bonsLivraison, retoursClients, facturesAchats, bonsReception,
+      mouvementsStock, addMouvementStock,
       addArticle, updateArticle, deleteArticle,
       addCommande, addAchat, addFactureVente,
       addClient, updateClient, deleteClient,

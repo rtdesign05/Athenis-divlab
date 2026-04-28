@@ -70,6 +70,7 @@ const router = createBrowserRouter([
               { path: 'clients',       lazy: lz(() => import('@/pages/app/gestion/ClientsPage'),        'ClientsPage') },
               { path: 'livraisons',    lazy: lz(() => import('@/pages/app/gestion/BonsLivraisonPage'),  'BonsLivraisonPage') },
               { path: 'retours',       lazy: lz(() => import('@/pages/app/gestion/RetoursClientsPage'), 'RetoursClientsPage') },
+              { path: 'stock',         lazy: lz(() => import('@/pages/app/gestion/StockPage'),          'StockPage') },
             ],
           },
           {
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
               { path: 'articles',      lazy: lz(() => import('@/pages/app/gestion/ArticlesPage'),       'ArticlesPage') },
               { path: 'receptions',    lazy: lz(() => import('@/pages/app/gestion/BonsReceptionPage'),  'BonsReceptionPage') },
               { path: 'fournisseurs',  lazy: lz(() => import('@/pages/app/gestion/FournisseursPage'),   'FournisseursPage') },
+              { path: 'stock',         lazy: lz(() => import('@/pages/app/gestion/StockPage'),          'StockPage') },
             ],
           },
           {
