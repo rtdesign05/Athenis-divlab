@@ -75,6 +75,7 @@ const router = createBrowserRouter([
             path: 'achats',
             children: [
               { index: true,           lazy: lz(() => import('@/pages/app/gestion/AchatsPage'),        'AchatsPage') },
+              { path: 'factures',      lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
               { path: 'receptions',    lazy: lz(() => import('@/pages/app/Placeholder'),               'Placeholder') },
               { path: 'fournisseurs',  lazy: lz(() => import('@/pages/app/gestion/FournisseursPage'),  'FournisseursPage') },
             ],

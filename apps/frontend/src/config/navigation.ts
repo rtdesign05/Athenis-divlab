@@ -130,6 +130,7 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
   ],
   '/app/gestion/achats': [
     { label: 'Commandes fournisseurs', to: '/app/gestion/achats',          end: true },
+    { label: 'Factures achats',        to: '/app/gestion/achats/factures' },
     { label: 'Réceptions',             to: '/app/gestion/achats/receptions' },
     { label: 'Fournisseurs',           to: '/app/gestion/achats/fournisseurs' },
   ],
