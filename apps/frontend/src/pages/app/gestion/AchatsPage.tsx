@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
-import { useGestion, type Fournisseur, type FournisseurCategorie } from '@/contexts/GestionContext'
+import { useGestion, type Fournisseur, type FournisseurCategorie, type AchatStatut } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 // ── Styles statut commandes ───────────────────────────────────────────────────
@@ -291,7 +291,7 @@ function FournisseursTab({ agenceNom }: { agenceNom: string | null }) {
       {/* Modals */}
       {(showModal || editing) && (
         <ModalFournisseur
-          initial={editing ?? undefined}
+          {...(editing ? { initial: editing } : {})}
           agenceNom={agenceNom}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditing(null) }}
@@ -325,7 +325,7 @@ function FournisseursTab({ agenceNom }: { agenceNom: string | null }) {
 export function AchatsPage() {
   const { fmt }   = useCurrency()
   const { user }  = useAuth()
-  const { achats: allAchats } = useGestion()
+  const { achats: allAchats, updateAchatStatut } = useGestion()
 
   const { agences } = useCompanySettings()
   const activeAgences = useMemo(() => agences.filter(a => a.isActive), [agences])
@@ -468,10 +468,17 @@ export function AchatsPage() {
                       <td className="px-4 py-2.5 text-gray-500">
                         {c.reception ? new Date(c.reception).toLocaleDateString('fr-FR') : '—'}
                       </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUT_STYLE[c.statut] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {c.statut}
-                        </span>
+                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                        <select
+                          value={c.statut}
+                          onChange={e => updateAchatStatut(c.id, e.target.value as AchatStatut)}
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium border-0 outline-none cursor-pointer appearance-none ${STATUT_STYLE[c.statut] ?? 'bg-gray-100 text-gray-600'}`}
+                        >
+                          <option value="En cours">En cours</option>
+                          <option value="Reçue">Reçue</option>
+                          <option value="En attente">En attente</option>
+                          <option value="Annulée">Annulée</option>
+                        </select>
                       </td>
                     </tr>
                   ))}

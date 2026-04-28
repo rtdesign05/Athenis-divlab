@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
-import { useGestion, type Client, type ClientType } from '@/contexts/GestionContext'
+import { useGestion, type Client, type ClientType, type CommandeStatut } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 // ── Styles statut commandes ───────────────────────────────────────────────────
@@ -282,7 +282,7 @@ function ClientsTab({ agenceNom }: { agenceNom: string | null }) {
       {/* Modals */}
       {(showModal || editing) && (
         <ModalClient
-          initial={editing ?? undefined}
+          {...(editing ? { initial: editing } : {})}
           agenceNom={agenceNom}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditing(null) }}
@@ -316,7 +316,7 @@ function ClientsTab({ agenceNom }: { agenceNom: string | null }) {
 export function VentesPage() {
   const { fmt }   = useCurrency()
   const { user }  = useAuth()
-  const { commandes: allCommandes } = useGestion()
+  const { commandes: allCommandes, updateCommandeStatut } = useGestion()
 
   const { agences } = useCompanySettings()
   const activeAgences = useMemo(() => agences.filter(a => a.isActive), [agences])
@@ -457,10 +457,17 @@ export function VentesPage() {
                       <td className="px-4 py-2.5 text-gray-500">{new Date(c.date).toLocaleDateString('fr-FR')}</td>
                       <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{fmt(c.montant)}</td>
                       <td className="px-4 py-2.5 text-gray-500">{c.livraison ? new Date(c.livraison).toLocaleDateString('fr-FR') : '—'}</td>
-                      <td className="px-4 py-2.5">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUT_STYLE[c.statut] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {c.statut}
-                        </span>
+                      <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                        <select
+                          value={c.statut}
+                          onChange={e => updateCommandeStatut(c.id, e.target.value as CommandeStatut)}
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium border-0 outline-none cursor-pointer appearance-none ${STATUT_STYLE[c.statut] ?? 'bg-gray-100 text-gray-600'}`}
+                        >
+                          <option value="En cours">En cours</option>
+                          <option value="Livrée">Livrée</option>
+                          <option value="En attente">En attente</option>
+                          <option value="Annulée">Annulée</option>
+                        </select>
                       </td>
                     </tr>
                   ))}
