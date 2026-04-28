@@ -275,7 +275,24 @@ function CycleCard({
     cycle.cycleStatus === 'na'       ? 'N/A (aucune écriture)' :
     'Non révisé'
 
-  if (cycle.cycleStatus === 'na') return null  // Hide empty cycles by default
+  // N/A cycles: show collapsed, non-interactive, greyed out
+  if (cycle.cycleStatus === 'na') {
+    return (
+      <div className="rounded-xl border border-gray-100 bg-gray-50/60 overflow-hidden opacity-60">
+        <div className="flex items-center gap-4 px-5 py-3.5">
+          <div className="shrink-0 h-8 w-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-bold text-gray-400">
+            C{cycle.id}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-gray-500">{cycle.name}</span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-400">N/A — aucune écriture</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`rounded-xl border ${statusColor} overflow-hidden transition-all`}>
@@ -438,8 +455,6 @@ export function RevisionPage() {
   const { data: cycles, isLoading, isError }      = useRevisionCycles(selectedYear)
   const [search,       setSearch]                 = useState('')
   const [filterStatus, setFilterStatus]           = useState<'all' | 'PENDING' | 'REVIEWED' | 'ANOMALY'>('all')
-  const [showNA,       setShowNA]                 = useState(false)
-
   // Total account counts for status filter badges
   const allAccounts = useMemo(() =>
     (cycles ?? []).flatMap(c => c.accounts),
@@ -448,14 +463,6 @@ export function RevisionPage() {
   const pendingCount  = allAccounts.filter(a => a.status === 'PENDING').length
   const reviewedCount = allAccounts.filter(a => a.status === 'REVIEWED').length
   const anomalyCount  = allAccounts.filter(a => a.status === 'ANOMALY').length
-
-  // Decide which cycles to show
-  const visibleCycles = useMemo(() => {
-    if (!cycles) return []
-    return cycles.filter(c => showNA ? true : !c.isNA)
-  }, [cycles, showNA])
-
-  const naCycleCount = (cycles ?? []).filter(c => c.isNA).length
 
   return (
     <div className="space-y-5">
@@ -535,7 +542,7 @@ export function RevisionPage() {
       ) : (
         <>
           <div className="space-y-3">
-            {visibleCycles.map(cycle => (
+            {(cycles ?? []).map(cycle => (
               <CycleCard
                 key={cycle.id}
                 cycle={cycle}
@@ -545,18 +552,6 @@ export function RevisionPage() {
               />
             ))}
           </div>
-
-          {/* Toggle N/A cycles */}
-          {naCycleCount > 0 && (
-            <button
-              onClick={() => setShowNA(v => !v)}
-              className="text-xs text-gray-400 hover:text-gray-600 underline-offset-2 hover:underline transition-colors"
-            >
-              {showNA
-                ? `Masquer les cycles sans écriture (${naCycleCount})`
-                : `Afficher les cycles sans écriture (${naCycleCount})`}
-            </button>
-          )}
         </>
       )}
     </div>
