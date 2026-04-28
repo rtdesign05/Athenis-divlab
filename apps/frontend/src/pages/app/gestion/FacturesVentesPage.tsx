@@ -425,23 +425,39 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences 
         {step === 1 && (
           <>
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <h2 className="text-base font-semibold text-gray-900">
-                Nouvelle facture — Choisir un modèle
-              </h2>
+              <h2 className="text-base font-semibold text-gray-900">Nouvelle facture — Choisir un modèle</h2>
               <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
             </div>
             <div className="p-6 grid grid-cols-2 gap-4">
-              {(Object.entries(MODELE_META) as [ModeleFacture, typeof MODELE_META[ModeleFacture]][]).map(([key, meta]) => (
-                <button
-                  key={key}
-                  onClick={() => goToStep2(key)}
-                  className={`rounded-xl border-2 p-5 text-left transition hover:shadow-md ${meta.color}`}
-                >
-                  <div className="text-3xl mb-2">{meta.icon}</div>
-                  <p className="font-semibold text-gray-900 mb-1">{meta.label}</p>
-                  <p className="text-xs text-gray-500 leading-relaxed">{meta.desc}</p>
-                </button>
-              ))}
+
+              <button onClick={() => goToStep2('standard')}
+                className="rounded-xl border-2 border-green-200 bg-green-50 p-5 text-left hover:shadow-md hover:border-green-400 transition">
+                <div className="text-3xl mb-2">📄</div>
+                <p className="font-semibold text-gray-900 mb-1">Facture standard</p>
+                <p className="text-xs text-gray-500 leading-relaxed">Facture commerciale classique avec lignes d'articles et TVA</p>
+              </button>
+
+              <button onClick={() => goToStep2('proforma')}
+                className="rounded-xl border-2 border-blue-200 bg-blue-50 p-5 text-left hover:shadow-md hover:border-blue-400 transition">
+                <div className="text-3xl mb-2">📋</div>
+                <p className="font-semibold text-gray-900 mb-1">Pro forma</p>
+                <p className="text-xs text-gray-500 leading-relaxed">Document préliminaire sans valeur comptable — devient facture à l'accord</p>
+              </button>
+
+              <button onClick={() => goToStep2('avoir')}
+                className="rounded-xl border-2 border-amber-200 bg-amber-50 p-5 text-left hover:shadow-md hover:border-amber-400 transition">
+                <div className="text-3xl mb-2">↩️</div>
+                <p className="font-semibold text-gray-900 mb-1">Avoir / Note de crédit</p>
+                <p className="text-xs text-gray-500 leading-relaxed">Annulation partielle ou totale d'une facture émise</p>
+              </button>
+
+              <button onClick={() => goToStep2('acompte')}
+                className="rounded-xl border-2 border-purple-200 bg-purple-50 p-5 text-left hover:shadow-md hover:border-purple-400 transition">
+                <div className="text-3xl mb-2">💰</div>
+                <p className="font-semibold text-gray-900 mb-1">Facture d'acompte</p>
+                <p className="text-xs text-gray-500 leading-relaxed">Règlement partiel anticipé avant exécution de la commande</p>
+              </button>
+
             </div>
           </>
         )}
