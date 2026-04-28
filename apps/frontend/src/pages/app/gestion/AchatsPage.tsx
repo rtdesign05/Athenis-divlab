@@ -348,34 +348,35 @@ export function AchatsPage() {
   return (
     <div className="h-full flex flex-col gap-3">
 
-      {/* ── En-tête + onglets ── */}
+      {/* ── Onglets (ligne du dessus) ── */}
+      <div className="shrink-0 flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5 self-start">
+        <button
+          onClick={() => setTab('commandes')}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            tab === 'commandes' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          📋 Commandes
+        </button>
+        <button
+          onClick={() => setTab('fournisseurs')}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+            tab === 'fournisseurs' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          🏭 Fournisseurs
+        </button>
+      </div>
+
+      {/* ── En-tête (titre + filtres) ── */}
       <div className="shrink-0 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <h1 className="text-base font-semibold text-gray-900">Achats</h1>
           {agenceNom && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
               🏢 {agenceNom}
             </span>
           )}
-          {/* Onglets */}
-          <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-gray-50 p-0.5">
-            <button
-              onClick={() => setTab('commandes')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === 'commandes' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              📋 Commandes
-            </button>
-            <button
-              onClick={() => setTab('fournisseurs')}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === 'fournisseurs' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              🏭 Fournisseurs
-            </button>
-          </div>
         </div>
 
         {tab === 'commandes' && (
