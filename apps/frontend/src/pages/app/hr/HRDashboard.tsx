@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useEmployees, useLeaveStats, useEmployeeStats } from '@/hooks/useHr'
 import { useCurrency } from '@/hooks/useCurrency'
+import { toSafeAmount } from '@/shared/utils/currency'
 import type { EmploymentType } from '@/services/hrApi'
 
 const TYPE_LABEL: Record<EmploymentType, string> = {
@@ -23,8 +24,12 @@ export function HRDashboard() {
   const statsQ      = useEmployeeStats()
   const { fmt }     = useCurrency()
 
-  const actifs = (employeesQ.data?.items ?? []).filter(e => !e.endDate).length
-  const masse  = employeesQ.data?.masseSalarialeMonth ?? 0
+  // Priorité aux stats API (active.count) — plus fiable que filtrer !endDate sur la liste
+  const actifs = statsQ.data?.active.count
+    ?? (employeesQ.data?.items ?? []).filter(e => !e.endDate).length
+  const masse  = statsQ.data
+    ? toSafeAmount(statsQ.data.active.totalMonthly)
+    : (employeesQ.data?.masseSalarialeMonth ?? 0)
   const leaves = leaveStatsQ.data
 
   // Répartition réelle par type de contrat depuis l'API
@@ -39,7 +44,7 @@ export function HRDashboard() {
   }, [statsQ.data])
 
   const totalContrats = contrats.reduce((s, c) => s + c.count, 0)
-  const loading = employeesQ.isLoading || leaveStatsQ.isLoading
+  const loading = statsQ.isLoading || leaveStatsQ.isLoading
 
   return (
     <div className="h-full flex flex-col gap-3">
