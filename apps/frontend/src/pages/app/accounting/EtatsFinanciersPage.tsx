@@ -604,8 +604,8 @@ export function EtatsFinanciersPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('bilan')
   const { downloadEtatsFinanciers } = usePdf()
 
-  // Get accounting zone from company settings (doesn't need a fiscal year)
-  const { data: company, isLoading: companyLoading } = useQuery({
+  // Preload company settings so the spinner fires while they're in flight.
+  const { isLoading: companyLoading } = useQuery({
     queryKey: ['company-settings'],
     queryFn:  () => settingsApi.getCompany(),
     staleTime: 5 * 60_000,
@@ -624,8 +624,9 @@ export function EtatsFinanciersPage() {
     staleTime: 2 * 60_000,
   })
 
-  // Derive zone from company settings (default FRANCE while loading)
-  const zone = (company?.accountingZone as AccountingZone | undefined) ?? 'FRANCE'
+  // Derive zone from the financial statements data (authoritative source).
+  // Falls back to FRANCE while loading — company settings have no accountingZone field.
+  const zone: AccountingZone = fsData?.zone ?? 'FRANCE'
   const tabs = zoneTabs(zone)
   const current = tabs.find((t) => t.key === activeTab) ?? tabs[0]!
 
@@ -640,8 +641,9 @@ export function EtatsFinanciersPage() {
     if (!fyData) {
       return (
         <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-500">
+          {/* Calendar icon — no fiscal year selected */}
           <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6M3 21h18M3 10.5V5a2 2 0 012-2h14a2 2 0 012 2v5.5" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
           </svg>
           <p className="text-sm font-medium">Sélectionnez un exercice comptable</p>
           <p className="text-xs text-slate-400">Utilisez le sélecteur d'exercice en haut de page.</p>
