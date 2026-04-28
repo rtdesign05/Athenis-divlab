@@ -1,36 +1,114 @@
 import { useMemo, useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
-import { useGestion, type Article, type ArticleCategorie, type ArticleUnite } from '@/contexts/GestionContext'
+import { useGestion, type Article, type ArticleUnite } from '@/contexts/GestionContext'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const CATEGORIES: ArticleCategorie[] = ['Produit fini', 'Matière première', 'Service', 'Consommable', 'Équipement']
-const UNITES: ArticleUnite[]         = ['pièce', 'kg', 'litre', 'm²', 'heure', 'forfait']
+const UNITES: ArticleUnite[] = ['pièce', 'kg', 'litre', 'm²', 'heure', 'forfait']
 const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
 
-const CATEGORIE_STYLE: Record<ArticleCategorie, string> = {
-  'Produit fini':     'bg-green-50  text-green-700  ring-green-200',
-  'Matière première': 'bg-orange-50 text-orange-700 ring-orange-200',
-  'Service':          'bg-blue-50   text-blue-700   ring-blue-200',
-  'Consommable':      'bg-amber-50  text-amber-700  ring-amber-200',
-  'Équipement':       'bg-purple-50 text-purple-700 ring-purple-200',
+// Palette de couleurs pour les catégories (statiques pour Tailwind JIT)
+const CATEGORY_PALETTE = [
+  'bg-green-50 text-green-700 ring-green-200',
+  'bg-orange-50 text-orange-700 ring-orange-200',
+  'bg-blue-50 text-blue-700 ring-blue-200',
+  'bg-amber-50 text-amber-700 ring-amber-200',
+  'bg-purple-50 text-purple-700 ring-purple-200',
+  'bg-teal-50 text-teal-700 ring-teal-200',
+  'bg-pink-50 text-pink-700 ring-pink-200',
+  'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  'bg-rose-50 text-rose-700 ring-rose-200',
+  'bg-cyan-50 text-cyan-700 ring-cyan-200',
+]
+
+function getCategorieStyle(cat: string, allCats: string[]): string {
+  const idx = allCats.indexOf(cat)
+  return CATEGORY_PALETTE[(idx >= 0 ? idx : 0) % CATEGORY_PALETTE.length]
 }
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
+// ── Modal nouvelle catégorie ──────────────────────────────────────────────────
+
+interface ModalCategorieProps {
+  existing:    string[]
+  onSave:      (nom: string) => void
+  onClose:     () => void
+}
+
+function ModalNouvelleCategorie({ existing, onSave, onClose }: ModalCategorieProps) {
+  const [nom, setNom] = useState('')
+  const alreadyExists = existing.map(c => c.toLowerCase()).includes(nom.trim().toLowerCase())
+  const empty         = nom.trim() === ''
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (empty || alreadyExists) return
+    onSave(nom.trim())
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="w-full max-w-xs rounded-2xl bg-white shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-semibold text-gray-900">Nouvelle catégorie</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+        </div>
+        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Nom de la catégorie *</label>
+            <input
+              autoFocus
+              value={nom}
+              onChange={e => setNom(e.target.value)}
+              placeholder="Ex : Pièces détachées"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+            />
+            {alreadyExists && !empty && (
+              <p className="mt-1 text-[11px] text-red-500">Cette catégorie existe déjà.</p>
+            )}
+          </div>
+
+          {/* Prévisualisation du badge */}
+          {nom.trim() && !alreadyExists && (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-gray-400">Aperçu :</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${CATEGORY_PALETTE[existing.length % CATEGORY_PALETTE.length]}`}>
+                {nom.trim()}
+              </span>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button type="button" onClick={onClose}
+              className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
+              Annuler
+            </button>
+            <button type="submit" disabled={empty || alreadyExists}
+              className="flex-1 rounded-lg bg-green-700 py-2 text-xs font-semibold text-white hover:bg-green-800 disabled:opacity-40">
+              Créer
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ── Modal article ─────────────────────────────────────────────────────────────
 
 interface ModalArticleProps {
-  initial?: Partial<Article>
-  agenceNom: string | null
-  onSave: (data: Omit<Article, 'id' | 'createdAt'>) => void
-  onClose: () => void
+  initial?:   Partial<Article>
+  agenceNom:  string | null
+  categories: string[]
+  onSave:     (data: Omit<Article, 'id' | 'createdAt'>) => void
+  onClose:    () => void
 }
 
-function ModalArticle({ initial, agenceNom, onSave, onClose }: ModalArticleProps) {
+function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: ModalArticleProps) {
   const [form, setForm] = useState({
     reference:   initial?.reference   ?? '',
     nom:         initial?.nom         ?? '',
-    categorie:   initial?.categorie   ?? 'Produit fini' as ArticleCategorie,
+    categorie:   initial?.categorie   ?? (categories[0] ?? ''),
     unite:       initial?.unite       ?? 'pièce' as ArticleUnite,
     prixVenteHT: initial?.prixVenteHT ?? 0,
     prixAchatHT: initial?.prixAchatHT ?? 0,
@@ -41,9 +119,9 @@ function ModalArticle({ initial, agenceNom, onSave, onClose }: ModalArticleProps
     actif:       initial?.actif       ?? true,
   })
 
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+  const set    = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
-  const setNum = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const setNum  = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: Number(e.target.value) }))
   const setBool = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.checked }))
@@ -51,14 +129,14 @@ function ModalArticle({ initial, agenceNom, onSave, onClose }: ModalArticleProps
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.nom.trim() || !form.reference.trim()) return
-    onSave({ ...form, categorie: form.categorie as ArticleCategorie, unite: form.unite as ArticleUnite })
+    onSave({ ...form, unite: form.unite as ArticleUnite })
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-          <h2 className="text-sm font-semibold text-gray-900">{initial?.id ? 'Modifier l\'article' : 'Nouvel article'}</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{initial?.id ? "Modifier l'article" : 'Nouvel article'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
         </div>
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
@@ -72,7 +150,7 @@ function ModalArticle({ initial, agenceNom, onSave, onClose }: ModalArticleProps
               <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
               <select value={form.categorie} onChange={set('categorie')}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="col-span-2">
@@ -136,7 +214,7 @@ function ModalArticle({ initial, agenceNom, onSave, onClose }: ModalArticleProps
             </button>
             <button type="submit"
               className="flex-1 rounded-lg bg-green-700 py-2 text-xs font-semibold text-white hover:bg-green-800">
-              {initial?.id ? 'Enregistrer' : 'Créer l\'article'}
+              {initial?.id ? 'Enregistrer' : "Créer l'article"}
             </button>
           </div>
         </form>
@@ -150,16 +228,20 @@ function ModalArticle({ initial, agenceNom, onSave, onClose }: ModalArticleProps
 export function ArticlesPage() {
   const { fmt }  = useCurrency()
   const { user } = useAuth()
-  const { articles, addArticle, updateArticle, deleteArticle } = useGestion()
+  const {
+    articles, addArticle, updateArticle, deleteArticle,
+    categoriesArticles, addCategorieArticle,
+  } = useGestion()
 
   const agenceNom = user?.agenceNom ?? null
 
-  const [search,      setSearch]      = useState('')
-  const [catFilter,   setCatFilter]   = useState<ArticleCategorie | 'all'>('all')
-  const [actifFilter, setActifFilter] = useState<'all' | 'actif' | 'inactif'>('all')
-  const [showModal,   setShowModal]   = useState(false)
-  const [editing,     setEditing]     = useState<Article | null>(null)
-  const [confirmDel,  setConfirmDel]  = useState<string | null>(null)
+  const [search,       setSearch]       = useState('')
+  const [catFilter,    setCatFilter]    = useState<string>('all')
+  const [actifFilter,  setActifFilter]  = useState<'all' | 'actif' | 'inactif'>('all')
+  const [showModal,    setShowModal]    = useState(false)
+  const [showCatModal, setShowCatModal] = useState(false)
+  const [editing,      setEditing]      = useState<Article | null>(null)
+  const [confirmDel,   setConfirmDel]   = useState<string | null>(null)
 
   const visible = useMemo(() => {
     let list = agenceNom ? articles.filter(a => a.agence === agenceNom) : articles
@@ -177,13 +259,18 @@ export function ArticlesPage() {
     return list
   }, [articles, agenceNom, catFilter, actifFilter, search])
 
-  const enRupture      = visible.filter(a => a.stock <= a.stockMin && a.categorie !== 'Service').length
-  const valeurStockHT  = visible.reduce((s, a) => s + a.prixVenteHT * a.stock, 0)
-  const actifs         = visible.filter(a => a.actif).length
+  const enRupture     = visible.filter(a => a.stock <= a.stockMin && a.categorie !== 'Service').length
+  const valeurStockHT = visible.reduce((s, a) => s + a.prixVenteHT * a.stock, 0)
+  const actifs        = visible.filter(a => a.actif).length
 
   function handleSave(data: Omit<Article, 'id' | 'createdAt'>) {
     if (editing) { updateArticle(editing.id, data); setEditing(null) }
     else         { addArticle(data);                setShowModal(false) }
+  }
+
+  function handleNewCategory(nom: string) {
+    addCategorieArticle(nom)
+    setShowCatModal(false)
   }
 
   return (
@@ -209,6 +296,36 @@ export function ArticlesPage() {
         </div>
       </div>
 
+      {/* Catégories — liste des badges + bouton créer */}
+      <div className="shrink-0 flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Catégories :</span>
+        <button
+          onClick={() => setCatFilter('all')}
+          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition ${catFilter === 'all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+        >
+          Toutes
+        </button>
+        {categoriesArticles.map(cat => (
+          <button
+            key={cat}
+            onClick={() => setCatFilter(c => c === cat ? 'all' : cat)}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset transition ${
+              catFilter === cat
+                ? getCategorieStyle(cat, categoriesArticles) + ' ring-2 ring-offset-1'
+                : getCategorieStyle(cat, categoriesArticles) + ' opacity-70 hover:opacity-100'
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+        <button
+          onClick={() => setShowCatModal(true)}
+          className="rounded-full border border-dashed border-gray-300 px-2.5 py-0.5 text-xs font-medium text-gray-400 hover:border-gray-400 hover:text-gray-600 transition"
+        >
+          + Nouvelle catégorie
+        </button>
+      </div>
+
       {/* Tableau */}
       <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
         <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
@@ -218,11 +335,6 @@ export function ArticlesPage() {
               placeholder="Réf, désignation, description…"
               className="w-full rounded-lg border border-gray-200 bg-white pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30" />
           </div>
-          <select value={catFilter} onChange={e => setCatFilter(e.target.value as ArticleCategorie | 'all')}
-            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30">
-            <option value="all">Toutes catégories</option>
-            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
           <select value={actifFilter} onChange={e => setActifFilter(e.target.value as 'all' | 'actif' | 'inactif')}
             className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30">
             <option value="all">Actifs + inactifs</option>
@@ -267,7 +379,7 @@ export function ArticlesPage() {
                         {a.description && <p className="text-[10px] text-gray-400 truncate max-w-[200px]">{a.description}</p>}
                       </td>
                       <td className="px-4 py-2.5">
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${CATEGORIE_STYLE[a.categorie]}`}>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${getCategorieStyle(a.categorie, categoriesArticles)}`}>
                           {a.categorie}
                         </span>
                       </td>
@@ -307,15 +419,27 @@ export function ArticlesPage() {
         </div>
       </div>
 
+      {/* Modal article */}
       {(showModal || editing) && (
         <ModalArticle
           {...(editing ? { initial: editing } : {})}
           agenceNom={agenceNom}
+          categories={categoriesArticles}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditing(null) }}
         />
       )}
 
+      {/* Modal nouvelle catégorie */}
+      {showCatModal && (
+        <ModalNouvelleCategorie
+          existing={categoriesArticles}
+          onSave={handleNewCategory}
+          onClose={() => setShowCatModal(false)}
+        />
+      )}
+
+      {/* Confirmation suppression */}
       {confirmDel && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">

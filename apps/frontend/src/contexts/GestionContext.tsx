@@ -27,8 +27,10 @@ export interface Achat {
 
 // ── Types articles ────────────────────────────────────────────────────────────
 
-export type ArticleCategorie = 'Produit fini' | 'Matière première' | 'Service' | 'Consommable' | 'Équipement'
+export type ArticleCategorie = string
 export type ArticleUnite     = 'pièce' | 'kg' | 'litre' | 'm²' | 'heure' | 'forfait'
+
+export const DEFAULT_CATEGORIES: string[] = ['Produit fini', 'Matière première', 'Service', 'Consommable', 'Équipement']
 
 export interface Article {
   id:           string
@@ -589,6 +591,8 @@ interface GestionContextValue {
   clients:        Client[]
   fournisseurs:   Fournisseur[]
   articles:       Article[]
+  categoriesArticles: string[]
+  addCategorieArticle(nom: string): void
   facturesVentes:   FactureVente[]
   bonsLivraison:    BonLivraison[]
   retoursClients:   RetourClient[]
@@ -635,8 +639,15 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   const [bonsLivraison,  setBonsLivraison]  = useState<BonLivraison[]>(INIT_BONS_LIVRAISON)
   const [retoursClients, setRetoursClients] = useState<RetourClient[]>(INIT_RETOURS_CLIENTS)
   const [facturesAchats, setFacturesAchats] = useState<FactureAchat[]>(INIT_FACTURES_ACHATS)
-  const [bonsReception,    setBonsReception]    = useState<BonReception[]>(INIT_BONS_RECEPTION)
-  const [mouvementsStock,  setMouvementsStock]  = useState<MouvementStock[]>(INIT_MOUVEMENTS_STOCK)
+  const [bonsReception,       setBonsReception]       = useState<BonReception[]>(INIT_BONS_RECEPTION)
+  const [mouvementsStock,     setMouvementsStock]     = useState<MouvementStock[]>(INIT_MOUVEMENTS_STOCK)
+  const [categoriesArticles,  setCategoriesArticles]  = useState<string[]>(DEFAULT_CATEGORIES)
+
+  function addCategorieArticle(nom: string) {
+    const n = nom.trim()
+    if (!n || categoriesArticles.includes(n)) return
+    setCategoriesArticles(prev => [...prev, n])
+  }
 
   function addBonLivraison(b: Omit<BonLivraison, 'id'>): BonLivraison {
     const last = bonsLivraison[0]?.id ?? 'BL-0000'
@@ -792,7 +803,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
 
   return (
     <GestionContext.Provider value={{
-      commandes, achats, clients, fournisseurs, articles,
+      commandes, achats, clients, fournisseurs, articles, categoriesArticles, addCategorieArticle,
       facturesVentes, bonsLivraison, retoursClients, facturesAchats, bonsReception,
       mouvementsStock, addMouvementStock,
       addBonLivraison, addRetourClient, addFactureAchat, addBonReception,

@@ -4,14 +4,12 @@ import { useAuth } from '@/features/auth/useAuth'
 import {
   useGestion,
   type Article,
-  type ArticleCategorie,
   type MouvementStock,
   type MouvementType,
 } from '@/contexts/GestionContext'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const CATEGORIES: ArticleCategorie[] = ['Produit fini', 'Matière première', 'Service', 'Consommable', 'Équipement']
 const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
 
 const MVT_STYLE: Record<MouvementType, string> = {
@@ -158,7 +156,7 @@ function ModalAjustement({ articles, agenceNom, onSave, onClose }: ModalAjusteme
 export function StockPage() {
   const { user }                                         = useAuth()
   const { fmt }                                          = useCurrency()
-  const { articles, mouvementsStock, addMouvementStock } = useGestion()
+  const { articles, mouvementsStock, addMouvementStock, categoriesArticles } = useGestion()
 
   const agenceNom = user?.agenceNom ?? null
 
@@ -283,7 +281,7 @@ export function StockPage() {
             <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
               className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
               <option value="tous">Toutes catégories</option>
-              {CATEGORIES.filter(c => c !== 'Service').map(c => <option key={c} value={c}>{c}</option>)}
+              {categoriesArticles.filter(c => c !== 'Service').map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)}
               className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
