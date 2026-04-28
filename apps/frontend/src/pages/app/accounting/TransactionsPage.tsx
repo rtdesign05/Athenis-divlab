@@ -3,6 +3,7 @@ import { useCurrency } from '@/hooks/useCurrency'
 import { formatDate } from '@/shared/utils/date'
 import { accountingApi } from '@/services/accountingApi'
 import { useInvalidateAccounting } from '@/hooks/useFiscalYear'
+import { useAuth } from '@/features/auth/useAuth'
 import {
   useTresorerie,
   type Transaction,
@@ -542,10 +543,20 @@ function TraitementView({ tx }: { tx: Transaction }) {
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export function TransactionsPage() {
-  const { fmt } = useCurrency()
+  const { fmt }  = useCurrency()
+  const { user } = useAuth()
+
+  // Restriction agence — identique à BanquesPage / CaissesPage / MobileMoneyPage
+  const agenceNom = user?.agenceNom ?? null
 
   // Transactions partagées via TresorerieContext
-  const { transactions, validateTransaction } = useTresorerie()
+  const { transactions: allTransactions, validateTransaction } = useTresorerie()
+
+  // Filtrer par agence dès la source (prioritaire sur tous les autres filtres)
+  const transactions = useMemo(
+    () => agenceNom ? allTransactions.filter(t => t.agence === agenceNom) : allTransactions,
+    [allTransactions, agenceNom],
+  )
 
   // Exercice fiscal ouvert
   const [fiscalYearId, setFiscalYearId] = useState<string | null>(null)
@@ -763,6 +774,16 @@ export function TransactionsPage() {
           </span>
         </div>
       </div>
+
+      {/* ── Bandeau vue restreinte ── */}
+      {agenceNom && (
+        <div className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 flex items-center gap-3">
+          <span className="text-sm">🔒</span>
+          <p className="text-xs text-amber-800">
+            Vue restreinte — seules les transactions de l'agence <strong>{agenceNom}</strong> sont affichées.
+          </p>
+        </div>
+      )}
 
       {/* ── Cartes résumé ── */}
       <div className="shrink-0 grid grid-cols-2 gap-3 lg:grid-cols-4">
