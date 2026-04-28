@@ -19,6 +19,7 @@ import { Modal } from '@/shared/components/ui/Modal'
 import { SplitLayout } from '@/components/layout/SplitLayout'
 import { InvoiceDetail } from '@/pages/app/billing/InvoiceDetail'
 import { useCurrency } from '@/hooks/useCurrency'
+import { useTresorerie } from '@/contexts/TresorerieContext'
 import { formatDate } from '@/shared/utils/date'
 import type {
   InvoiceStatus,
@@ -56,7 +57,7 @@ interface RowProps {
   invoice:  Invoice
   selected: boolean
   onSelect: (inv: Invoice) => void
-  onStatus: (id: string, s: InvoiceStatus) => void
+  onStatus: (id: string, s: InvoiceStatus, total?: number) => void
   onDelete: (id: string) => void
 }
 
@@ -88,7 +89,7 @@ const InvoiceRow = React.memo(function InvoiceRow({ invoice, selected, onSelect,
             <button onClick={() => onStatus(invoice.id, 'SENT')} className="text-xs text-forest-700 hover:text-forest-900 font-medium">Envoyer</button>
           )}
           {invoice.status === 'SENT' && (
-            <button onClick={() => onStatus(invoice.id, 'PAID')} className="text-xs text-green-600 hover:text-green-800 font-medium">Marquer payée</button>
+            <button onClick={() => onStatus(invoice.id, 'PAID', parseFloat(invoice.total))} className="text-xs text-green-600 hover:text-green-800 font-medium">Marquer payée</button>
           )}
           {invoice.status === 'DRAFT' && (
             <button onClick={() => onDelete(invoice.id)} className="text-xs text-red-500 hover:text-red-700 font-medium">Supprimer</button>
@@ -326,7 +327,7 @@ function RecurringTab() {
 interface InvoiceListProps {
   selectedId:  string | null
   onSelect:    (inv: Invoice) => void
-  onStatus:    (id: string, status: InvoiceStatus) => void
+  onStatus:    (id: string, status: InvoiceStatus, total?: number) => void
   onDelete:    (id: string) => void
   statusTab:   InvoiceStatus | 'ALL'
   onStatusTab: (s: InvoiceStatus | 'ALL') => void
@@ -414,11 +415,28 @@ export function BillingPage() {
 
   const updateStatus = useUpdateInvoiceStatus()
   const deleteInv    = useDeleteInvoice()
+  const { addTransaction } = useTresorerie()
 
-  const handleStatus = useCallback((id: string, status: InvoiceStatus) => {
+  const handleStatus = useCallback((id: string, status: InvoiceStatus, total?: number) => {
     updateStatus.mutate({ id, status })
+    if (status === 'PAID') {
+      const amount = total ?? (selected?.total != null ? parseFloat(selected.total) : undefined)
+      if (amount) {
+        addTransaction(
+          {
+            montant:  amount,
+            libelle:  `Règlement facture — client`,
+            date:     new Date().toISOString().slice(0, 10),
+          },
+          'BICEC — Compte courant entreprise',
+          'banque',
+          'Siège',
+          undefined,
+        )
+      }
+    }
     if (selected?.id === id) setSelected(inv => inv ? { ...inv, status } : inv)
-  }, [updateStatus, selected])
+  }, [updateStatus, selected, addTransaction])
 
   const handleDelete = useCallback((id: string) => {
     if (confirm('Supprimer cette facture ?')) {

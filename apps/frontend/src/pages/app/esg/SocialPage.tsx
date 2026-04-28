@@ -1,4 +1,4 @@
-import { useEmployees } from '@/hooks/useHr'
+import { useEmployees, useLeaveStats } from '@/hooks/useHr'
 
 const INDICATEURS = [
   { label: 'Taux d\'accidents du travail',      valeur: 2.1,  unite: 'pour 1 000',  objectif: 1.5, esrs: 'ESRS S1' },
@@ -15,6 +15,13 @@ export function SocialPage() {
   const employees = useEmployees()
   const actifs = (employees.data?.items ?? []).filter((e) => !e.endDate).length
   const femmes = Math.round(actifs * 0.42)
+  const leaveStats = useLeaveStats()
+  const absenteisme = leaveStats.data
+    ? +(( leaveStats.data.totalBusinessDays / Math.max(1, actifs * 22) ) * 100).toFixed(1)
+    : 3.8
+  const indicateurs = INDICATEURS.map(ind =>
+    ind.label.includes('absentéisme') ? { ...ind, valeur: absenteisme } : ind
+  )
 
   return (
     <div className="space-y-6">
@@ -55,7 +62,7 @@ export function SocialPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {INDICATEURS.map((ind, i) => {
+            {indicateurs.map((ind, i) => {
               const ok = ind.valeur >= ind.objectif || (ind.label.includes('accident') || ind.label.includes('absentéisme') || ind.label.includes('écart')) ? ind.valeur <= ind.objectif : ind.valeur >= ind.objectif
               return (
                 <tr key={i} className="hover:bg-gray-50/50">

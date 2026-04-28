@@ -4,6 +4,7 @@ import { useFiscalDashboard } from '@/hooks/useFiscal'
 import { useEsgScore } from '@/hooks/useEsg'
 import { usePermissions } from '@/features/auth/usePermissions'
 import { useCurrency } from '@/hooks/useCurrency'
+import { useTresorerie } from '@/contexts/TresorerieContext'
 import { useAuth } from '@/features/auth/useAuth'
 import { AtheisId } from '@/shared/components/ui/AtheisId'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
@@ -200,6 +201,7 @@ export function AppDashboard() {
   const { data: stats, isLoading: stL } = useDashboardStats()
   const { data: cashFlow, isLoading: cfL } = useCashFlow()
   const { data: reminders } = useReminders()
+  const { totalSolde } = useTresorerie()
 
   const firstName   = user?.firstName || user?.email?.split('@')[0] || 'vous'
   const companyName = (user as { companyName?: string } | null)?.companyName ?? null
@@ -253,9 +255,9 @@ export function AppDashboard() {
           />
           <Kpi
             label="Trésorerie nette"
-            value={cashFlow ? fmt(cashFlow.summary.netCashFlow) : cfL ? '…' : '—'}
-            sub="solde prévisionnel 90 j"
-            accent={cashFlow && cashFlow.summary.netCashFlow < 0 ? 'red' : 'green'}
+            value={fmt(totalSolde)}
+            sub="solde consolidé actuel"
+            accent={totalSolde > 0 ? 'green' : 'red'}
           />
         </div>
 

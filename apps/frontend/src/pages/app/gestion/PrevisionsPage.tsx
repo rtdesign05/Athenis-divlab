@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useTresorerie } from '@/contexts/TresorerieContext'
+import { useEmployees } from '@/hooks/useHr'
 import { pdf } from '@react-pdf/renderer'
 import { saveAs } from 'file-saver'
 import React from 'react'
@@ -302,6 +303,11 @@ const SCENARIO_OPTS: { id: Scenario; label: string; color: string }[] = [
 export function PrevisionsPage() {
   const { fmt }        = useCurrency()
   const { totalSolde } = useTresorerie()
+
+  const employees = useEmployees()
+  const masseSalReelle = employees.data?.masseSalarialeMonth ?? 0
+  const masseSalModele = 8_500_000
+  const ecartSal = masseSalReelle > 0 ? Math.abs(masseSalReelle - masseSalModele) / masseSalModele * 100 : 0
 
   const [horizon,   setHorizon]   = useState<Horizon>('1y')
   const [scenario,  setScenario]  = useState<Scenario>('base')
@@ -697,6 +703,25 @@ export function PrevisionsPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Bannière RH masse salariale ── */}
+      {masseSalReelle > 0 && (
+        <div className={`shrink-0 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs border ${
+          ecartSal > 20
+            ? 'bg-amber-50 border-amber-200 text-amber-800'
+            : 'bg-blue-50 border-blue-200 text-blue-800'
+        }`}>
+          <span>
+            👥 <strong>RH — Masse salariale réelle :</strong> {fmt(masseSalReelle)}/mois
+            {' '}<span className="text-gray-500">· Modèle : {fmt(masseSalModele)}</span>
+          </span>
+          {ecartSal > 5 && (
+            <span className={`font-semibold ${ecartSal > 20 ? 'text-amber-700' : 'text-blue-700'}`}>
+              Écart {ecartSal.toFixed(0)}% — ajustez les hypothèses si nécessaire
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Sélecteurs horizon + scénario ── */}
       <div className="shrink-0 flex flex-wrap items-center gap-3">

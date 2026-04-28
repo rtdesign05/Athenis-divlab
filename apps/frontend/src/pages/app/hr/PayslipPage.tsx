@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useEmployees, usePayslip } from '@/hooks/useHr'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/hooks/useAuth'
 import type { Payslip } from '@/services/hrApi'
 import { PdfButton } from '@/shared/components/ui/PdfButton'
 import { usePdf } from '@/shared/hooks/usePdf'
+import { useTresorerie } from '@/contexts/TresorerieContext'
 
 function fmtRate(r: number) {
   return r === 0 ? '—' : r.toFixed(3).replace(/\.?0+$/, '') + ' %'
@@ -117,6 +118,29 @@ export function PayslipPage() {
   const { downloadBulletinPaie } = usePdf()
 
   const { data: payslip, isLoading, isError } = usePayslip(selectedEmpId, month)
+  const { fmt } = useCurrency()
+  const { addTransaction } = useTresorerie()
+  const [virementDone, setVirementDone] = useState(false)
+
+  useEffect(() => {
+    setVirementDone(false)
+  }, [selectedEmpId, month])
+
+  function handleVirementSalaire() {
+    if (!payslip) return
+    addTransaction(
+      {
+        montant:  -payslip.netToPay,
+        libelle:  `Virement salaire — ${payslip.employee.firstName} ${payslip.employee.lastName} — ${payslip.month}`,
+        date:     new Date().toISOString().slice(0, 10),
+      },
+      'BICEC — Compte courant entreprise',
+      'banque',
+      'Siège',
+      undefined,
+    )
+    setVirementDone(true)
+  }
 
   return (
     <div className="space-y-6 p-6">
@@ -172,6 +196,27 @@ export function PayslipPage() {
         </div>
       )}
       {payslip && <PayslipView payslip={payslip} />}
+
+      {payslip && (
+        <div className="rounded-xl border border-gray-200 bg-white px-5 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-900">Virement salaire</p>
+            <p className="text-xs text-gray-500">Enregistre le paiement dans la trésorerie (compte BICEC)</p>
+          </div>
+          {virementDone ? (
+            <span className="rounded-full bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-700">
+              ✓ Enregistré en trésorerie
+            </span>
+          ) : (
+            <button
+              onClick={handleVirementSalaire}
+              className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 transition-colors"
+            >
+              💸 Virer {fmt(payslip.netToPay)}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Legal notice */}
       <p className="text-xs text-gray-400">
