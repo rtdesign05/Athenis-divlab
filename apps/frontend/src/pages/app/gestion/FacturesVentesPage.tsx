@@ -716,20 +716,344 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences 
   )
 }
 
+// ── ModalImportFacture ────────────────────────────────────────────────────────
+
+const CSV_COLUMNS = ['client', 'commande', 'date', 'echeance', 'montantHT', 'tva', 'statut', 'modele', 'notes', 'conditionsPaiement'] as const
+const VALID_STATUTS  = new Set<string>(['Brouillon', 'Envoyée', 'Payée', 'En retard', 'Annulée'])
+const VALID_MODELES  = new Set<string>(['standard', 'proforma', 'avoir', 'acompte'])
+
+function addDays30(iso: string): string {
+  const d = new Date(iso); d.setDate(d.getDate() + 30); return d.toISOString().slice(0, 10)
+}
+
+interface ParsedRow {
+  raw:        Record<string, string>
+  errors:     string[]
+  facture:    Omit<FactureVente, 'id'> | null
+}
+
+function parseCSV(text: string): ParsedRow[] {
+  const lines = text.replace(/\r/g, '').split('\n').filter(l => l.trim())
+  if (lines.length < 2) return []
+
+  // Detect delimiter: semicolon or comma
+  const header = lines[0]
+  const delim  = header.includes(';') ? ';' : ','
+  const cols   = header.split(delim).map(c => c.trim().toLowerCase())
+
+  return lines.slice(1).map(line => {
+    const vals = line.split(delim).map(v => v.trim().replace(/^"|"$/g, ''))
+    const raw: Record<string, string> = {}
+    cols.forEach((c, i) => { raw[c] = vals[i] ?? '' })
+
+    const errors: string[] = []
+
+    // client
+    const client = raw['client']?.trim() ?? ''
+    if (!client) errors.push('Client requis')
+
+    // date
+    const dateStr = raw['date']?.trim() ?? ''
+    const dateOk  = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) && !isNaN(Date.parse(dateStr))
+    if (!dateStr) errors.push('Date requise')
+    else if (!dateOk) errors.push('Date invalide (format AAAA-MM-JJ)')
+
+    // echeance
+    const echeanceRaw = raw['echeance']?.trim() ?? ''
+    const echeance    = echeanceRaw && /^\d{4}-\d{2}-\d{2}$/.test(echeanceRaw)
+      ? echeanceRaw
+      : (dateOk ? addDays30(dateStr) : '')
+
+    // montantHT
+    const montantHTRaw = raw['montantht'] ?? raw['montantHT'] ?? raw['montant_ht'] ?? ''
+    const montantHT    = parseFloat(montantHTRaw.replace(/\s/g, '').replace(',', '.'))
+    if (isNaN(montantHT) || montantHT <= 0) errors.push('Montant HT invalide (doit être > 0)')
+
+    // tva
+    const tvaRaw = raw['tva']?.trim() ?? ''
+    const tva    = tvaRaw ? parseFloat(tvaRaw.replace(',', '.')) : 19.25
+    if (isNaN(tva) || tva < 0 || tva > 100) errors.push('TVA invalide (0–100)')
+
+    // statut
+    const statutRaw = raw['statut']?.trim() ?? ''
+    const statut    = (VALID_STATUTS.has(statutRaw) ? statutRaw : 'Brouillon') as FactureVenteStatut
+
+    // modele
+    const modeleRaw = raw['modele']?.trim().toLowerCase() ?? ''
+    const modele    = (VALID_MODELES.has(modeleRaw) ? modeleRaw : 'standard') as ModeleFacture
+
+    const commande           = raw['commande']?.trim()           ?? ''
+    const notes              = raw['notes']?.trim()              ?? ''
+    const conditionsPaiement = raw['conditionspaiement'] ?? raw['conditionsPaiement'] ?? raw['conditions_paiement'] ?? ''
+
+    const facture: Omit<FactureVente, 'id'> | null = errors.length === 0 ? {
+      modele,
+      commande,
+      client,
+      agence:    'Import',          // overridden by caller
+      date:      dateStr,
+      echeance,
+      montantHT: montantHT,
+      tva,
+      montantTTC: Math.round(montantHT * (1 + tva / 100)),
+      statut,
+      lignes: [{
+        id:             'l1',
+        description:    client + (commande ? ` — ${commande}` : '') + ' (importé)',
+        quantite:       1,
+        unite:          'forfait',
+        prixUnitaireHT: montantHT,
+        tvaRate:        tva,
+        montantHT:      montantHT,
+      }],
+      notes,
+      conditionsPaiement: conditionsPaiement.trim() || 'Paiement à 30 jours',
+    } : null
+
+    return { raw, errors, facture }
+  })
+}
+
+function downloadTemplate() {
+  const header = CSV_COLUMNS.join(';')
+  const row1   = 'ACME Corp;CMD-0051;2026-05-01;2026-05-31;1000000;19.25;Brouillon;standard;;Paiement à 30 jours'
+  const row2   = 'Groupe Delta;CMD-0049;2026-05-02;;2500000;19.25;Envoyée;proforma;Pro forma chariot;;'
+  const blob   = new Blob([`${header}\n${row1}\n${row2}`], { type: 'text/csv;charset=utf-8;' })
+  const url    = URL.createObjectURL(blob)
+  const a      = document.createElement('a')
+  a.href       = url
+  a.download   = 'modele_import_factures.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+interface ModalImportProps {
+  agenceNom:     string | null
+  defaultAgence: string
+  onImported:    (factures: Omit<FactureVente, 'id'>[]) => void
+  onClose:       () => void
+}
+
+function ModalImportFacture({ agenceNom, defaultAgence, onImported, onClose }: ModalImportProps) {
+  const [step,     setStep]     = useState<'upload' | 'preview'>('upload')
+  const [rows,     setRows]     = useState<ParsedRow[]>([])
+  const [dragging, setDragging] = useState(false)
+  const [fileErr,  setFileErr]  = useState<string | null>(null)
+  const [fileName, setFileName] = useState('')
+
+  function processFile(file: File) {
+    if (!file.name.endsWith('.csv') && !file.name.endsWith('.txt')) {
+      setFileErr('Format non supporté — seuls les fichiers .csv sont acceptés')
+      return
+    }
+    setFileErr(null)
+    setFileName(file.name)
+    const reader = new FileReader()
+    reader.onload = e => {
+      const text   = e.target?.result as string ?? ''
+      const parsed = parseCSV(text)
+      if (parsed.length === 0) {
+        setFileErr('Fichier vide ou format non reconnu')
+        return
+      }
+      setRows(parsed)
+      setStep('preview')
+    }
+    reader.readAsText(file, 'UTF-8')
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault(); setDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) processFile(file)
+  }
+
+  function onFileInput(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) processFile(file)
+  }
+
+  const valid   = rows.filter(r => r.errors.length === 0)
+  const invalid = rows.filter(r => r.errors.length > 0)
+
+  function handleImport() {
+    const agence = agenceNom ?? defaultAgence
+    const toImport = valid.map(r => ({ ...r.facture!, agence }))
+    onImported(toImport)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-xl max-h-[90vh] flex flex-col">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-3">
+            <h2 className="text-sm font-semibold text-gray-900">Importer des factures</h2>
+            {step === 'preview' && (
+              <button onClick={() => setStep('upload')}
+                className="text-xs text-gray-400 hover:text-gray-600">← Retour</button>
+            )}
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-5">
+
+          {step === 'upload' && (
+            <div className="space-y-4">
+
+              {/* Instructions */}
+              <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 text-sm text-blue-800 space-y-1">
+                <p className="font-medium">Format attendu — fichier CSV (séparateur `;` ou `,`)</p>
+                <p className="text-xs text-blue-600">Colonnes : <code className="bg-blue-100 px-1 rounded">client ; commande ; date ; echeance ; montantHT ; tva ; statut ; modele ; notes ; conditionsPaiement</code></p>
+                <p className="text-xs text-blue-600">Colonnes obligatoires : <strong>client, date, montantHT</strong> — les autres ont des valeurs par défaut</p>
+              </div>
+
+              {/* Template download */}
+              <button type="button" onClick={downloadTemplate}
+                className="flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition">
+                <span>📥</span>
+                Télécharger le modèle CSV
+              </button>
+
+              {/* Drop zone */}
+              <div
+                onDrop={onDrop}
+                onDragOver={e => { e.preventDefault(); setDragging(true) }}
+                onDragLeave={() => setDragging(false)}
+                className={`relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed py-14 transition cursor-pointer ${
+                  dragging ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50'
+                }`}
+                onClick={() => document.getElementById('csv-input')?.click()}
+              >
+                <input id="csv-input" type="file" accept=".csv,.txt" className="hidden" onChange={onFileInput} />
+                <span className="text-4xl mb-3">{dragging ? '📂' : '📄'}</span>
+                <p className="text-sm font-medium text-gray-700">
+                  {dragging ? 'Déposer le fichier…' : 'Glisser-déposer un fichier CSV'}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">ou cliquer pour parcourir</p>
+              </div>
+
+              {fileErr && (
+                <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-2 text-xs text-red-700">
+                  ⚠️ {fileErr}
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 'preview' && (
+            <div className="space-y-4">
+
+              {/* Résumé */}
+              <div className="flex items-center gap-4">
+                <span className="text-xs font-medium text-gray-500">Fichier : <strong>{fileName}</strong></span>
+                <span className="rounded-full bg-green-100 text-green-700 px-2.5 py-0.5 text-xs font-medium">
+                  {valid.length} valide{valid.length !== 1 ? 's' : ''}
+                </span>
+                {invalid.length > 0 && (
+                  <span className="rounded-full bg-red-100 text-red-600 px-2.5 py-0.5 text-xs font-medium">
+                    {invalid.length} erreur{invalid.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+
+              {/* Table preview */}
+              <div className="rounded-xl border border-gray-100 overflow-hidden text-xs">
+                <table className="w-full">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr className="text-gray-500 font-medium text-left">
+                      <th className="px-3 py-2 w-7">#</th>
+                      <th className="px-3 py-2">Client</th>
+                      <th className="px-3 py-2">Commande</th>
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2 text-right">Montant HT</th>
+                      <th className="px-3 py-2">Statut</th>
+                      <th className="px-3 py-2">Modèle</th>
+                      <th className="px-3 py-2 w-8">État</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {rows.map((r, i) => (
+                      <tr key={i} className={r.errors.length > 0 ? 'bg-red-50/60' : 'bg-white'}>
+                        <td className="px-3 py-2 text-gray-400">{i + 1}</td>
+                        <td className="px-3 py-2 font-medium text-gray-900">{r.raw['client'] || <em className="text-red-400">vide</em>}</td>
+                        <td className="px-3 py-2 font-mono text-gray-500">{r.raw['commande'] || '—'}</td>
+                        <td className="px-3 py-2 text-gray-600">{r.raw['date'] || '—'}</td>
+                        <td className="px-3 py-2 text-right font-semibold text-gray-900 tabular-nums">
+                          {r.facture ? r.facture.montantHT.toLocaleString('fr-FR') : (r.raw['montantht'] ?? r.raw['montantHT'] ?? '—')}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600">{r.raw['statut'] || 'Brouillon'}</td>
+                        <td className="px-3 py-2 text-gray-600">{r.raw['modele'] || 'standard'}</td>
+                        <td className="px-3 py-2">
+                          {r.errors.length === 0 ? (
+                            <span className="text-green-600 font-bold">✓</span>
+                          ) : (
+                            <span className="text-red-500 font-bold" title={r.errors.join(' | ')}>✗</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Erreurs détaillées */}
+              {invalid.length > 0 && (
+                <div className="rounded-xl border border-red-100 bg-red-50 p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-red-700 mb-1">Erreurs détectées (lignes ignorées à l'import)</p>
+                  {invalid.map((r, i) => (
+                    <p key={i} className="text-xs text-red-600">
+                      <strong>Ligne {rows.indexOf(r) + 2}</strong> — {r.errors.join(' · ')}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {valid.length === 0 && (
+                <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 text-xs text-amber-700">
+                  ⚠️ Aucune ligne valide à importer. Corrigez le fichier et réessayez.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="shrink-0 flex gap-2 px-5 py-4 border-t border-gray-100">
+          <button type="button" onClick={onClose}
+            className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
+            Annuler
+          </button>
+          {step === 'preview' && valid.length > 0 && (
+            <button type="button" onClick={handleImport}
+              className="flex-1 rounded-lg bg-green-700 py-2 text-xs font-semibold text-white hover:bg-green-800">
+              Importer {valid.length} facture{valid.length !== 1 ? 's' : ''}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function FacturesVentesPage() {
   const { fmt }  = useCurrency()
   const { user } = useAuth()
-  const { facturesVentes, updateFactureVenteStatut, clients } = useGestion()
+  const { facturesVentes, updateFactureVenteStatut, clients, addFactureVente } = useGestion()
   const { agences: agencesList } = useCompanySettings()
 
   const agenceNom = user?.agenceNom ?? null
 
-  const [selectedId,    setSelectedId]    = useState<string | null>(null)
-  const [showNewModal,  setShowNewModal]  = useState(false)
-  const [search,        setSearch]        = useState('')
-  const [statutFilter,  setStatutFilter]  = useState<FactureVenteStatut | 'all'>('all')
+  const [selectedId,      setSelectedId]      = useState<string | null>(null)
+  const [showNewModal,    setShowNewModal]    = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
+  const [search,          setSearch]          = useState('')
+  const [statutFilter,    setStatutFilter]    = useState<FactureVenteStatut | 'all'>('all')
 
   const items = useMemo(() => {
     let list = agenceNom ? facturesVentes.filter(f => f.agence === agenceNom) : facturesVentes
@@ -799,12 +1123,20 @@ export function FacturesVentesPage() {
             </span>
           )}
         </div>
-        <button
-          onClick={() => setShowNewModal(true)}
-          className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800"
-        >
-          + Nouvelle facture
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            ↑ Importer
+          </button>
+          <button
+            onClick={() => setShowNewModal(true)}
+            className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800"
+          >
+            + Nouvelle facture
+          </button>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -903,7 +1235,7 @@ export function FacturesVentesPage() {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Modal nouvelle facture */}
       {showNewModal && (
         <ModalNouvelleFacture
           onClose={() => setShowNewModal(false)}
@@ -914,6 +1246,19 @@ export function FacturesVentesPage() {
           agenceNom={agenceNom}
           clients={clientNames}
           agences={agenceNames}
+        />
+      )}
+
+      {/* Modal import CSV */}
+      {showImportModal && (
+        <ModalImportFacture
+          agenceNom={agenceNom}
+          defaultAgence={agenceNames[0] ?? 'Siège'}
+          onClose={() => setShowImportModal(false)}
+          onImported={factures => {
+            factures.forEach(f => addFactureVente(f))
+            setShowImportModal(false)
+          }}
         />
       )}
     </div>
