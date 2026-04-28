@@ -1,6 +1,20 @@
+/**
+ * VentesPage — Fix #1 : filtre agences depuis Paramètres
+ *
+ * Le sélecteur "Agence" est maintenant alimenté par la liste réelle
+ * des agences configurées dans Paramètres → Agences.
+ *
+ * Exemple :
+ *   - Créer "Agence Garoua" dans Paramètres → Agences
+ *   - Revenir ici → "Agence Garoua" apparaît dans le filtre
+ */
+
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion } from '@/contexts/GestionContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 const STATUT_STYLE: Record<string, string> = {
   'En cours':   'bg-blue-100 text-blue-700',
@@ -14,8 +28,23 @@ export function VentesPage() {
   const { user }         = useAuth()
   const { commandes: allCommandes } = useGestion()
 
-  const agenceNom  = user?.agenceNom ?? null
-  const commandes  = agenceNom ? allCommandes.filter(c => c.agence === agenceNom) : allCommandes
+  // Agences depuis Paramètres (réactif — mis à jour sans rechargement)
+  const { agences } = useCompanySettings()
+  const activeAgences = useMemo(() => agences.filter(a => a.isActive), [agences])
+
+  // Restriction JWT : utilisateur lié à une agence spécifique
+  const agenceNom = user?.agenceNom ?? null
+
+  // Filtre agence sélectionné dans le dropdown (admin uniquement)
+  const [agenceFilter, setAgenceFilter] = useState<string>('all')
+
+  const commandes = useMemo(() => {
+    // Restriction JWT (prioritaire)
+    let list = agenceNom ? allCommandes.filter(c => c.agence === agenceNom) : allCommandes
+    // Filtre UI (admin seulement)
+    if (!agenceNom && agenceFilter !== 'all') list = list.filter(c => c.agence === agenceFilter)
+    return list
+  }, [allCommandes, agenceNom, agenceFilter])
 
   const totalCA   = commandes.filter(c => c.statut !== 'Annulée').reduce((s, c) => s + c.montant, 0)
   const enCours   = commandes.filter(c => c.statut === 'En cours').length
@@ -25,8 +54,9 @@ export function VentesPage() {
   return (
     <div className="h-full flex flex-col gap-3">
 
+      {/* ── En-tête ── */}
       <div className="shrink-0 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-base font-semibold text-gray-900">Commandes clients</h1>
           {agenceNom && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
@@ -34,11 +64,40 @@ export function VentesPage() {
             </span>
           )}
         </div>
-        <button className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800">
-          + Nouvelle commande
-        </button>
+
+        <div className="flex items-center gap-2">
+          {/* Filtre agence — admin uniquement, alimenté par Paramètres */}
+          {!agenceNom && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-400 shrink-0">🔗 Agence :</span>
+              <select
+                value={agenceFilter}
+                onChange={e => setAgenceFilter(e.target.value)}
+                className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                title="Agences depuis Paramètres → Agences"
+              >
+                <option value="all">Toutes ({activeAgences.length})</option>
+                {activeAgences.map(a => (
+                  <option key={a.id} value={a.nom}>{a.nom}</option>
+                ))}
+              </select>
+              <Link
+                to="/app/settings/agences"
+                className="text-[10px] text-gray-400 hover:text-green-700 transition-colors"
+                title="Gérer les agences dans Paramètres"
+              >
+                ⚙️
+              </Link>
+            </div>
+          )}
+
+          <button className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800">
+            + Nouvelle commande
+          </button>
+        </div>
       </div>
 
+      {/* ── KPIs ── */}
       <div className="shrink-0 grid grid-cols-4 gap-3">
         <div className="rounded-xl border border-gray-200 bg-white p-3">
           <p className="text-xs text-gray-500">CA commandes</p>
@@ -58,9 +117,17 @@ export function VentesPage() {
         </div>
       </div>
 
+      {/* ── Tableau ── */}
       <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
         <div className="shrink-0 flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-gray-900">Commandes récentes</h2>
+          <h2 className="text-sm font-semibold text-gray-900">
+            Commandes récentes
+            {agenceFilter !== 'all' && !agenceNom && (
+              <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700">
+                {agenceFilter}
+              </span>
+            )}
+          </h2>
           <input
             type="search"
             placeholder="Rechercher…"
@@ -85,11 +152,13 @@ export function VentesPage() {
                 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">
-                      Aucune commande pour cette agence
+                      {agenceFilter !== 'all' && !agenceNom
+                        ? `Aucune commande pour « ${agenceFilter} »`
+                        : 'Aucune commande pour cette agence'}
                     </td>
                   </tr>
                 )
-                : commandes.map((c) => (
+                : commandes.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50/60 cursor-pointer">
                     <td className="px-4 py-2.5 font-mono text-xs font-medium text-green-700">{c.id}</td>
                     <td className="px-4 py-2.5 font-medium text-gray-900">{c.client}</td>

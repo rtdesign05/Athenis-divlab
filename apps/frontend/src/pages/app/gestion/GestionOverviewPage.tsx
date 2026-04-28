@@ -3,6 +3,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { Link } from 'react-router-dom'
 import { useTresorerie } from '@/contexts/TresorerieContext'
 import { useGestion } from '@/contexts/GestionContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 // ── Styles statut ─────────────────────────────────────────────────────────────
 
@@ -47,10 +48,11 @@ function KpiCard({ label, value, sub, accent }: {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function GestionOverviewPage() {
-  const { fmt }                       = useCurrency()
-  const { user }                      = useAuth()
+  const { fmt, currencyCode, defaultVatRate } = useCurrency()
+  const { user }                              = useAuth()
   const { commandes: allCommandes, achats: allAchats } = useGestion()
-  const { balances, totalSolde }      = useTresorerie()
+  const { balances, totalSolde }              = useTresorerie()
+  const { agences, country }                  = useCompanySettings()
 
   const agenceNom = user?.agenceNom ?? null
 
@@ -77,6 +79,54 @@ export function GestionOverviewPage() {
             Vue restreinte — vous ne consultez que les données de l'agence
             <span className="font-semibold"> {agenceNom}</span>
           </p>
+        </div>
+      )}
+
+      {/* ── Bandeau Paramètres connectés ─────────────────────────────────── */}
+      {!agenceNom && (
+        <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0">🔗 Paramètres actifs</span>
+
+          {/* Devise */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Devise :</span>
+            <span className="rounded-full bg-forest-100 px-2 py-0.5 text-[11px] font-bold text-forest-800">{currencyCode}</span>
+            <Link to="/app/settings/localisation" className="text-[10px] text-gray-400 hover:text-forest-600 transition-colors">
+              Localisation →
+            </Link>
+          </div>
+
+          <span className="text-gray-200 text-xs">|</span>
+
+          {/* Pays */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Pays :</span>
+            <span className="text-xs font-medium text-gray-700">{country}</span>
+          </div>
+
+          <span className="text-gray-200 text-xs">|</span>
+
+          {/* TVA */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">TVA :</span>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">{defaultVatRate}%</span>
+            <Link to="/app/settings/fiscalite" className="text-[10px] text-gray-400 hover:text-forest-600 transition-colors">
+              Fiscalité →
+            </Link>
+          </div>
+
+          <span className="text-gray-200 text-xs">|</span>
+
+          {/* Agences */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-gray-500">Agences :</span>
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">
+              {agences.filter(a => a.isActive).length} actives
+            </span>
+            <Link to="/app/settings/agences" className="text-[10px] text-gray-400 hover:text-forest-600 transition-colors">
+              Paramètres →
+            </Link>
+          </div>
         </div>
       )}
 
