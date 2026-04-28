@@ -54,14 +54,14 @@ const fmtN = (n: number) => n === 0 ? '—' : (n < 0 ? `(${Math.abs(n).toLocaleS
 type S = ReturnType<typeof makeStyles>
 
 interface RowDef {
-  label:   string
-  ref?:    string
-  values?: FSPair
-  bold?:   boolean
-  indent?: number
+  label:    string
+  ref?:     string
+  values?:  FSPair | undefined
+  bold?:    boolean
+  indent?:  number
   section?: boolean
-  sub?:    boolean
-  total?:  boolean
+  sub?:     boolean
+  total?:   boolean
 }
 
 function TableBlock({ S: s, title, rows, year, prevYear, showVar = false }: {
