@@ -1,27 +1,719 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
-import { useGestion, type FactureVenteStatut } from '@/contexts/GestionContext'
+import {
+  useGestion,
+  type FactureVente,
+  type FactureVenteStatut,
+  type LigneFacture,
+  type ModeleFacture,
+} from '@/contexts/GestionContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const STATUT_STYLE: Record<FactureVenteStatut, string> = {
-  'Brouillon':  'bg-gray-100 text-gray-600',
-  'Envoyée':    'bg-blue-100 text-blue-700',
-  'Payée':      'bg-green-100 text-green-700',
-  'En retard':  'bg-red-100 text-red-600',
-  'Annulée':    'bg-red-50 text-red-400',
+  'Brouillon': 'bg-gray-100 text-gray-600',
+  'Envoyée':   'bg-blue-100 text-blue-700',
+  'Payée':     'bg-green-100 text-green-700',
+  'En retard': 'bg-red-100 text-red-600',
+  'Annulée':   'bg-red-50 text-red-400',
 }
 
 const STATUTS: FactureVenteStatut[] = ['Brouillon', 'Envoyée', 'Payée', 'En retard', 'Annulée']
 
+const MODELE_META: Record<ModeleFacture, { label: string; icon: string; desc: string; color: string }> = {
+  standard: {
+    label: 'Facture standard',
+    icon: '📄',
+    desc: "Facture commerciale classique avec lignes d'articles et TVA",
+    color: 'border-green-200 bg-green-50',
+  },
+  proforma: {
+    label: 'Pro forma',
+    icon: '📋',
+    desc: "Document préliminaire sans valeur comptable — devient facture à l'accord",
+    color: 'border-blue-200 bg-blue-50',
+  },
+  avoir: {
+    label: 'Avoir / Note de crédit',
+    icon: '↩️',
+    desc: "Annulation partielle ou totale d'une facture émise",
+    color: 'border-amber-200 bg-amber-50',
+  },
+  acompte: {
+    label: "Facture d'acompte",
+    icon: '💰',
+    desc: 'Règlement partiel anticipé avant exécution de la commande',
+    color: 'border-purple-200 bg-purple-50',
+  },
+}
+
+const CONDITIONS_PAIEMENT = [
+  'Paiement comptant',
+  'Paiement à 8 jours',
+  'Paiement à 15 jours',
+  'Paiement à 30 jours',
+  'Acompte 30% — solde à la livraison',
+  'Acompte 50% — solde à la livraison',
+  'Remboursement sous 15 jours',
+  'Virement bancaire à 30 jours',
+  'Acompte 30% à la commande — solde à livraison',
+]
+
+const UNITES = ['pièce', 'kg', 'litre', 'm²', 'heure', 'forfait', 'jours']
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr)
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+function fmtDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR')
+}
+
+function docTitle(modele: ModeleFacture): string {
+  switch (modele) {
+    case 'proforma': return 'PRO FORMA'
+    case 'avoir':    return 'AVOIR'
+    case 'acompte':  return "FACTURE D'ACOMPTE"
+    default:         return 'FACTURE'
+  }
+}
+
+// ── InvoiceView ───────────────────────────────────────────────────────────────
+
+interface InvoiceViewProps {
+  facture:         FactureVente
+  onClose:         () => void
+  onStatutChange:  (id: string, statut: FactureVenteStatut) => void
+  allFactures:     FactureVente[]
+  currentIndex:    number
+  onNavigate:      (id: string) => void
+}
+
+function InvoiceView({
+  facture,
+  onClose,
+  onStatutChange,
+  allFactures,
+  currentIndex,
+  onNavigate,
+}: InvoiceViewProps) {
+  const { fmt }    = useCurrency()
+  const { company } = useCompanySettings()
+
+  const companyName    = company?.name    ?? 'Société Athenis'
+  const companyAddress = company?.address ?? '12 Rue Bonanjo'
+  const companyCity    = company?.city    ?? 'Douala'
+  const companyPhone   = company?.phone   ?? ''
+  const companyEmail   = company?.contactEmail ?? ''
+
+  const prevFacture = currentIndex > 0               ? allFactures[currentIndex - 1] : null
+  const nextFacture = currentIndex < allFactures.length - 1 ? allFactures[currentIndex + 1] : null
+
+  const tvaAmount  = facture.lignes.reduce((s, l) => s + l.montantHT * l.tvaRate / 100, 0)
+
+  return (
+    <div className="h-full flex flex-col">
+      {/* Toolbar */}
+      <div className="shrink-0 flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-2.5">
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800"
+        >
+          ← Liste
+        </button>
+        <span className="text-gray-300">|</span>
+        <span className="font-mono text-sm font-semibold text-gray-800">{facture.id}</span>
+        <span className="text-gray-300">|</span>
+
+        {/* Navigation prev/next */}
+        <div className="flex items-center gap-1">
+          <button
+            disabled={!prevFacture}
+            onClick={() => prevFacture && onNavigate(prevFacture.id)}
+            className="rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-30"
+          >
+            Préc.
+          </button>
+          <span className="text-xs text-gray-400">
+            {currentIndex + 1}/{allFactures.length}
+          </span>
+          <button
+            disabled={!nextFacture}
+            onClick={() => nextFacture && onNavigate(nextFacture.id)}
+            className="rounded px-2 py-0.5 text-xs text-gray-500 hover:bg-gray-100 disabled:opacity-30"
+          >
+            Suiv.
+          </button>
+        </div>
+
+        <span className="text-gray-300">|</span>
+
+        {/* Statut badge + selector */}
+        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUT_STYLE[facture.statut]}`}>
+          {facture.statut}
+        </span>
+        <select
+          value={facture.statut}
+          onChange={e => onStatutChange(facture.id, e.target.value as FactureVenteStatut)}
+          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30"
+        >
+          {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        <div className="ml-auto">
+          <button
+            onClick={() => window.print()}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Imprimer
+          </button>
+        </div>
+      </div>
+
+      {/* Document */}
+      <div className="flex-1 min-h-0 overflow-y-auto bg-gray-100 p-6">
+        <div className="max-w-3xl mx-auto bg-white shadow-sm rounded-lg p-10 print:shadow-none print:rounded-none">
+
+          {/* Header */}
+          <div className="flex justify-between items-start mb-8">
+            <div>
+              <p className="text-lg font-bold text-gray-900">{companyName}</p>
+              <p className="text-sm text-gray-600">{companyAddress}</p>
+              <p className="text-sm text-gray-600">{companyCity}, Cameroun</p>
+              {companyPhone && <p className="text-sm text-gray-600">Tél : {companyPhone}</p>}
+              {companyEmail && <p className="text-sm text-gray-600">{companyEmail}</p>}
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-bold text-gray-900 uppercase tracking-wide">
+                {docTitle(facture.modele)}
+              </p>
+              <p className="mt-1 text-sm text-gray-700 font-mono">N° {facture.id}</p>
+              <p className="text-sm text-gray-500">Date : {fmtDate(facture.date)}</p>
+              <p className="text-sm text-gray-500">Échéance : {fmtDate(facture.echeance)}</p>
+              {facture.commande && (
+                <p className="text-sm text-gray-500">Commande : {facture.commande}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Bill to */}
+          <div className="mb-6 rounded-lg border border-gray-100 bg-gray-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">
+              Facturer à
+            </p>
+            <p className="font-semibold text-gray-900">{facture.client}</p>
+            <p className="text-sm text-gray-500">{facture.agence}</p>
+          </div>
+
+          {/* Lines table */}
+          <table className="w-full text-sm mb-6">
+            <thead>
+              <tr className="border-b-2 border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <th className="pb-2 text-left">Description</th>
+                <th className="pb-2 text-center w-16">Qté</th>
+                <th className="pb-2 text-center w-20">Unité</th>
+                <th className="pb-2 text-right w-28">P.U. HT</th>
+                <th className="pb-2 text-right w-8">TVA</th>
+                <th className="pb-2 text-right w-28">Total HT</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {facture.lignes.map(l => (
+                <tr key={l.id}>
+                  <td className="py-2 pr-4 text-gray-800">{l.description}</td>
+                  <td className="py-2 text-center text-gray-700">{l.quantite}</td>
+                  <td className="py-2 text-center text-gray-500">{l.unite}</td>
+                  <td className="py-2 text-right text-gray-700">{fmt(l.prixUnitaireHT)}</td>
+                  <td className="py-2 text-right text-gray-500 text-xs">{l.tvaRate}%</td>
+                  <td className="py-2 text-right font-medium text-gray-900">{fmt(l.montantHT)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Totals + notes */}
+          <div className="flex gap-6 justify-between">
+            <div className="flex-1 space-y-3">
+              {facture.notes && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">Notes</p>
+                  <p className="text-sm text-gray-600 whitespace-pre-wrap">{facture.notes}</p>
+                </div>
+              )}
+              {facture.conditionsPaiement && (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">
+                    Conditions de paiement
+                  </p>
+                  <p className="text-sm text-gray-600">{facture.conditionsPaiement}</p>
+                </div>
+              )}
+            </div>
+            <div className="w-60 space-y-1.5">
+              <div className="flex justify-between text-sm text-gray-700">
+                <span>Total HT</span>
+                <span className="font-medium">{fmt(facture.montantHT)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-gray-500">
+                <span>TVA ({facture.tva}%)</span>
+                <span>{fmt(tvaAmount)}</span>
+              </div>
+              <div className="flex justify-between text-base font-bold text-gray-900 border-t border-gray-200 pt-1.5 mt-1">
+                <span>Total TTC</span>
+                <span>{fmt(facture.montantTTC)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="mt-10 pt-4 border-t border-gray-100 text-center text-xs text-gray-400">
+            {companyName} — {companyAddress}, {companyCity} — Document généré par Athenis
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── ModalNouvelleFacture ──────────────────────────────────────────────────────
+
+interface ModalNouvelleFactureProps {
+  onClose:  () => void
+  onCreated: (id: string) => void
+  agenceNom: string | null
+  clients:   string[]
+  agences:   string[]
+}
+
+interface LigneForm {
+  id:             string
+  description:    string
+  quantite:       string
+  unite:          string
+  prixUnitaireHT: string
+  tvaRate:        string
+}
+
+function emptyLigne(idx: number): LigneForm {
+  return {
+    id:             `nl-${Date.now()}-${idx}`,
+    description:    '',
+    quantite:       '1',
+    unite:          'pièce',
+    prixUnitaireHT: '',
+    tvaRate:        '19.25',
+  }
+}
+
+function defaultsForModele(modele: ModeleFacture): { notes: string; conditionsPaiement: string } {
+  switch (modele) {
+    case 'avoir':
+      return { notes: 'Avoir suite à ...', conditionsPaiement: 'Remboursement sous 15 jours' }
+    case 'proforma':
+      return {
+        notes: "Pro forma — ce document ne constitue pas une facture définitive",
+        conditionsPaiement: 'Acompte 30% à la commande — solde à livraison',
+      }
+    case 'acompte':
+      return { notes: 'Acompte sur commande ...', conditionsPaiement: 'Acompte 30% — solde à la livraison' }
+    default:
+      return { notes: '', conditionsPaiement: 'Paiement à 30 jours' }
+  }
+}
+
+function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences }: ModalNouvelleFactureProps) {
+  const { addFactureVente } = useGestion()
+
+  const [step,     setStep]     = useState<1 | 2>(1)
+  const [modele,   setModele]   = useState<ModeleFacture>('standard')
+
+  const todayStr = today()
+  const defaults = defaultsForModele(modele)
+
+  const [client,             setClient]             = useState('')
+  const [agence,             setAgence]             = useState(agenceNom ?? (agences[0] ?? ''))
+  const [date,               setDate]               = useState(todayStr)
+  const [echeance,           setEcheance]           = useState(addDays(todayStr, 30))
+  const [commande,           setCommande]           = useState('')
+  const [notes,              setNotes]              = useState(defaults.notes)
+  const [conditionsPaiement, setConditionsPaiement] = useState(defaults.conditionsPaiement)
+  const [lignes,             setLignes]             = useState<LigneForm[]>([emptyLigne(0)])
+
+  // When modele changes (before step 2 is committed), update defaults
+  function goToStep2(m: ModeleFacture) {
+    setModele(m)
+    const d = defaultsForModele(m)
+    setNotes(d.notes)
+    setConditionsPaiement(d.conditionsPaiement)
+    setStep(2)
+  }
+
+  function updateLigne(idx: number, patch: Partial<LigneForm>) {
+    setLignes(prev => prev.map((l, i) => i === idx ? { ...l, ...patch } : l))
+  }
+
+  function removeLigne(idx: number) {
+    setLignes(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  function addLigne() {
+    setLignes(prev => [...prev, emptyLigne(prev.length)])
+  }
+
+  // Compute line montantHT from form
+  function lineMontantHT(l: LigneForm): number {
+    const qty = parseFloat(l.quantite) || 0
+    const pu  = parseFloat(l.prixUnitaireHT) || 0
+    return qty * pu
+  }
+
+  const totalHT  = lignes.reduce((s, l) => s + lineMontantHT(l), 0)
+  const tvaAmt   = lignes.reduce((s, l) => {
+    const mht  = lineMontantHT(l)
+    const rate = parseFloat(l.tvaRate) || 0
+    return s + mht * rate / 100
+  }, 0)
+  const totalTTC = totalHT + tvaAmt
+
+  function handleSubmit() {
+    if (!client.trim()) return
+
+    const builtLignes: LigneFacture[] = lignes.map((l, i) => ({
+      id:             `l${i + 1}`,
+      description:    l.description,
+      quantite:       parseFloat(l.quantite) || 0,
+      unite:          l.unite,
+      prixUnitaireHT: parseFloat(l.prixUnitaireHT) || 0,
+      tvaRate:        parseFloat(l.tvaRate) || 0,
+      montantHT:      lineMontantHT(l),
+    }))
+
+    const result = addFactureVente({
+      modele,
+      commande,
+      client,
+      agence,
+      date,
+      echeance,
+      montantHT:  totalHT,
+      tva:        19.25,
+      montantTTC: totalTTC,
+      statut:     'Brouillon',
+      lignes:     builtLignes,
+      notes,
+      conditionsPaiement,
+    })
+
+    onCreated(result.id)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-xl overflow-hidden">
+
+        {/* Step 1 — template selector */}
+        {step === 1 && (
+          <>
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <h2 className="text-base font-semibold text-gray-900">
+                Nouvelle facture — Choisir un modèle
+              </h2>
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4">
+              {(Object.entries(MODELE_META) as [ModeleFacture, typeof MODELE_META[ModeleFacture]][]).map(([key, meta]) => (
+                <button
+                  key={key}
+                  onClick={() => goToStep2(key)}
+                  className={`rounded-xl border-2 p-5 text-left transition hover:shadow-md ${meta.color}`}
+                >
+                  <div className="text-3xl mb-2">{meta.icon}</div>
+                  <p className="font-semibold text-gray-900 mb-1">{meta.label}</p>
+                  <p className="text-xs text-gray-500 leading-relaxed">{meta.desc}</p>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Step 2 — form */}
+        {step === 2 && (
+          <>
+            <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-4">
+              <button
+                onClick={() => setStep(1)}
+                className="text-gray-400 hover:text-gray-700 text-sm"
+              >
+                ←
+              </button>
+              <h2 className="text-base font-semibold text-gray-900">
+                {MODELE_META[modele].icon} {MODELE_META[modele].label}
+              </h2>
+              <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+
+              {/* Client + Agence */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Client <span className="text-red-400">*</span>
+                  </label>
+                  {clients.length > 0 ? (
+                    <select
+                      value={client}
+                      onChange={e => setClient(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                    >
+                      <option value="">— Sélectionner —</option>
+                      {clients.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  ) : (
+                    <input
+                      value={client}
+                      onChange={e => setClient(e.target.value)}
+                      placeholder="Nom du client"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Agence</label>
+                  {agenceNom ? (
+                    <input
+                      value={agenceNom}
+                      disabled
+                      className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-500"
+                    />
+                  ) : (
+                    <select
+                      value={agence}
+                      onChange={e => setAgence(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                    >
+                      {agences.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                  )}
+                </div>
+              </div>
+
+              {/* Dates + Commande */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={e => setDate(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Échéance</label>
+                  <input
+                    type="date"
+                    value={echeance}
+                    onChange={e => setEcheance(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Commande (optionnel)
+                  </label>
+                  <input
+                    value={commande}
+                    onChange={e => setCommande(e.target.value)}
+                    placeholder="CMD-xxxx"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                  />
+                </div>
+              </div>
+
+              {/* Lignes d'articles */}
+              <div>
+                <p className="text-xs font-semibold text-gray-600 mb-2">Lignes d'articles</p>
+                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 border-b border-gray-200">
+                      <tr className="text-left text-gray-500">
+                        <th className="px-3 py-2 font-semibold">Description</th>
+                        <th className="px-2 py-2 font-semibold w-16">Qté</th>
+                        <th className="px-2 py-2 font-semibold w-24">Unité</th>
+                        <th className="px-2 py-2 font-semibold w-28">P.U. HT</th>
+                        <th className="px-2 py-2 font-semibold w-20">TVA %</th>
+                        <th className="px-2 py-2 font-semibold w-28 text-right">Total HT</th>
+                        <th className="px-2 py-2 w-8"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {lignes.map((l, idx) => (
+                        <tr key={l.id}>
+                          <td className="px-3 py-1.5">
+                            <input
+                              value={l.description}
+                              onChange={e => updateLigne(idx, { description: e.target.value })}
+                              placeholder="Description de l'article..."
+                              className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="number"
+                              value={l.quantite}
+                              onChange={e => updateLigne(idx, { quantite: e.target.value })}
+                              className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <select
+                              value={l.unite}
+                              onChange={e => updateLigne(idx, { unite: e.target.value })}
+                              className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"
+                            >
+                              {UNITES.map(u => <option key={u} value={u}>{u}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="number"
+                              value={l.prixUnitaireHT}
+                              onChange={e => updateLigne(idx, { prixUnitaireHT: e.target.value })}
+                              placeholder="0"
+                              className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <select
+                              value={l.tvaRate}
+                              onChange={e => updateLigne(idx, { tvaRate: e.target.value })}
+                              className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"
+                            >
+                              <option value="19.25">19,25 %</option>
+                              <option value="0">0 %</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-medium text-gray-700 tabular-nums">
+                            {lineMontantHT(l).toLocaleString('fr-FR')}
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            <button
+                              onClick={() => removeLigne(idx)}
+                              className="text-gray-400 hover:text-red-500"
+                              title="Supprimer"
+                            >
+                              🗑
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="border-t border-gray-100 px-3 py-2">
+                    <button
+                      onClick={addLigne}
+                      className="text-xs text-green-700 font-medium hover:text-green-800"
+                    >
+                      + Ajouter une ligne
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notes + conditions */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Notes</label>
+                  <textarea
+                    value={notes}
+                    onChange={e => setNotes(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">
+                    Conditions de paiement
+                  </label>
+                  <select
+                    value={conditionsPaiement}
+                    onChange={e => setConditionsPaiement(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                  >
+                    {CONDITIONS_PAIEMENT.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Totals summary */}
+              <div className="flex justify-end">
+                <div className="w-64 rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-1.5 text-sm">
+                  <div className="flex justify-between text-gray-600">
+                    <span>Total HT</span>
+                    <span className="font-medium">{totalHT.toLocaleString('fr-FR')} XAF</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500 text-xs">
+                    <span>TVA</span>
+                    <span>{tvaAmt.toLocaleString('fr-FR')} XAF</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
+                    <span>Total TTC</span>
+                    <span>{totalTTC.toLocaleString('fr-FR')} XAF</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="shrink-0 flex justify-end gap-3 border-t border-gray-100 px-6 py-4">
+              <button
+                onClick={onClose}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!client.trim()}
+                className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-40"
+              >
+                Créer la facture
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export function FacturesVentesPage() {
   const { fmt }  = useCurrency()
   const { user } = useAuth()
-  const { facturesVentes, updateFactureVenteStatut } = useGestion()
+  const { facturesVentes, updateFactureVenteStatut, clients } = useGestion()
+  const { agences: agencesList } = useCompanySettings()
 
   const agenceNom = user?.agenceNom ?? null
 
-  const [search,       setSearch]       = useState('')
-  const [statutFilter, setStatutFilter] = useState<FactureVenteStatut | 'all'>('all')
+  const [selectedId,    setSelectedId]    = useState<string | null>(null)
+  const [showNewModal,  setShowNewModal]  = useState(false)
+  const [search,        setSearch]        = useState('')
+  const [statutFilter,  setStatutFilter]  = useState<FactureVenteStatut | 'all'>('all')
 
   const items = useMemo(() => {
     let list = agenceNom ? facturesVentes.filter(f => f.agence === agenceNom) : facturesVentes
@@ -37,10 +729,46 @@ export function FacturesVentesPage() {
     return list
   }, [facturesVentes, agenceNom, statutFilter, search])
 
+  const currentIndex = selectedId ? items.findIndex(f => f.id === selectedId) : -1
+  const prevFacture  = currentIndex > 0               ? items[currentIndex - 1] : null
+  const nextFacture  = currentIndex < items.length - 1 ? items[currentIndex + 1] : null
+
+  // Arrow key navigation
+  useEffect(() => {
+    if (!selectedId) return
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (e.key === 'ArrowLeft'  && prevFacture) setSelectedId(prevFacture.id)
+      if (e.key === 'ArrowRight' && nextFacture) setSelectedId(nextFacture.id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedId, prevFacture, nextFacture])
+
+  const selectedFacture = selectedId ? facturesVentes.find(f => f.id === selectedId) ?? null : null
+
+  // Invoice view takeover
+  if (selectedFacture) {
+    return (
+      <InvoiceView
+        facture={selectedFacture}
+        onClose={() => setSelectedId(null)}
+        onStatutChange={updateFactureVenteStatut}
+        allFactures={items}
+        currentIndex={currentIndex}
+        onNavigate={setSelectedId}
+      />
+    )
+  }
+
   const totalTTC   = items.filter(f => f.statut !== 'Annulée').reduce((s, f) => s + f.montantTTC, 0)
   const payees     = items.filter(f => f.statut === 'Payée').length
   const enRetard   = items.filter(f => f.statut === 'En retard').length
   const brouillons = items.filter(f => f.statut === 'Brouillon').length
+
+  const clientNames  = clients.map(c => c.nom)
+  const agenceNames  = agencesList.map(a => a.nom)
 
   return (
     <div className="h-full flex flex-col gap-3">
@@ -55,7 +783,10 @@ export function FacturesVentesPage() {
             </span>
           )}
         </div>
-        <button className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800">
+        <button
+          onClick={() => setShowNewModal(true)}
+          className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800"
+        >
           + Nouvelle facture
         </button>
       </div>
@@ -107,6 +838,7 @@ export function FacturesVentesPage() {
             <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-10">
               <tr className="text-left text-xs font-semibold text-gray-500">
                 <th className="px-4 py-2.5">N° facture</th>
+                <th className="px-4 py-2.5">Modèle</th>
                 <th className="px-4 py-2.5">Commande</th>
                 <th className="px-4 py-2.5">Client</th>
                 {!agenceNom && <th className="px-4 py-2.5">Agence</th>}
@@ -119,18 +851,25 @@ export function FacturesVentesPage() {
             <tbody className="divide-y divide-gray-50">
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-400">
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
                     Aucune facture trouvée
                   </td>
                 </tr>
               ) : items.map(f => (
-                <tr key={f.id} className="hover:bg-gray-50/60 cursor-pointer">
+                <tr
+                  key={f.id}
+                  onClick={() => setSelectedId(f.id)}
+                  className="hover:bg-gray-50/60 cursor-pointer"
+                >
                   <td className="px-4 py-2.5 font-mono text-xs font-medium text-green-700">{f.id}</td>
+                  <td className="px-4 py-2.5">
+                    <span className="text-xs text-gray-500">{MODELE_META[f.modele]?.icon} {MODELE_META[f.modele]?.label}</span>
+                  </td>
                   <td className="px-4 py-2.5 font-mono text-xs text-gray-500">{f.commande}</td>
                   <td className="px-4 py-2.5 font-medium text-gray-900">{f.client}</td>
                   {!agenceNom && <td className="px-4 py-2.5 text-[11px] text-gray-500">{f.agence}</td>}
-                  <td className="px-4 py-2.5 text-gray-500">{new Date(f.date).toLocaleDateString('fr-FR')}</td>
-                  <td className="px-4 py-2.5 text-gray-500">{new Date(f.echeance).toLocaleDateString('fr-FR')}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{fmtDate(f.date)}</td>
+                  <td className="px-4 py-2.5 text-gray-500">{fmtDate(f.echeance)}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{fmt(f.montantTTC)}</td>
                   <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                     <select
@@ -147,6 +886,20 @@ export function FacturesVentesPage() {
           </table>
         </div>
       </div>
+
+      {/* Modal */}
+      {showNewModal && (
+        <ModalNouvelleFacture
+          onClose={() => setShowNewModal(false)}
+          onCreated={id => {
+            setShowNewModal(false)
+            setSelectedId(id)
+          }}
+          agenceNom={agenceNom}
+          clients={clientNames}
+          agences={agenceNames}
+        />
+      )}
     </div>
   )
 }

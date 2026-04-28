@@ -77,18 +77,35 @@ export interface Fournisseur {
 }
 
 // ── Factures ventes ───────────────────────────────────────────────────────────
+
+export interface LigneFacture {
+  id:             string
+  description:    string
+  quantite:       number
+  unite:          string
+  prixUnitaireHT: number
+  tvaRate:        number
+  montantHT:      number
+}
+
+export type ModeleFacture = 'standard' | 'proforma' | 'avoir' | 'acompte'
+
 export type FactureVenteStatut = 'Brouillon' | 'Envoyée' | 'Payée' | 'En retard' | 'Annulée'
 export interface FactureVente {
-  id:         string
-  commande:   string        // ref CMD-xxxx
-  client:     string
-  agence:     string
-  date:       string        // ISO
-  echeance:   string        // ISO
-  montantHT:  number
-  tva:        number        // taux ex: 19.25
-  montantTTC: number
-  statut:     FactureVenteStatut
+  id:                 string
+  modele:             ModeleFacture
+  commande:           string
+  client:             string
+  agence:             string
+  date:               string
+  echeance:           string
+  montantHT:          number
+  tva:                number
+  montantTTC:         number
+  statut:             FactureVenteStatut
+  lignes:             LigneFacture[]
+  notes:              string
+  conditionsPaiement: string
 }
 
 // ── Bons de livraison ─────────────────────────────────────────────────────────
@@ -282,16 +299,110 @@ const INIT_FOURNISSEURS: Fournisseur[] = [
 // ── Données canoniques — factures ventes ─────────────────────────────────────
 
 const INIT_FACTURES_VENTES: FactureVente[] = [
-  { id: 'FAV-0010', commande: 'CMD-0050', client: 'TechX Sarl',          agence: 'Agence Douala — Akwa',        date: '2026-04-24', echeance: '2026-05-24', montantHT: 3_524_958, tva: 19.25, montantTTC: 4_200_000, statut: 'Payée' },
-  { id: 'FAV-0009', commande: 'CMD-0047', client: 'Mengueme & Fils',      agence: 'Agence Douala — Akwa',        date: '2026-04-21', echeance: '2026-05-21', montantHT: 1_584_906, tva: 19.25, montantTTC: 1_890_000, statut: 'Payée' },
-  { id: 'FAV-0008', commande: 'CMD-0038', client: 'Sonatec SA',           agence: 'Succursale Yaoundé — Centre', date: '2026-04-18', echeance: '2026-05-18', montantHT: 1_760_502, tva: 19.25, montantTTC: 2_100_000, statut: 'Envoyée' },
-  { id: 'FAV-0007', commande: 'CMD-0040', client: 'TechX Sarl',           agence: 'Agence Douala — Akwa',        date: '2026-04-22', echeance: '2026-05-22', montantHT: 2_682_927, tva: 19.25, montantTTC: 3_200_000, statut: 'Payée' },
-  { id: 'FAV-0006', commande: 'CMD-0039', client: 'Groupe Delta',         agence: 'Siège',                       date: '2026-04-20', echeance: '2026-05-05', montantHT:   746_444, tva: 19.25, montantTTC:   890_000, statut: 'En retard' },
-  { id: 'FAV-0005', commande: 'CMD-0049', client: 'Groupe Delta',         agence: 'Siège',                       date: '2026-04-23', echeance: '2026-05-23', montantHT: 10_063_694, tva: 19.25, montantTTC: 12_000_000, statut: 'Envoyée' },
-  { id: 'FAV-0004', commande: 'CMD-0051', client: 'ACME Corp',            agence: 'Siège',                       date: '2026-04-25', echeance: '2026-05-25', montantHT:  7_044_025, tva: 19.25, montantTTC:  8_400_000, statut: 'Brouillon' },
-  { id: 'FAV-0003', commande: 'CMD-0048', client: 'Sodiko Distribution',  agence: 'Succursale Yaoundé — Centre', date: '2026-04-22', echeance: '2026-04-30', montantHT:  2_641_509, tva: 19.25, montantTTC:  3_150_000, statut: 'En retard' },
-  { id: 'FAV-0002', commande: 'CMD-0041', client: 'ACME Corp',            agence: 'Siège',                       date: '2026-04-24', echeance: '2026-05-24', montantHT:  1_216_301, tva: 19.25, montantTTC:  1_450_000, statut: 'Brouillon' },
-  { id: 'FAV-0001', commande: 'CMD-0037', client: 'Infra Bâtiment',       agence: 'Agence Douala — Akwa',        date: '2026-04-15', echeance: '2026-05-15', montantHT:   469_665, tva: 19.25, montantTTC:   560_000, statut: 'Annulée' },
+  {
+    id: 'FAV-0010', modele: 'standard', commande: 'CMD-0050', client: 'TechX Sarl',
+    agence: 'Agence Douala — Akwa', date: '2026-04-24', echeance: '2026-05-24',
+    montantHT: 3_524_958, tva: 19.25, montantTTC: 4_200_000, statut: 'Payée',
+    notes: '', conditionsPaiement: 'Paiement à 30 jours',
+    lignes: [
+      { id: 'l1', description: 'Pompe submersible 2"', quantite: 5, unite: 'pièce', prixUnitaireHT: 420_000, tvaRate: 19.25, montantHT: 2_100_000 },
+      { id: 'l2', description: 'Câbles et accessoires', quantite: 1, unite: 'forfait', prixUnitaireHT: 1_000_000, tvaRate: 19.25, montantHT: 1_000_000 },
+      { id: 'l3', description: 'Installation et mise en service', quantite: 17, unite: 'heure', prixUnitaireHT: 25_000, tvaRate: 19.25, montantHT: 424_958 },
+    ],
+  },
+  {
+    id: 'FAV-0009', modele: 'standard', commande: 'CMD-0047', client: 'Mengueme & Fils',
+    agence: 'Agence Douala — Akwa', date: '2026-04-21', echeance: '2026-05-21',
+    montantHT: 1_584_906, tva: 19.25, montantTTC: 1_890_000, statut: 'Payée',
+    notes: '', conditionsPaiement: 'Paiement comptant',
+    lignes: [
+      { id: 'l1', description: 'Ciment CPA 42.5 (sac 50 kg)', quantite: 120, unite: 'pièce', prixUnitaireHT: 7_500, tvaRate: 19.25, montantHT: 900_000 },
+      { id: 'l2', description: 'Fer à béton ø12 (barre 12 m)', quantite: 38, unite: 'pièce', prixUnitaireHT: 18_000, tvaRate: 19.25, montantHT: 684_000 },
+      { id: 'l3', description: 'Transport et livraison', quantite: 1, unite: 'forfait', prixUnitaireHT: 906, tvaRate: 19.25, montantHT: 906 },
+    ],
+  },
+  {
+    id: 'FAV-0008', modele: 'standard', commande: 'CMD-0038', client: 'Sonatec SA',
+    agence: 'Succursale Yaoundé — Centre', date: '2026-04-18', echeance: '2026-05-18',
+    montantHT: 1_760_502, tva: 19.25, montantTTC: 2_100_000, statut: 'Envoyée',
+    notes: 'Facture établie suite au bon de commande BC-2026-038', conditionsPaiement: 'Paiement à 30 jours',
+    lignes: [
+      { id: 'l1', description: 'Prestation installation électrique', quantite: 40, unite: 'heure', prixUnitaireHT: 25_000, tvaRate: 19.25, montantHT: 1_000_000 },
+      { id: 'l2', description: 'Câble électrique H07V-K 2.5mm²', quantite: 500, unite: 'm²', prixUnitaireHT: 650, tvaRate: 19.25, montantHT: 325_000 },
+      { id: 'l3', description: 'Fournitures et consommables', quantite: 1, unite: 'forfait', prixUnitaireHT: 435_502, tvaRate: 19.25, montantHT: 435_502 },
+    ],
+  },
+  {
+    id: 'FAV-0007', modele: 'standard', commande: 'CMD-0040', client: 'TechX Sarl',
+    agence: 'Agence Douala — Akwa', date: '2026-04-22', echeance: '2026-05-22',
+    montantHT: 2_682_927, tva: 19.25, montantTTC: 3_200_000, statut: 'Payée',
+    notes: '', conditionsPaiement: 'Virement bancaire à 30 jours',
+    lignes: [
+      { id: 'l1', description: 'Groupe électrogène 10 kVA', quantite: 1, unite: 'pièce', prixUnitaireHT: 2_800_000, tvaRate: 19.25, montantHT: 2_800_000 },
+      { id: 'l2', description: 'Livraison et installation', quantite: 1, unite: 'forfait', prixUnitaireHT: 82_927, tvaRate: 19.25, montantHT: 82_927 },
+    ],
+  },
+  {
+    id: 'FAV-0006', modele: 'standard', commande: 'CMD-0039', client: 'Groupe Delta',
+    agence: 'Siège', date: '2026-04-20', echeance: '2026-05-05',
+    montantHT: 746_444, tva: 19.25, montantTTC: 890_000, statut: 'En retard',
+    notes: 'Relance envoyée le 10/05/2026', conditionsPaiement: 'Paiement à 15 jours',
+    lignes: [
+      { id: 'l1', description: 'Maintenance préventive annuelle', quantite: 2, unite: 'forfait', prixUnitaireHT: 350_000, tvaRate: 19.25, montantHT: 700_000 },
+      { id: 'l2', description: 'Pièces de rechange', quantite: 1, unite: 'forfait', prixUnitaireHT: 46_444, tvaRate: 19.25, montantHT: 46_444 },
+    ],
+  },
+  {
+    id: 'FAV-0005', modele: 'proforma', commande: 'CMD-0049', client: 'Groupe Delta',
+    agence: 'Siège', date: '2026-04-23', echeance: '2026-05-23',
+    montantHT: 10_063_694, tva: 19.25, montantTTC: 12_000_000, statut: 'Envoyée',
+    notes: 'Pro forma — ce document ne constitue pas une facture définitive', conditionsPaiement: 'Acompte 30% à la commande — solde à livraison',
+    lignes: [
+      { id: 'l1', description: 'Chariot élévateur 2T', quantite: 1, unite: 'pièce', prixUnitaireHT: 8_500_000, tvaRate: 19.25, montantHT: 8_500_000 },
+      { id: 'l2', description: 'Formation opérateur (2 jours)', quantite: 16, unite: 'heure', prixUnitaireHT: 25_000, tvaRate: 19.25, montantHT: 400_000 },
+      { id: 'l3', description: 'Contrat maintenance 1 an', quantite: 1, unite: 'forfait', prixUnitaireHT: 1_163_694, tvaRate: 19.25, montantHT: 1_163_694 },
+    ],
+  },
+  {
+    id: 'FAV-0004', modele: 'acompte', commande: 'CMD-0051', client: 'ACME Corp',
+    agence: 'Siège', date: '2026-04-25', echeance: '2026-05-25',
+    montantHT: 7_044_025, tva: 19.25, montantTTC: 8_400_000, statut: 'Brouillon',
+    notes: 'Acompte de 30% sur commande CMD-0051', conditionsPaiement: 'Acompte 30% — solde à la livraison',
+    lignes: [
+      { id: 'l1', description: 'Acompte 30% — Groupe électrogène 10 kVA × 3', quantite: 1, unite: 'forfait', prixUnitaireHT: 7_044_025, tvaRate: 19.25, montantHT: 7_044_025 },
+    ],
+  },
+  {
+    id: 'FAV-0003', modele: 'standard', commande: 'CMD-0048', client: 'Sodiko Distribution',
+    agence: 'Succursale Yaoundé — Centre', date: '2026-04-22', echeance: '2026-04-30',
+    montantHT: 2_641_509, tva: 19.25, montantTTC: 3_150_000, statut: 'En retard',
+    notes: '', conditionsPaiement: 'Paiement à 8 jours',
+    lignes: [
+      { id: 'l1', description: 'Sable de rivière (m³)', quantite: 80, unite: 'm²', prixUnitaireHT: 22_000, tvaRate: 19.25, montantHT: 1_760_000 },
+      { id: 'l2', description: 'Fer à béton ø12 (barre 12 m)', quantite: 49, unite: 'pièce', prixUnitaireHT: 18_000, tvaRate: 19.25, montantHT: 882_000 },
+      { id: 'l3', description: 'Frais de transport', quantite: 1, unite: 'forfait', prixUnitaireHT: -509, tvaRate: 0, montantHT: -509 },
+    ],
+  },
+  {
+    id: 'FAV-0002', modele: 'acompte', commande: 'CMD-0041', client: 'ACME Corp',
+    agence: 'Siège', date: '2026-04-24', echeance: '2026-05-24',
+    montantHT: 1_216_301, tva: 19.25, montantTTC: 1_450_000, statut: 'Brouillon',
+    notes: 'Acompte 50% sur commande CMD-0041', conditionsPaiement: 'Acompte 50% — solde à la livraison',
+    lignes: [
+      { id: 'l1', description: 'Acompte 50% — Climatiseur split 12 000 BTU × 3', quantite: 1, unite: 'forfait', prixUnitaireHT: 1_216_301, tvaRate: 19.25, montantHT: 1_216_301 },
+    ],
+  },
+  {
+    id: 'FAV-0001', modele: 'avoir', commande: 'CMD-0037', client: 'Infra Bâtiment',
+    agence: 'Agence Douala — Akwa', date: '2026-04-15', echeance: '2026-05-15',
+    montantHT: 469_665, tva: 19.25, montantTTC: 560_000, statut: 'Annulée',
+    notes: 'Avoir suite à annulation commande CMD-0037', conditionsPaiement: 'Remboursement sous 15 jours',
+    lignes: [
+      { id: 'l1', description: 'Avoir — Filtre à air universel × 20', quantite: 20, unite: 'pièce', prixUnitaireHT: -8_500, tvaRate: 19.25, montantHT: -170_000 },
+      { id: 'l2', description: 'Avoir — Huile moteur 15W40 × 21', quantite: 21, unite: 'pièce', prixUnitaireHT: -14_000, tvaRate: 19.25, montantHT: -294_000 },
+      { id: 'l3', description: 'Frais de dossier', quantite: 1, unite: 'forfait', prixUnitaireHT: -5_665, tvaRate: 0, montantHT: -5_665 },
+    ],
+  },
 ]
 
 const INIT_BONS_LIVRAISON: BonLivraison[] = [
@@ -373,6 +484,7 @@ interface GestionContextValue {
   deleteArticle(id: string): void
   addCommande(c: Omit<Commande, 'id'>): Commande
   addAchat(a: Omit<Achat, 'id'>): Achat
+  addFactureVente(f: Omit<FactureVente, 'id'>): FactureVente
   addClient(c: Omit<Client, 'id' | 'createdAt'>): Client
   updateClient(id: string, patch: Partial<Omit<Client, 'id' | 'createdAt'>>): void
   deleteClient(id: string): void
@@ -435,6 +547,15 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     const id   = `ACH-${String(num).padStart(4, '0')}`
     const next: Achat = { id, ...a }
     setAchats(prev => [next, ...prev])
+    return next
+  }
+
+  function addFactureVente(f: Omit<FactureVente, 'id'>): FactureVente {
+    const last = facturesVentes[0]?.id ?? 'FAV-0000'
+    const num  = parseInt(last.replace('FAV-', ''), 10) + 1
+    const id   = `FAV-${String(num).padStart(4, '0')}`
+    const next: FactureVente = { id, ...f }
+    setFacturesVentes(prev => [next, ...prev])
     return next
   }
 
@@ -503,7 +624,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       commandes, achats, clients, fournisseurs, articles,
       facturesVentes, bonsLivraison, retoursClients, facturesAchats, bonsReception,
       addArticle, updateArticle, deleteArticle,
-      addCommande, addAchat,
+      addCommande, addAchat, addFactureVente,
       addClient, updateClient, deleteClient,
       addFournisseur, updateFournisseur, deleteFournisseur,
       updateCommandeStatut, updateAchatStatut,
