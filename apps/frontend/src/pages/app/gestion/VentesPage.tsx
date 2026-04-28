@@ -1,13 +1,6 @@
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
-
-const MOCK_COMMANDES = [
-  { id: 'CMD-0041', client: 'ACME Corp',      agence: 'Siège',                       date: '2026-04-24', montant: 1_450_000, statut: 'En cours',   livraison: '2026-04-30' },
-  { id: 'CMD-0040', client: 'TechX Sarl',     agence: 'Agence Douala — Akwa',        date: '2026-04-22', montant: 3_200_000, statut: 'Livrée',     livraison: '2026-04-25' },
-  { id: 'CMD-0039', client: 'Groupe Delta',   agence: 'Siège',                       date: '2026-04-20', montant:   890_000, statut: 'En attente', livraison: '2026-05-02' },
-  { id: 'CMD-0038', client: 'Sonatec SA',     agence: 'Succursale Yaoundé — Centre', date: '2026-04-18', montant: 2_100_000, statut: 'Livrée',     livraison: '2026-04-22' },
-  { id: 'CMD-0037', client: 'Infra Bâtiment', agence: 'Agence Douala — Akwa',       date: '2026-04-15', montant:   560_000, statut: 'Annulée',    livraison: null },
-]
+import { useGestion } from '@/contexts/GestionContext'
 
 const STATUT_STYLE: Record<string, string> = {
   'En cours':   'bg-blue-100 text-blue-700',
@@ -17,15 +10,16 @@ const STATUT_STYLE: Record<string, string> = {
 }
 
 export function VentesPage() {
-  const { fmt } = useCurrency()
-  const { user } = useAuth()
+  const { fmt }          = useCurrency()
+  const { user }         = useAuth()
+  const { commandes: allCommandes } = useGestion()
 
   const agenceNom  = user?.agenceNom ?? null
-  const commandes  = agenceNom ? MOCK_COMMANDES.filter(c => c.agence === agenceNom) : MOCK_COMMANDES
+  const commandes  = agenceNom ? allCommandes.filter(c => c.agence === agenceNom) : allCommandes
 
-  const totalCA  = commandes.filter(c => c.statut !== 'Annulée').reduce((s, c) => s + c.montant, 0)
-  const enCours  = commandes.filter(c => c.statut === 'En cours').length
-  const livrees  = commandes.filter(c => c.statut === 'Livrée').length
+  const totalCA   = commandes.filter(c => c.statut !== 'Annulée').reduce((s, c) => s + c.montant, 0)
+  const enCours   = commandes.filter(c => c.statut === 'En cours').length
+  const livrees   = commandes.filter(c => c.statut === 'Livrée').length
   const enAttente = commandes.filter(c => c.statut === 'En attente').length
 
   return (

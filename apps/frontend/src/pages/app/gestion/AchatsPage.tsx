@@ -1,12 +1,5 @@
 import { useCurrency } from '@/hooks/useCurrency'
-
-const MOCK_COMMANDES = [
-  { id: 'ACH-0018', fournisseur: 'Supplies Pro',    date: '2026-04-23', montant:   780_000, statut: 'En cours',   reception: '2026-04-28' },
-  { id: 'ACH-0017', fournisseur: 'Tech Matériaux',  date: '2026-04-20', montant: 1_350_000, statut: 'Reçue',      reception: '2026-04-24' },
-  { id: 'ACH-0016', fournisseur: 'Distrib Central', date: '2026-04-18', montant:   420_000, statut: 'En attente', reception: '2026-05-05' },
-  { id: 'ACH-0015', fournisseur: 'Fournisseur XYZ', date: '2026-04-15', montant: 2_600_000, statut: 'Reçue',      reception: '2026-04-19' },
-  { id: 'ACH-0014', fournisseur: 'Import Express',  date: '2026-04-10', montant:   195_000, statut: 'Annulée',    reception: null },
-]
+import { useGestion } from '@/contexts/GestionContext'
 
 const STATUT_STYLE: Record<string, string> = {
   'En cours':   'bg-blue-100 text-blue-700',
@@ -16,12 +9,13 @@ const STATUT_STYLE: Record<string, string> = {
 }
 
 export function AchatsPage() {
-  const { fmt } = useCurrency()
+  const { fmt }       = useCurrency()
+  const { achats: allAchats } = useGestion()
 
-  const totalAchats = MOCK_COMMANDES.filter(c => c.statut !== 'Annulée').reduce((s, c) => s + c.montant, 0)
-  const enCours     = MOCK_COMMANDES.filter(c => c.statut === 'En cours').length
-  const recues      = MOCK_COMMANDES.filter(c => c.statut === 'Reçue').length
-  const enAttente   = MOCK_COMMANDES.filter(c => c.statut === 'En attente').length
+  const totalAchats = allAchats.filter(c => c.statut !== 'Annulée').reduce((s, c) => s + c.montant, 0)
+  const enCours     = allAchats.filter(c => c.statut === 'En cours').length
+  const recues      = allAchats.filter(c => c.statut === 'Reçue').length
+  const enAttente   = allAchats.filter(c => c.statut === 'En attente').length
 
   return (
     <div className="h-full flex flex-col gap-3">
@@ -67,6 +61,7 @@ export function AchatsPage() {
               <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-500">
                 <th className="px-4 py-2.5">N° commande</th>
                 <th className="px-4 py-2.5">Fournisseur</th>
+                <th className="px-4 py-2.5">Agence</th>
                 <th className="px-4 py-2.5">Date</th>
                 <th className="px-4 py-2.5 text-right">Montant</th>
                 <th className="px-4 py-2.5">Réception prévue</th>
@@ -74,10 +69,11 @@ export function AchatsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {MOCK_COMMANDES.map((c) => (
+              {allAchats.map((c) => (
                 <tr key={c.id} className="hover:bg-gray-50/60 cursor-pointer">
                   <td className="px-4 py-2.5 font-mono text-xs font-medium text-green-700">{c.id}</td>
                   <td className="px-4 py-2.5 font-medium text-gray-900">{c.fournisseur}</td>
+                  <td className="px-4 py-2.5 text-[11px] text-gray-500">{c.agence}</td>
                   <td className="px-4 py-2.5 text-gray-500">{new Date(c.date).toLocaleDateString('fr-FR')}</td>
                   <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{fmt(c.montant)}</td>
                   <td className="px-4 py-2.5 text-gray-500">

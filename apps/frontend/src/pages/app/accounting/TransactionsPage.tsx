@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { formatDate } from '@/shared/utils/date'
 import { accountingApi } from '@/services/accountingApi'
+import { useInvalidateAccounting } from '@/hooks/useFiscalYear'
 import {
   useTresorerie,
   type Transaction,
@@ -143,7 +144,8 @@ interface ContrePartieModalProps {
 }
 
 function ContrePartieModal({ tx, fiscalYearId, onClose, onValidate }: ContrePartieModalProps) {
-  const { fmt } = useCurrency()
+  const { fmt }              = useCurrency()
+  const invalidateAccounting = useInvalidateAccounting()
   const [accountQuery,     setAccountQuery]     = useState('')
   const [selectedAccount,  setSelectedAccount]  = useState<typeof COMPTES_OHADA[0] | null>(null)
   const [libelle,          setLibelle]          = useState(tx.libelle)
@@ -212,6 +214,8 @@ function ContrePartieModal({ tx, fiscalYearId, onClose, onValidate }: ContrePart
             { compte: tx.accountTresorerie,   libelle, debit: 0,      credit: amount },
           ],
         })
+        // Invalide le cache React Query pour rafraîchir Journal, Balance, Grand Livre
+        invalidateAccounting()
       }
 
       const contrepartie: Contrepartie = {

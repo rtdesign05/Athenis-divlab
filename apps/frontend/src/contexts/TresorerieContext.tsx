@@ -188,17 +188,44 @@ const INIT_TRANSACTIONS: Transaction[] = [
     [{ id:'pj-m8-1', nom:'BON_VENTE_DIRECTE_220426.pdf', type:'recu',     addedAt:'2026-04-22T17:00:00Z' }]),
 ]
 
+// ── Soldes par compte (source unique de vérité pour TresoreriePage, GestionOverview, Prévisions) ──
+
+export interface AccountBalance {
+  name:      string      // clé dans ACCOUNT_MAP (ex: 'Caisse principale')
+  label:     string      // libellé d'affichage
+  type:      SourceType
+  agence:    string
+  solde:     number
+}
+
+/** Soldes initiaux synchronisés avec les INITIAL des pages sources */
+const INITIAL_BALANCES: AccountBalance[] = [
+  { name: 'BICEC — Compte courant entreprise', label: 'BICEC — Compte courant',       type: 'banque',       agence: 'Siège',                       solde: 28_450_000 },
+  { name: 'UBA Cameroun — Compte épargne',     label: 'UBA — Épargne',                type: 'banque',       agence: 'Siège',                       solde: 14_200_000 },
+  { name: 'Ecobank — Compte devises (EUR)',     label: 'Ecobank — Devises (EUR)',       type: 'banque',       agence: 'Siège',                       solde:  5_600_000 },
+  { name: 'Caisse principale',                 label: 'Caisse principale',             type: 'caisse',       agence: 'Siège',                       solde:  1_250_000 },
+  { name: 'Petite caisse',                     label: 'Petite caisse',                 type: 'caisse',       agence: 'Siège',                       solde:     85_000 },
+  { name: 'Caisse Agence',                     label: 'Caisse Agence Douala',          type: 'caisse',       agence: 'Agence Douala — Akwa',        solde:    420_000 },
+  { name: 'Caisse Succursale',                 label: 'Caisse Succursale Yaoundé',     type: 'caisse',       agence: 'Succursale Yaoundé — Centre', solde:    310_000 },
+  { name: 'MTN Mobile Money',                  label: 'MTN Mobile Money',              type: 'mobile-money', agence: 'Siège',                       solde:  3_850_000 },
+  { name: 'Orange Money',                      label: 'Orange Money',                  type: 'mobile-money', agence: 'Siège',                       solde:  1_620_000 },
+]
+
 // ── Interface du contexte ─────────────────────────────────────────────────────
 
 interface TresorerieContextValue {
   transactions: Transaction[]
+  /** Soldes en temps réel par compte — suit les nouvelles opérations */
+  balances:     AccountBalance[]
+  /** Somme de tous les soldes (banques + caisses + mobile money) */
+  totalSolde:   number
   /** Appelé depuis Caisses / Banques / MobileMoney lors d'une nouvelle opération */
   addTransaction(
     op:         { date: string; libelle: string; montant: number },
     sourceName: string,
     sourceType: SourceType,
     agence:     string,
-    pieceName?: string,   // nom du fichier joint, si disponible
+    pieceName?: string,
   ): void
   /** Appelé depuis TransactionsPage lors de la validation d'une contrepartie */
   validateTransaction(id: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]): void
@@ -210,6 +237,9 @@ const TresorerieContext = createContext<TresorerieContextValue | null>(null)
 
 export function TresorerieProvider({ children }: { children: ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>(INIT_TRANSACTIONS)
+  const [balances,     setBalances]     = useState<AccountBalance[]>(INITIAL_BALANCES)
+
+  const totalSolde = balances.reduce((s, b) => s + b.solde, 0)
 
   function addTransaction(
     op:         { date: string; libelle: string; montant: number },
@@ -241,6 +271,16 @@ export function TresorerieProvider({ children }: { children: ReactNode }) {
       pieces,
     }
 
+    // Mettre à jour le solde du compte concerné
+    setBalances(prev => {
+      const idx = prev.findIndex(b => b.name === sourceName)
+      if (idx === -1) {
+        // Compte non encore connu → l'ajouter dynamiquement
+        return [...prev, { name: sourceName, label: sourceName, type: sourceType, agence, solde: op.montant }]
+      }
+      return prev.map((b, i) => i === idx ? { ...b, solde: b.solde + op.montant } : b)
+    })
+
     // Insérer en tête de liste (plus récent d'abord)
     setTransactions(prev => [tx, ...prev])
   }
@@ -256,7 +296,7 @@ export function TresorerieProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <TresorerieContext.Provider value={{ transactions, addTransaction, validateTransaction }}>
+    <TresorerieContext.Provider value={{ transactions, balances, totalSolde, addTransaction, validateTransaction }}>
       {children}
     </TresorerieContext.Provider>
   )

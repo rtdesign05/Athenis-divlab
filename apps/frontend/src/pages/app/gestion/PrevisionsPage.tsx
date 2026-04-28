@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
+import { useTresorerie } from '@/contexts/TresorerieContext'
 import { pdf } from '@react-pdf/renderer'
 import { saveAs } from 'file-saver'
 import React from 'react'
@@ -53,8 +54,8 @@ const ANNUAL_GROWTH: Record<Scenario, Record<Growth, number>> = {
 // Facteurs saisonniers par mois (0 = Janv, 11 = Déc)
 const SEASONAL = [0.82, 0.87, 1.04, 1.00, 0.95, 0.89, 0.84, 0.78, 1.06, 1.12, 1.18, 1.28]
 
-// Trésorerie initiale (solde consolidé banques + caisses + mobile money)
-const INITIAL_BALANCE = 48_250_000
+// Trésorerie initiale — valeur de secours (remplacée dynamiquement dans le composant)
+const FALLBACK_BALANCE = 55_785_000
 
 // Taux IS Cameroun (Impôt sur les Sociétés)
 const TAUX_IS = 0.30
@@ -183,8 +184,9 @@ function generateMatrix(horizon: Horizon, scenario: Scenario): Record<string, nu
 
 /** Résout les lignes calculées depuis une matrice de données */
 function resolveComputed(
-  dataMatrix: Record<string, number[]>,
-  colCount: number,
+  dataMatrix:     Record<string, number[]>,
+  colCount:       number,
+  initialBalance: number = FALLBACK_BALANCE,
 ): Record<string, number[]> {
   const m = { ...dataMatrix }
 
@@ -213,7 +215,7 @@ function resolveComputed(
   const debut: number[] = []
   const fin:   number[] = []
   for (let c = 0; c < colCount; c++) {
-    const d = c === 0 ? INITIAL_BALANCE : (fin[c - 1] ?? INITIAL_BALANCE)
+    const d = c === 0 ? initialBalance : (fin[c - 1] ?? initialBalance)
     debut.push(d)
     fin.push(d + (m['sol_net']?.[c] ?? 0))
   }
@@ -298,7 +300,8 @@ const SCENARIO_OPTS: { id: Scenario; label: string; color: string }[] = [
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export function PrevisionsPage() {
-  const { fmt } = useCurrency()
+  const { fmt }        = useCurrency()
+  const { totalSolde } = useTresorerie()
 
   const [horizon,   setHorizon]   = useState<Horizon>('1y')
   const [scenario,  setScenario]  = useState<Scenario>('base')
@@ -319,8 +322,11 @@ export function PrevisionsPage() {
     return m
   }, [generated, overrides])
 
-  // Toutes les valeurs résolues (computed incluses)
-  const resolved = useMemo(() => resolveComputed(dataMatrix, colCount), [dataMatrix, colCount])
+  // Toutes les valeurs résolues (computed incluses) — solde initial depuis TresorerieContext
+  const resolved = useMemo(
+    () => resolveComputed(dataMatrix, colCount, totalSolde),
+    [dataMatrix, colCount, totalSolde],
+  )
 
   function setOverride(rowId: string, colIdx: number, val: number) {
     setOverrides(prev => ({ ...prev, [`${rowId}:${colIdx}`]: val }))
@@ -337,10 +343,10 @@ export function PrevisionsPage() {
       totalEnc:    sum('tot_enc'),
       totalDec:    sum('tot_dec'),
       fluxNet:     sum('sol_net'),
-      tresoFin:    resolved['sol_fin']?.[colCount - 1] ?? INITIAL_BALANCE,
-      tresoDebut:  resolved['sol_deb']?.[0] ?? INITIAL_BALANCE,
+      tresoFin:    resolved['sol_fin']?.[colCount - 1] ?? totalSolde,
+      tresoDebut:  resolved['sol_deb']?.[0] ?? totalSolde,
     }
-  }, [resolved, colCount])
+  }, [resolved, colCount, totalSolde])
 
   const hasOverrides = Object.keys(overrides).length > 0
 
@@ -799,7 +805,7 @@ export function PrevisionsPage() {
       <div className="shrink-0 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
         <p className="font-semibold mb-1">📌 Hypothèses du modèle</p>
         <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[11px] text-blue-600">
-          <span>• Tréso initiale : {fmt(INITIAL_BALANCE)} (soldes consolidés au {new Date(2026,3,27).toLocaleDateString('fr-FR')})</span>
+          <span>• Tréso initiale : {fmt(totalSolde)} (soldes consolidés au {new Date(2026,3,27).toLocaleDateString('fr-FR')})</span>
           <span>• Croissance scénario de base : +10%/an sur les recettes</span>
           <span>• Saisonnalité : pic décembre (+28%), creux août (-22%)</span>
           <span>• Charges fixes : indexées +4%/an (inflation)</span>
