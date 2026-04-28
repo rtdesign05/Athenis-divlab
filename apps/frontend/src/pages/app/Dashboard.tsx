@@ -1,9 +1,10 @@
 import { useDashboardStats, useCashFlow, useReminders } from '@/hooks/useBilling'
-import { useEmployees, useLeaveStats } from '@/hooks/useHr'
+import { useLeaveStats, useEmployeeStats } from '@/hooks/useHr'
 import { useFiscalDashboard } from '@/hooks/useFiscal'
 import { useEsgScore } from '@/hooks/useEsg'
 import { usePermissions } from '@/features/auth/usePermissions'
 import { useCurrency } from '@/hooks/useCurrency'
+import { toSafeAmount } from '@/shared/utils/currency'
 import { useTresorerie } from '@/contexts/TresorerieContext'
 import { useAuth } from '@/features/auth/useAuth'
 import { AtheisId } from '@/shared/components/ui/AtheisId'
@@ -109,17 +110,17 @@ function RelancesWidget() {
 
 function RhWidget({ modules }: { modules: string[] }) {
   const { fmt } = useCurrency()
-  const empQ    = useEmployees()
+  const statsQ  = useEmployeeStats()
   const leaveQ  = useLeaveStats()
   if (!modules.includes('rh')) return null
-  const actifs  = (empQ.data?.items ?? []).filter(e => !e.endDate).length
-  const masse   = empQ.data?.masseSalarialeMonth ?? 0
+  const actifs  = statsQ.data?.active.count ?? 0
+  const masse   = statsQ.data ? toSafeAmount(statsQ.data.active.totalMonthly) : 0
   const pending = leaveQ.data?.pending ?? 0
   return (
     <SectionCard title="Ressources humaines" icon="👥">
       <div className="grid grid-cols-3 gap-2">
         <div className="text-center">
-          <p className="text-base font-bold text-gray-900">{empQ.isLoading ? '—' : actifs}</p>
+          <p className="text-base font-bold text-gray-900">{statsQ.isLoading ? '—' : actifs}</p>
           <p className="text-[10px] text-gray-400">Effectif</p>
         </div>
         <div className="text-center">
@@ -127,7 +128,7 @@ function RhWidget({ modules }: { modules: string[] }) {
           <p className="text-[10px] text-gray-400">Congés att.</p>
         </div>
         <div className="text-center">
-          <p className="text-xs font-bold text-gray-900 leading-tight">{empQ.isLoading ? '—' : fmt(masse)}</p>
+          <p className="text-xs font-bold text-gray-900 leading-tight">{statsQ.isLoading ? '—' : fmt(masse)}</p>
           <p className="text-[10px] text-gray-400">Masse sal.</p>
         </div>
       </div>
@@ -225,7 +226,7 @@ export function AppDashboard() {
         </div>
 
         {/* KPI row */}
-        <div className="shrink-0 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="shrink-0 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <Kpi
             label="CA exercice"
             value={stL ? '…' : fmt(stats?.revenue.current ?? 0)}
@@ -247,11 +248,6 @@ export function AppDashboard() {
             value={stL ? '…' : fmt(stats?.pendingAmount ?? 0)}
             sub={stats?.overdueAmount ? `${fmt(stats.overdueAmount)} en retard` : 'Aucun retard'}
             accent={stats?.overdueAmount ? 'red' : undefined}
-          />
-          <Kpi
-            label="Dépenses / mois"
-            value={stL ? '…' : stats ? fmt((stats as { monthlyExpenses?: number }).monthlyExpenses ?? 0) : '—'}
-            sub="charges courantes"
           />
           <Kpi
             label="Trésorerie nette"
@@ -300,11 +296,11 @@ export function AppDashboard() {
             <SectionCard title="Activité ventes" icon="💹">
               <div className="grid grid-cols-2 gap-2 text-center">
                 <div>
-                  <p className="text-lg font-bold text-gray-900">{stL ? '—' : stats?.pendingInvoices ?? 0}</p>
+                  <p className="text-lg font-bold text-gray-900">{stL ? '—' : stats?.pendingCount ?? 0}</p>
                   <p className="text-[10px] text-gray-400">Factures ouvertes</p>
                 </div>
                 <div>
-                  <p className="text-lg font-bold text-gray-900">{stL ? '—' : stats?.overdueInvoices ?? 0}</p>
+                  <p className={`text-lg font-bold ${(stats?.overdueCount ?? 0) > 0 ? 'text-red-600' : 'text-gray-900'}`}>{stL ? '—' : stats?.overdueCount ?? 0}</p>
                   <p className="text-[10px] text-gray-400">En retard</p>
                 </div>
               </div>
