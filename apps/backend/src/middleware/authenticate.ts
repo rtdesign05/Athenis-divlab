@@ -30,16 +30,30 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
           where: { userId: payload.sub },
           include: {
             agences: {
-              select: { agenceId: true, isRestricted: true },
+              select: {
+                agenceId:     true,
+                isRestricted: true,
+                agence:       { select: { nom: true } },
+              },
             },
           },
         })
         if (member && member.agences.length > 0) {
-          payload.agenceIds = member.agences.map((a) => a.agenceId)
+          payload.agenceIds    = member.agences.map((a) => a.agenceId)
           payload.isRestricted = member.agences.some((a) => a.isRestricted)
+
+          // Popule agenceNom avec l'agence principale de l'utilisateur restreint
+          // → permet aux pages Gestion de filtrer sans re-login
+          if (payload.isRestricted) {
+            const primary     = member.agences.find((a) => a.isRestricted) ?? member.agences[0]
+            payload.agenceNom = primary?.agence?.nom ?? null
+          } else {
+            payload.agenceNom = null // admin → voit tout
+          }
         } else {
-          payload.agenceIds = []
+          payload.agenceIds    = []
           payload.isRestricted = false
+          payload.agenceNom    = null
         }
       } catch {
         // DB unavailable — degrade gracefully (no restriction)

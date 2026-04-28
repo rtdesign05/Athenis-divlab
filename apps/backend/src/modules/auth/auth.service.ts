@@ -780,6 +780,18 @@ export async function acceptInvitation(
 
   await audit('USER_CREATED', result.user.id, invitation.companyId, ip, ua)
 
+  // Résoudre le nom de l'agence principale pour le JWT
+  // (agenceNom est utilisé par le frontend pour filtrer les données Gestion)
+  let agenceNom: string | null = null
+  const firstAgenceId = invitation.agenceIds[0]
+  if (firstAgenceId && (meta.isRestricted ?? false)) {
+    const firstAgence = await prisma.agence.findUnique({
+      where:  { id: firstAgenceId },
+      select: { nom: true },
+    })
+    agenceNom = firstAgence?.nom ?? null
+  }
+
   const accessToken = signAccessToken({
     sub:           result.user.id,
     email:         result.user.email,
@@ -793,7 +805,7 @@ export async function acceptInvitation(
     currencySymbol: company.currencySymbol ?? null,
     atheisNumber:  result.user.atheisNumber ?? null,
     agenceId:      invitation.agenceIds[0] ?? null,
-    agenceNom:     null,
+    agenceNom,
     agenceIds:     invitation.agenceIds,
     isRestricted:  meta.isRestricted ?? false,
   })
