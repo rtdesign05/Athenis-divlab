@@ -134,29 +134,103 @@ function StatusBadge({ status }: { status: TxStatus }) {
   )
 }
 
-// ── Modal : ajouter une contrepartie ─────────────────────────────────────────
+// ── Panneau droit — Section PIÈCE (moitié haute) ──────────────────────────────
 
-interface ContrePartieModalProps {
-  tx:            Transaction
-  fiscalYearId:  string | null
-  onClose:       () => void
-  onValidate:    (txId: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]) => void
+function PieceSection({ tx }: { tx: Transaction }) {
+  const { fmt } = useCurrency()
+  const amount  = Math.abs(tx.montant)
+
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto">
+      {/* Métadonnées */}
+      <div className="px-4 py-3 border-b border-gray-100">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+          <div>
+            <p className="text-gray-400 mb-0.5">Référence</p>
+            <p className="font-mono font-medium text-gray-800">{tx.ref}</p>
+          </div>
+          <div>
+            <p className="text-gray-400 mb-0.5">Date</p>
+            <p className="font-medium text-gray-800">{formatDate(tx.date)}</p>
+          </div>
+          <div className="col-span-2">
+            <p className="text-gray-400 mb-0.5">Libellé</p>
+            <p className="font-medium text-gray-800">{tx.libelle}</p>
+          </div>
+          <div>
+            <p className="text-gray-400 mb-0.5">Montant</p>
+            <p className={`font-bold tabular-nums ${tx.montant >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+              {tx.montant >= 0 ? '+' : '−'}{fmt(amount)}
+            </p>
+          </div>
+          <div>
+            <p className="text-gray-400 mb-0.5">Journal</p>
+            <p className="font-medium text-gray-800">{tx.journalCode} — {tx.journalLabel}</p>
+          </div>
+          <div className="col-span-2">
+            <p className="text-gray-400 mb-0.5">Compte trésorerie</p>
+            <p className="font-mono text-gray-700 text-[11px]">{tx.accountTresorerie} — {tx.accountTresorerieLabel}</p>
+          </div>
+          <div>
+            <p className="text-gray-400 mb-0.5">Source</p>
+            <p className="text-gray-700">{tx.sourceName}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Pièces existantes */}
+      {tx.pieces.length > 0 ? (
+        <div className="px-4 py-3">
+          <p className="text-xs font-semibold text-gray-700 mb-2">
+            Pièces justificatives ({tx.pieces.length})
+          </p>
+          <div className="space-y-1.5">
+            {tx.pieces.map(pj => (
+              <div key={pj.id} className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+                <span className="text-sm">{PIECE_TYPE_ICONS[pj.type]}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-700 truncate">{pj.nom}</p>
+                  <p className="text-[10px] text-gray-400">{PIECE_TYPE_LABELS[pj.type]} · {new Date(pj.addedAt).toLocaleDateString('fr-FR')}</p>
+                </div>
+                <button className="text-xs text-blue-600 hover:underline shrink-0">Voir</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="px-4 py-6 flex flex-col items-center justify-center text-gray-400">
+          <span className="text-2xl mb-1">📎</span>
+          <p className="text-xs">Aucune pièce justificative</p>
+        </div>
+      )}
+    </div>
+  )
 }
 
-function ContrePartieModal({ tx, fiscalYearId, onClose, onValidate }: ContrePartieModalProps) {
+// ── Panneau droit — Section TRAITEMENT : À valider ────────────────────────────
+
+interface TraitementValidateProps {
+  tx:           Transaction
+  fiscalYearId: string | null
+  onValidate:   (txId: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]) => void
+}
+
+function TraitementValidate({ tx, fiscalYearId, onValidate }: TraitementValidateProps) {
   const { fmt }              = useCurrency()
   const invalidateAccounting = useInvalidateAccounting()
-  const [accountQuery,     setAccountQuery]     = useState('')
-  const [selectedAccount,  setSelectedAccount]  = useState<typeof COMPTES_OHADA[0] | null>(null)
-  const [libelle,          setLibelle]          = useState(tx.libelle)
-  const [showDropdown,     setShowDropdown]      = useState(false)
-  const [newPieces,        setNewPieces]         = useState<PieceJustificative[]>([])
-  const [saving,           setSaving]            = useState(false)
-  const [error,            setError]             = useState<string | null>(null)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  const [accountQuery,    setAccountQuery]    = useState('')
+  const [selectedAccount, setSelectedAccount] = useState<typeof COMPTES_OHADA[0] | null>(null)
+  const [libelle,         setLibelle]         = useState(tx.libelle)
+  const [showDropdown,    setShowDropdown]    = useState(false)
+  const [newPieces,       setNewPieces]       = useState<PieceJustificative[]>([])
+  const [saving,          setSaving]          = useState(false)
+  const [error,           setError]           = useState<string | null>(null)
+
+  const dropdownRef  = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Fermer dropdown au clic extérieur
+  // Fermer le dropdown au clic extérieur
   useEffect(() => {
     function h(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowDropdown(false)
@@ -197,7 +271,6 @@ function ContrePartieModal({ tx, fiscalYearId, onClose, onValidate }: ContrePart
     setError(null)
 
     try {
-      // Double écriture comptable
       if (fiscalYearId) {
         const isEncaissement = tx.montant > 0
         const amount = Math.abs(tx.montant)
@@ -214,7 +287,6 @@ function ContrePartieModal({ tx, fiscalYearId, onClose, onValidate }: ContrePart
             { compte: tx.accountTresorerie,   libelle, debit: 0,      credit: amount },
           ],
         })
-        // Invalide le cache React Query pour rafraîchir Journal, Balance, Grand Livre
         invalidateAccounting()
       }
 
@@ -236,206 +308,230 @@ function ContrePartieModal({ tx, fiscalYearId, onClose, onValidate }: ContrePart
   const amount = Math.abs(tx.montant)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
-        {/* ── En-tête ── */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">Validation de la transaction</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{tx.ref} · {tx.journalLabel}</p>
+      {/* Zone défilante */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+
+        {/* Prévisualisation de l'écriture */}
+        <div className="px-4 py-3 border-b border-gray-100">
+          <p className="text-xs font-semibold text-gray-700 mb-2">Écriture à générer</p>
+          <div className="rounded-lg border border-gray-200 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-2 py-1.5 text-left font-medium text-gray-500">Compte</th>
+                  <th className="px-2 py-1.5 text-left font-medium text-gray-500">Libellé</th>
+                  <th className="px-2 py-1.5 text-right font-medium text-gray-500">Débit</th>
+                  <th className="px-2 py-1.5 text-right font-medium text-gray-500">Crédit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {isEncaissement ? (
+                  <>
+                    <tr>
+                      <td className="px-2 py-1.5 font-mono text-gray-700">{tx.accountTresorerie}</td>
+                      <td className="px-2 py-1.5 text-gray-600 truncate max-w-[100px]">{tx.accountTresorerieLabel}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold text-green-700">{fmt(amount)}</td>
+                      <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+                    </tr>
+                    <tr className={selectedAccount ? '' : 'opacity-40'}>
+                      <td className="px-2 py-1.5 font-mono text-gray-700">{selectedAccount?.code ?? '??????'}</td>
+                      <td className="px-2 py-1.5 text-gray-600 truncate max-w-[100px]">{selectedAccount?.label ?? 'Compte à sélectionner'}</td>
+                      <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+                      <td className="px-2 py-1.5 text-right font-semibold text-red-600">{fmt(amount)}</td>
+                    </tr>
+                  </>
+                ) : (
+                  <>
+                    <tr className={selectedAccount ? '' : 'opacity-40'}>
+                      <td className="px-2 py-1.5 font-mono text-gray-700">{selectedAccount?.code ?? '??????'}</td>
+                      <td className="px-2 py-1.5 text-gray-600 truncate max-w-[100px]">{selectedAccount?.label ?? 'Compte à sélectionner'}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold text-green-700">{fmt(amount)}</td>
+                      <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+                    </tr>
+                    <tr>
+                      <td className="px-2 py-1.5 font-mono text-gray-700">{tx.accountTresorerie}</td>
+                      <td className="px-2 py-1.5 text-gray-600 truncate max-w-[100px]">{tx.accountTresorerieLabel}</td>
+                      <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+                      <td className="px-2 py-1.5 text-right font-semibold text-red-600">{fmt(amount)}</td>
+                    </tr>
+                  </>
+                )}
+              </tbody>
+            </table>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 transition-colors text-lg leading-none">✕</button>
         </div>
 
-        <div className="overflow-y-auto flex-1">
-          {/* ── Résumé transaction ── */}
-          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
-              <div>
-                <p className="text-gray-400 mb-0.5">Date</p>
-                <p className="font-medium text-gray-800">{formatDate(tx.date)}</p>
-              </div>
-              <div>
-                <p className="text-gray-400 mb-0.5">Montant</p>
-                <p className={`font-bold tabular-nums ${tx.montant >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                  {tx.montant >= 0 ? '+' : '−'}{fmt(amount)}
-                </p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-gray-400 mb-0.5">Libellé</p>
-                <p className="font-medium text-gray-800">{tx.libelle}</p>
-              </div>
-              <div>
-                <p className="text-gray-400 mb-0.5">Compte trésorerie</p>
-                <p className="font-mono text-gray-700">{tx.accountTresorerie} — {tx.accountTresorerieLabel}</p>
-              </div>
-              <div>
-                <p className="text-gray-400 mb-0.5">Source</p>
-                <p className="text-gray-700">{tx.sourceName}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Pièces justificatives existantes ── */}
-          {tx.pieces.length > 0 && (
-            <div className="px-6 py-4 border-b border-gray-100">
-              <p className="text-xs font-semibold text-gray-700 mb-2">
-                Pièces justificatives attachées ({tx.pieces.length})
-              </p>
-              <div className="space-y-1.5">
-                {tx.pieces.map(pj => (
-                  <div key={pj.id} className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-                    <span className="text-sm">{PIECE_TYPE_ICONS[pj.type]}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-700 truncate">{pj.nom}</p>
-                      <p className="text-[10px] text-gray-400">{PIECE_TYPE_LABELS[pj.type]} · {new Date(pj.addedAt).toLocaleDateString('fr-FR')}</p>
-                    </div>
-                    <button className="text-xs text-blue-600 hover:underline shrink-0">Voir</button>
-                  </div>
+        {/* Sélecteur de compte + libellé */}
+        <div className="px-4 py-3 border-b border-gray-100 space-y-2.5">
+          <div ref={dropdownRef} className="relative">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Compte de contrepartie *</label>
+            <input
+              value={accountQuery}
+              onChange={e => { setAccountQuery(e.target.value); setSelectedAccount(null); setShowDropdown(true) }}
+              onFocus={() => setShowDropdown(true)}
+              placeholder="Code ou intitulé (ex : 411, clients…)"
+              className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+            />
+            {showDropdown && filteredAccounts.length > 0 && (
+              <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg max-h-40 overflow-y-auto">
+                {filteredAccounts.map(account => (
+                  <button
+                    key={account.code}
+                    onMouseDown={() => handleSelectAccount(account)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
+                  >
+                    <span className="font-mono text-gray-500 shrink-0">{account.code}</span>
+                    <span className="text-gray-700 truncate">{account.label}</span>
+                  </button>
                 ))}
               </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Libellé de l'écriture</label>
+            <input
+              value={libelle}
+              onChange={e => setLibelle(e.target.value)}
+              className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+            />
+          </div>
+        </div>
+
+        {/* Pièces justificatives (ajout) */}
+        <div className="px-4 py-3">
+          <p className="text-xs font-semibold text-gray-700 mb-2">Joindre des pièces</p>
+          {newPieces.length > 0 && (
+            <div className="space-y-1 mb-2">
+              {newPieces.map(pj => (
+                <div key={pj.id} className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5">
+                  <span className="text-sm">📎</span>
+                  <p className="text-xs text-blue-800 flex-1 truncate">{pj.nom}</p>
+                  <button onClick={() => setNewPieces(p => p.filter(x => x.id !== pj.id))} className="text-blue-400 hover:text-blue-600 text-xs">✕</button>
+                </div>
+              ))}
             </div>
           )}
-
-          {/* ── Ajout de pièces supplémentaires ── */}
-          <div className="px-6 py-4 border-b border-gray-100">
-            <p className="text-xs font-semibold text-gray-700 mb-2">Ajouter des pièces justificatives</p>
-            {newPieces.length > 0 && (
-              <div className="space-y-1 mb-2">
-                {newPieces.map(pj => (
-                  <div key={pj.id} className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5">
-                    <span className="text-sm">📎</span>
-                    <p className="text-xs text-blue-800 flex-1 truncate">{pj.nom}</p>
-                    <button onClick={() => setNewPieces(p => p.filter(x => x.id !== pj.id))} className="text-blue-400 hover:text-blue-600 text-xs">✕</button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileAdd} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full rounded-lg border-2 border-dashed border-gray-200 px-4 py-3 text-xs text-gray-400 hover:border-gray-300 hover:text-gray-500 hover:bg-gray-50 transition-colors text-center"
-            >
-              📎 Glisser-déposer ou cliquer pour attacher (PDF, image, Excel…)
-            </button>
-          </div>
-
-          {/* ── Contrepartie comptable ── */}
-          <div className="px-6 py-4">
-            <p className="text-xs font-semibold text-gray-700 mb-3">
-              Écriture comptable à générer
-            </p>
-
-            {/* Prévisualisation de l'écriture */}
-            <div className="rounded-lg border border-gray-200 overflow-hidden mb-4">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="px-3 py-2 text-left font-medium text-gray-500">Compte</th>
-                    <th className="px-3 py-2 text-left font-medium text-gray-500">Libellé</th>
-                    <th className="px-3 py-2 text-right font-medium text-gray-500">Débit</th>
-                    <th className="px-3 py-2 text-right font-medium text-gray-500">Crédit</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {isEncaissement ? (
-                    <>
-                      <tr>
-                        <td className="px-3 py-2 font-mono text-gray-700">{tx.accountTresorerie}</td>
-                        <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{tx.accountTresorerieLabel}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-green-700">{fmt(amount)}</td>
-                        <td className="px-3 py-2 text-right text-gray-400">—</td>
-                      </tr>
-                      <tr className={selectedAccount ? '' : 'opacity-40'}>
-                        <td className="px-3 py-2 font-mono text-gray-700">{selectedAccount?.code ?? '??????'}</td>
-                        <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{selectedAccount?.label ?? 'Compte à sélectionner'}</td>
-                        <td className="px-3 py-2 text-right text-gray-400">—</td>
-                        <td className="px-3 py-2 text-right font-semibold text-red-600">{fmt(amount)}</td>
-                      </tr>
-                    </>
-                  ) : (
-                    <>
-                      <tr className={selectedAccount ? '' : 'opacity-40'}>
-                        <td className="px-3 py-2 font-mono text-gray-700">{selectedAccount?.code ?? '??????'}</td>
-                        <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{selectedAccount?.label ?? 'Compte à sélectionner'}</td>
-                        <td className="px-3 py-2 text-right font-semibold text-green-700">{fmt(amount)}</td>
-                        <td className="px-3 py-2 text-right text-gray-400">—</td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2 font-mono text-gray-700">{tx.accountTresorerie}</td>
-                        <td className="px-3 py-2 text-gray-600 truncate max-w-[140px]">{tx.accountTresorerieLabel}</td>
-                        <td className="px-3 py-2 text-right text-gray-400">—</td>
-                        <td className="px-3 py-2 text-right font-semibold text-red-600">{fmt(amount)}</td>
-                      </tr>
-                    </>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Sélecteur compte contrepartie */}
-            <div className="space-y-3">
-              <div ref={dropdownRef} className="relative">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Compte de contrepartie *</label>
-                <input
-                  value={accountQuery}
-                  onChange={e => { setAccountQuery(e.target.value); setSelectedAccount(null); setShowDropdown(true) }}
-                  onFocus={() => setShowDropdown(true)}
-                  placeholder="Rechercher par numéro ou intitulé (ex: 411, clients…)"
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-forest-500/30"
-                />
-                {showDropdown && filteredAccounts.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg max-h-48 overflow-y-auto">
-                    {filteredAccounts.map(account => (
-                      <button
-                        key={account.code}
-                        onMouseDown={() => handleSelectAccount(account)}
-                        className="w-full flex items-center gap-3 px-3 py-2 text-left text-xs hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
-                      >
-                        <span className="font-mono text-gray-500 shrink-0">{account.code}</span>
-                        <span className="text-gray-700 truncate">{account.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Libellé de l'écriture</label>
-                <input
-                  value={libelle}
-                  onChange={e => setLibelle(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-forest-500/30"
-                />
-              </div>
-            </div>
-
-            {!fiscalYearId && (
-              <div className="mt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
-                ⚠️ Aucun exercice fiscal ouvert détecté. L'écriture sera enregistrée localement uniquement.
-              </div>
-            )}
-          </div>
+          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileAdd} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full rounded-lg border-2 border-dashed border-gray-200 px-3 py-2 text-xs text-gray-400 hover:border-gray-300 hover:text-gray-500 hover:bg-gray-50 transition-colors text-center"
+          >
+            📎 Glisser-déposer ou cliquer (PDF, image, Excel…)
+          </button>
         </div>
+      </div>
 
-        {/* ── Footer ── */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 bg-white">
-          <div className="text-xs text-red-600">{error}</div>
-          <div className="flex items-center gap-2 ml-auto">
-            <button onClick={onClose} className="rounded-lg border border-gray-200 px-4 py-2 text-xs text-gray-600 hover:bg-gray-50 transition-colors">
-              Annuler
-            </button>
-            <button
-              onClick={handleValidate}
-              disabled={saving || !selectedAccount}
-              className="rounded-lg bg-forest-900 px-5 py-2 text-xs font-semibold text-white hover:bg-forest-700 disabled:opacity-50 transition-colors flex items-center gap-2"
-            >
-              {saving
-                ? <><span className="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent" /> Enregistrement…</>
-                : '✓ Valider et reverser au journal'
-              }
-            </button>
+      {/* Footer épinglé */}
+      <div className="shrink-0 px-4 py-3 border-t border-gray-100 bg-white">
+        {!fiscalYearId && (
+          <div className="mb-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+            ⚠️ Aucun exercice fiscal ouvert. L'écriture sera enregistrée localement.
+          </div>
+        )}
+        {error && <div className="mb-2 text-xs text-red-600">{error}</div>}
+        <button
+          onClick={handleValidate}
+          disabled={saving || !selectedAccount}
+          className="w-full rounded-lg bg-forest-900 px-4 py-2 text-xs font-semibold text-white hover:bg-forest-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+        >
+          {saving
+            ? <><span className="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent" /> Enregistrement…</>
+            : '✓ Valider et reverser au journal'
+          }
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Panneau droit — Section TRAITEMENT : Vue (traité) ─────────────────────────
+
+function TraitementView({ tx }: { tx: Transaction }) {
+  const { fmt }        = useCurrency()
+  const isEncaissement = tx.montant > 0
+  const amount         = Math.abs(tx.montant)
+
+  if (!tx.contrepartie) {
+    return (
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-gray-400 px-4 py-6">
+        <span className="text-2xl mb-1">📊</span>
+        <p className="text-xs">Aucune écriture comptable enregistrée</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto">
+
+      {/* Écriture générée */}
+      <div className="px-4 py-3 border-b border-gray-100">
+        <p className="text-xs font-semibold text-gray-700 mb-2">Écriture comptable générée</p>
+        <div className="rounded-lg border border-gray-200 overflow-hidden mb-2">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-2 py-1.5 text-left font-medium text-gray-500">Compte</th>
+                <th className="px-2 py-1.5 text-left font-medium text-gray-500">Libellé</th>
+                <th className="px-2 py-1.5 text-right font-medium text-gray-500">Débit</th>
+                <th className="px-2 py-1.5 text-right font-medium text-gray-500">Crédit</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {isEncaissement ? (
+                <>
+                  <tr>
+                    <td className="px-2 py-1.5 font-mono text-gray-700">{tx.accountTresorerie}</td>
+                    <td className="px-2 py-1.5 text-gray-600 truncate">{tx.accountTresorerieLabel}</td>
+                    <td className="px-2 py-1.5 text-right font-semibold text-green-700">{fmt(amount)}</td>
+                    <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1.5 font-mono text-gray-700">{tx.contrepartie.accountCode}</td>
+                    <td className="px-2 py-1.5 text-gray-600 truncate">{tx.contrepartie.accountLabel}</td>
+                    <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+                    <td className="px-2 py-1.5 text-right font-semibold text-red-600">{fmt(amount)}</td>
+                  </tr>
+                </>
+              ) : (
+                <>
+                  <tr>
+                    <td className="px-2 py-1.5 font-mono text-gray-700">{tx.contrepartie.accountCode}</td>
+                    <td className="px-2 py-1.5 text-gray-600 truncate">{tx.contrepartie.accountLabel}</td>
+                    <td className="px-2 py-1.5 text-right font-semibold text-green-700">{fmt(amount)}</td>
+                    <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+                  </tr>
+                  <tr>
+                    <td className="px-2 py-1.5 font-mono text-gray-700">{tx.accountTresorerie}</td>
+                    <td className="px-2 py-1.5 text-gray-600 truncate">{tx.accountTresorerieLabel}</td>
+                    <td className="px-2 py-1.5 text-right text-gray-400">—</td>
+                    <td className="px-2 py-1.5 text-right font-semibold text-red-600">{fmt(amount)}</td>
+                  </tr>
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[10px] text-gray-400">
+          Reversé au journal le {new Date(tx.contrepartie.addedAt).toLocaleDateString('fr-FR', {
+            day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+          })}
+        </p>
+      </div>
+
+      {/* Détail contrepartie */}
+      <div className="px-4 py-3">
+        <p className="text-xs font-semibold text-gray-700 mb-2">Contrepartie</p>
+        <div className="space-y-1.5 text-xs">
+          <div className="flex gap-2">
+            <span className="text-gray-400 w-14 shrink-0">Compte</span>
+            <span className="font-mono text-gray-700">{tx.contrepartie.accountCode} — {tx.contrepartie.accountLabel}</span>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-gray-400 w-14 shrink-0">Libellé</span>
+            <span className="text-gray-700">{tx.contrepartie.libelle}</span>
           </div>
         </div>
       </div>
@@ -443,125 +539,55 @@ function ContrePartieModal({ tx, fiscalYearId, onClose, onValidate }: ContrePart
   )
 }
 
-// ── Modal : détail d'une transaction traitée ──────────────────────────────────
+// ── Panneau latéral principal ─────────────────────────────────────────────────
 
-function TxDetailModal({ tx, onClose }: { tx: Transaction; onClose: () => void }) {
-  const { fmt } = useCurrency()
-  const isEncaissement = tx.montant > 0
-  const amount = Math.abs(tx.montant)
+interface TxSidePanelProps {
+  tx:           Transaction
+  fiscalYearId: string | null
+  onClose:      () => void
+  onValidate:   (txId: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]) => void
+}
+
+function TxSidePanel({ tx, fiscalYearId, onClose, onValidate }: TxSidePanelProps) {
+  const sourceMeta = SOURCE_META[tx.sourceType]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="w-[45%] shrink-0 rounded-xl border border-gray-200 bg-white flex flex-col overflow-hidden">
 
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <h2 className="text-sm font-semibold text-gray-900">Détail de la transaction</h2>
-            <StatusBadge status="traite" />
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 text-lg leading-none">✕</button>
+      {/* En-tête du panneau */}
+      <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm shrink-0">{sourceMeta.icon}</span>
+          <span className="font-mono text-xs text-gray-500 bg-white border border-gray-200 rounded px-1.5 py-0.5 shrink-0">{tx.ref}</span>
+          <StatusBadge status={tx.status} />
+          <span className="text-xs text-gray-400 truncate hidden lg:block">{tx.sourceName}</span>
         </div>
+        <button
+          onClick={onClose}
+          className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors leading-none"
+          title="Fermer"
+        >
+          ✕
+        </button>
+      </div>
 
-        <div className="overflow-y-auto flex-1 divide-y divide-gray-100">
-          {/* Infos générales */}
-          <div className="px-6 py-4 bg-gray-50/50">
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
-              <div><p className="text-gray-400 mb-0.5">Référence</p><p className="font-mono font-medium text-gray-800">{tx.ref}</p></div>
-              <div><p className="text-gray-400 mb-0.5">Date</p><p className="font-medium text-gray-800">{formatDate(tx.date)}</p></div>
-              <div className="col-span-2"><p className="text-gray-400 mb-0.5">Libellé</p><p className="font-medium text-gray-800">{tx.libelle}</p></div>
-              <div>
-                <p className="text-gray-400 mb-0.5">Montant</p>
-                <p className={`font-bold tabular-nums ${tx.montant >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                  {tx.montant >= 0 ? '+' : '−'}{fmt(amount)}
-                </p>
-              </div>
-              <div>
-                <p className="text-gray-400 mb-0.5">Journal</p>
-                <p className="font-medium text-gray-800">{tx.journalCode} — {tx.journalLabel}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Écriture comptable */}
-          {tx.contrepartie && (
-            <div className="px-6 py-4">
-              <p className="text-xs font-semibold text-gray-700 mb-3">Écriture comptable générée</p>
-              <div className="rounded-lg border border-gray-200 overflow-hidden mb-2">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Compte</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-500">Libellé</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">Débit</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-500">Crédit</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {isEncaissement ? (
-                      <>
-                        <tr>
-                          <td className="px-3 py-2 font-mono text-gray-700">{tx.accountTresorerie}</td>
-                          <td className="px-3 py-2 text-gray-600 truncate">{tx.accountTresorerieLabel}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-green-700">{fmt(amount)}</td>
-                          <td className="px-3 py-2 text-right text-gray-400">—</td>
-                        </tr>
-                        <tr>
-                          <td className="px-3 py-2 font-mono text-gray-700">{tx.contrepartie.accountCode}</td>
-                          <td className="px-3 py-2 text-gray-600 truncate">{tx.contrepartie.accountLabel}</td>
-                          <td className="px-3 py-2 text-right text-gray-400">—</td>
-                          <td className="px-3 py-2 text-right font-semibold text-red-600">{fmt(amount)}</td>
-                        </tr>
-                      </>
-                    ) : (
-                      <>
-                        <tr>
-                          <td className="px-3 py-2 font-mono text-gray-700">{tx.contrepartie.accountCode}</td>
-                          <td className="px-3 py-2 text-gray-600 truncate">{tx.contrepartie.accountLabel}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-green-700">{fmt(amount)}</td>
-                          <td className="px-3 py-2 text-right text-gray-400">—</td>
-                        </tr>
-                        <tr>
-                          <td className="px-3 py-2 font-mono text-gray-700">{tx.accountTresorerie}</td>
-                          <td className="px-3 py-2 text-gray-600 truncate">{tx.accountTresorerieLabel}</td>
-                          <td className="px-3 py-2 text-right text-gray-400">—</td>
-                          <td className="px-3 py-2 text-right font-semibold text-red-600">{fmt(amount)}</td>
-                        </tr>
-                      </>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-[10px] text-gray-400">
-                Reversé au journal le {new Date(tx.contrepartie.addedAt).toLocaleDateString('fr-FR', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })}
-              </p>
-            </div>
-          )}
-
-          {/* Pièces justificatives */}
-          {tx.pieces.length > 0 && (
-            <div className="px-6 py-4">
-              <p className="text-xs font-semibold text-gray-700 mb-2">Pièces justificatives ({tx.pieces.length})</p>
-              <div className="space-y-1.5">
-                {tx.pieces.map(pj => (
-                  <div key={pj.id} className="flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
-                    <span className="text-sm">{PIECE_TYPE_ICONS[pj.type]}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-gray-700 truncate">{pj.nom}</p>
-                      <p className="text-[10px] text-gray-400">{PIECE_TYPE_LABELS[pj.type]} · {new Date(pj.addedAt).toLocaleDateString('fr-FR')}</p>
-                    </div>
-                    <button className="text-xs text-blue-600 hover:underline shrink-0">Voir</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* Moitié haute — PIÈCE */}
+      <div className="flex-1 min-h-0 flex flex-col border-b-2 border-gray-200 overflow-hidden">
+        <div className="shrink-0 px-4 py-1.5 bg-blue-50/70 border-b border-blue-100">
+          <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide">📄 Pièce</p>
         </div>
+        <PieceSection tx={tx} />
+      </div>
 
-        <div className="px-6 py-3 border-t border-gray-100 flex justify-end">
-          <button onClick={onClose} className="rounded-lg bg-gray-100 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200 transition-colors">
-            Fermer
-          </button>
+      {/* Moitié basse — TRAITEMENT */}
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="shrink-0 px-4 py-1.5 bg-amber-50/70 border-b border-amber-100">
+          <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide">⚙️ Traitement</p>
         </div>
+        {tx.status === 'a_traiter'
+          ? <TraitementValidate key={tx.id} tx={tx} fiscalYearId={fiscalYearId} onValidate={onValidate} />
+          : <TraitementView tx={tx} />
+        }
       </div>
     </div>
   )
@@ -572,7 +598,7 @@ function TxDetailModal({ tx, onClose }: { tx: Transaction; onClose: () => void }
 export function TransactionsPage() {
   const { fmt } = useCurrency()
 
-  // Transactions partagées via TresorerieContext (Banques + Caisses + Mobile Money)
+  // Transactions partagées via TresorerieContext
   const { transactions, validateTransaction } = useTresorerie()
 
   // Exercice fiscal ouvert
@@ -586,26 +612,28 @@ export function TransactionsPage() {
       .catch(() => {/* pas d'exercice ouvert — mode dégradé */})
   }, [])
 
-  // Modal
-  const [selectedTx,  setSelectedTx]  = useState<Transaction | null>(null)
-  const [modalMode,   setModalMode]   = useState<'validate' | 'view'>('validate')
+  // Panneau latéral : on stocke l'id pour toujours lire le dernier état de la tx
+  const [selectedTxId, setSelectedTxId] = useState<string | null>(null)
+  const selectedTx = useMemo(
+    () => selectedTxId ? (transactions.find(t => t.id === selectedTxId) ?? null) : null,
+    [selectedTxId, transactions],
+  )
 
-  function openModal(tx: Transaction) {
-    setSelectedTx(tx)
-    setModalMode(tx.status === 'a_traiter' ? 'validate' : 'view')
+  function openPanel(tx: Transaction) {
+    setSelectedTxId(tx.id)
   }
 
   function handleValidate(txId: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]) {
     validateTransaction(txId, contrepartie, newPieces)
-    setSelectedTx(null)
+    // Le panneau reste ouvert — il bascule automatiquement sur TraitementView
   }
 
   // Filtres
-  const [search,       setSearch]      = useState('')
-  const [typeFilter,   setTypeFilter]  = useState<SourceType | 'all'>('all')
-  const [statusFilter, setStatusFilter]= useState<TxStatus | 'all'>('all')
-  const [dateFrom,     setDateFrom]    = useState('')
-  const [dateTo,       setDateTo]      = useState('')
+  const [search,       setSearch]       = useState('')
+  const [typeFilter,   setTypeFilter]   = useState<SourceType | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<TxStatus | 'all'>('all')
+  const [dateFrom,     setDateFrom]     = useState('')
+  const [dateTo,       setDateTo]       = useState('')
 
   // Tri
   const [sortKey, setSortKey] = useState<SortKey>('date')
@@ -662,25 +690,12 @@ export function TransactionsPage() {
   return (
     <div className="h-full flex flex-col gap-4">
 
-      {/* ── Modals ── */}
-      {selectedTx && modalMode === 'validate' && (
-        <ContrePartieModal
-          tx={selectedTx}
-          fiscalYearId={fiscalYearId}
-          onClose={() => setSelectedTx(null)}
-          onValidate={handleValidate}
-        />
-      )}
-      {selectedTx && modalMode === 'view' && (
-        <TxDetailModal tx={selectedTx} onClose={() => setSelectedTx(null)} />
-      )}
-
       {/* ── En-tête ── */}
       <div className="shrink-0 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-base font-semibold text-gray-900">Transactions de trésorerie</h1>
           <p className="text-xs text-gray-500 mt-0.5">
-            Banques · Caisses · Mobile Money — cliquer sur une ligne pour ajouter la contrepartie comptable
+            Banques · Caisses · Mobile Money — cliquer sur une ligne pour ouvrir la pièce et le traitement
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs">
@@ -769,112 +784,130 @@ export function TransactionsPage() {
         )}
       </div>
 
-      {/* ── Tableau ── */}
-      <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-        <div className="flex-1 min-h-0 overflow-auto">
-          {rows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full py-16 text-gray-400">
-              <span className="text-3xl mb-2">🔍</span>
-              <p className="text-sm font-medium">Aucune transaction trouvée</p>
-              <p className="text-xs mt-1">Modifiez les filtres pour élargir la recherche</p>
-            </div>
-          ) : (
-            <table className="min-w-full text-sm">
-              <thead className="sticky top-0 bg-gray-50 border-b border-gray-200 z-10">
-                <tr>
-                  <th onClick={() => toggleSort('date')} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
-                    Date <SortIcon active={sortKey === 'date'} dir={sortDir} />
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Réf.</th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Type</th>
-                  <th onClick={() => toggleSort('sourceName')} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none">
-                    Compte <SortIcon active={sortKey === 'sourceName'} dir={sortDir} />
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[200px]">Libellé</th>
-                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">PJ</th>
-                  <th onClick={() => toggleSort('status')} className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
-                    Statut <SortIcon active={sortKey === 'status'} dir={sortDir} />
-                  </th>
-                  <th onClick={() => toggleSort('montant')} className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
-                    Montant <SortIcon active={sortKey === 'montant'} dir={sortDir} />
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.map(tx => {
-                  const meta = SOURCE_META[tx.sourceType]
-                  const isATraiter = tx.status === 'a_traiter'
-                  return (
-                    <tr
-                      key={tx.id}
-                      onClick={() => openModal(tx)}
-                      className={`transition-colors cursor-pointer ${
-                        isATraiter
-                          ? 'hover:bg-amber-50/50'
-                          : 'hover:bg-green-50/30'
-                      }`}
-                    >
-                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap tabular-nums text-xs">
-                        {formatDate(tx.date)}
-                      </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <span className="font-mono text-xs text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">{tx.ref}</span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${meta.bg}`}>
-                          {meta.icon} {meta.label}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 max-w-[180px]">
-                        <p className="text-xs text-gray-700 truncate" title={tx.sourceName}>{tx.sourceName}</p>
-                        <p className="text-[10px] text-gray-400 font-mono">{tx.accountTresorerie}</p>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <p className="text-xs text-gray-800 truncate max-w-xs" title={tx.libelle}>{tx.libelle}</p>
-                        {tx.contrepartie && (
-                          <p className="text-[10px] text-gray-400 font-mono mt-0.5">
-                            ↔ {tx.contrepartie.accountCode} — {tx.contrepartie.accountLabel}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        {tx.pieces.length > 0 ? (
-                          <span className="text-xs text-blue-600 font-medium" title={tx.pieces.map(p => p.nom).join(', ')}>
-                            📎 {tx.pieces.length}
+      {/* ── Corps principal : tableau + panneau latéral ── */}
+      <div className="flex-1 min-h-0 flex gap-3 overflow-hidden">
+
+        {/* Tableau des transactions */}
+        <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
+          <div className="flex-1 min-h-0 overflow-auto">
+            {rows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full py-16 text-gray-400">
+                <span className="text-3xl mb-2">🔍</span>
+                <p className="text-sm font-medium">Aucune transaction trouvée</p>
+                <p className="text-xs mt-1">Modifiez les filtres pour élargir la recherche</p>
+              </div>
+            ) : (
+              <table className="min-w-full text-sm">
+                <thead className="sticky top-0 bg-gray-50 border-b border-gray-200 z-10">
+                  <tr>
+                    <th onClick={() => toggleSort('date')} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
+                      Date <SortIcon active={sortKey === 'date'} dir={sortDir} />
+                    </th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Réf.</th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Type</th>
+                    <th onClick={() => toggleSort('sourceName')} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none">
+                      Compte <SortIcon active={sortKey === 'sourceName'} dir={sortDir} />
+                    </th>
+                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[160px]">Libellé</th>
+                    <th className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">PJ</th>
+                    <th onClick={() => toggleSort('status')} className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
+                      Statut <SortIcon active={sortKey === 'status'} dir={sortDir} />
+                    </th>
+                    <th onClick={() => toggleSort('montant')} className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
+                      Montant <SortIcon active={sortKey === 'montant'} dir={sortDir} />
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {rows.map(tx => {
+                    const meta       = SOURCE_META[tx.sourceType]
+                    const isATraiter = tx.status === 'a_traiter'
+                    const isSelected = tx.id === selectedTxId
+                    return (
+                      <tr
+                        key={tx.id}
+                        onClick={() => openPanel(tx)}
+                        className={`transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-green-50 border-l-4 border-l-green-600'
+                            : isATraiter
+                              ? 'hover:bg-amber-50/50'
+                              : 'hover:bg-green-50/30'
+                        }`}
+                      >
+                        <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap tabular-nums text-xs">
+                          {formatDate(tx.date)}
+                        </td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <span className="font-mono text-xs text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">{tx.ref}</span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${meta.bg}`}>
+                            {meta.icon} {meta.label}
                           </span>
-                        ) : (
-                          <span className="text-gray-300 text-xs">—</span>
-                        )}
+                        </td>
+                        <td className="px-4 py-2.5 max-w-[160px]">
+                          <p className="text-xs text-gray-700 truncate" title={tx.sourceName}>{tx.sourceName}</p>
+                          <p className="text-[10px] text-gray-400 font-mono">{tx.accountTresorerie}</p>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <p className="text-xs text-gray-800 truncate max-w-[180px]" title={tx.libelle}>{tx.libelle}</p>
+                          {tx.contrepartie && (
+                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                              ↔ {tx.contrepartie.accountCode} — {tx.contrepartie.accountLabel}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          {tx.pieces.length > 0 ? (
+                            <span className="text-xs text-blue-600 font-medium" title={tx.pieces.map(p => p.nom).join(', ')}>
+                              📎 {tx.pieces.length}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300 text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <StatusBadge status={tx.status} />
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap text-xs ${tx.montant >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                          {tx.montant >= 0 ? '+' : '−'}{fmt(Math.abs(tx.montant))}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                {rows.length > 0 && (
+                  <tfoot className="sticky bottom-0 bg-gray-50 border-t-2 border-gray-200">
+                    <tr>
+                      <td colSpan={7} className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        Total ({rows.length} ligne{rows.length > 1 ? 's' : ''})
                       </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <StatusBadge status={tx.status} />
-                      </td>
-                      <td className={`px-4 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap text-xs ${tx.montant >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                        {tx.montant >= 0 ? '+' : '−'}{fmt(Math.abs(tx.montant))}
+                      <td className={`px-4 py-2.5 text-right font-bold tabular-nums whitespace-nowrap text-sm ${
+                        rows.reduce((s, t) => s + t.montant, 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                        {(() => {
+                          const net = rows.reduce((s, t) => s + t.montant, 0)
+                          return `${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}`
+                        })()}
                       </td>
                     </tr>
-                  )
-                })}
-              </tbody>
-              {rows.length > 0 && (
-                <tfoot className="sticky bottom-0 bg-gray-50 border-t-2 border-gray-200">
-                  <tr>
-                    <td colSpan={7} className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      Total ({rows.length} ligne{rows.length > 1 ? 's' : ''})
-                    </td>
-                    <td className={`px-4 py-2.5 text-right font-bold tabular-nums whitespace-nowrap text-sm ${
-                      rows.reduce((s, t) => s + t.montant, 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                      {(() => {
-                        const net = rows.reduce((s, t) => s + t.montant, 0)
-                        return `${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}`
-                      })()}
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
-            </table>
-          )}
+                  </tfoot>
+                )}
+              </table>
+            )}
+          </div>
         </div>
+
+        {/* Panneau latéral — Pièce + Traitement */}
+        {selectedTx && (
+          <TxSidePanel
+            key={selectedTx.id}
+            tx={selectedTx}
+            fiscalYearId={fiscalYearId}
+            onClose={() => setSelectedTxId(null)}
+            onValidate={handleValidate}
+          />
+        )}
       </div>
     </div>
   )
