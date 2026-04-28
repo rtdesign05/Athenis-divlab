@@ -539,60 +539,6 @@ function TraitementView({ tx }: { tx: Transaction }) {
   )
 }
 
-// ── Panneau latéral principal ─────────────────────────────────────────────────
-
-interface TxSidePanelProps {
-  tx:           Transaction
-  fiscalYearId: string | null
-  onClose:      () => void
-  onValidate:   (txId: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]) => void
-}
-
-function TxSidePanel({ tx, fiscalYearId, onClose, onValidate }: TxSidePanelProps) {
-  const sourceMeta = SOURCE_META[tx.sourceType]
-
-  return (
-    <div className="w-[45%] shrink-0 rounded-xl border border-gray-200 bg-white flex flex-col overflow-hidden">
-
-      {/* En-tête du panneau */}
-      <div className="shrink-0 flex items-center justify-between gap-2 px-4 py-2.5 border-b border-gray-200 bg-gray-50">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm shrink-0">{sourceMeta.icon}</span>
-          <span className="font-mono text-xs text-gray-500 bg-white border border-gray-200 rounded px-1.5 py-0.5 shrink-0">{tx.ref}</span>
-          <StatusBadge status={tx.status} />
-          <span className="text-xs text-gray-400 truncate hidden lg:block">{tx.sourceName}</span>
-        </div>
-        <button
-          onClick={onClose}
-          className="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors leading-none"
-          title="Fermer"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* Moitié haute — PIÈCE */}
-      <div className="flex-1 min-h-0 flex flex-col border-b-2 border-gray-200 overflow-hidden">
-        <div className="shrink-0 px-4 py-1.5 bg-blue-50/70 border-b border-blue-100">
-          <p className="text-[11px] font-semibold text-blue-700 uppercase tracking-wide">📄 Pièce</p>
-        </div>
-        <PieceSection tx={tx} />
-      </div>
-
-      {/* Moitié basse — TRAITEMENT */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <div className="shrink-0 px-4 py-1.5 bg-amber-50/70 border-b border-amber-100">
-          <p className="text-[11px] font-semibold text-amber-700 uppercase tracking-wide">⚙️ Traitement</p>
-        </div>
-        {tx.status === 'a_traiter'
-          ? <TraitementValidate key={tx.id} tx={tx} fiscalYearId={fiscalYearId} onValidate={onValidate} />
-          : <TraitementView tx={tx} />
-        }
-      </div>
-    </div>
-  )
-}
-
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export function TransactionsPage() {
@@ -687,6 +633,59 @@ export function TransactionsPage() {
 
   const hasFilters = typeFilter !== 'all' || statusFilter !== 'all' || search || dateFrom || dateTo
 
+  // ── Vue pleine page : transaction sélectionnée ────────────────────────────
+  if (selectedTx) {
+    const sourceMeta = SOURCE_META[selectedTx.sourceType]
+    return (
+      <div className="h-full flex flex-col gap-3">
+
+        {/* ── Fil d'Ariane / retour ── */}
+        <div className="shrink-0 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5">
+          <button
+            onClick={() => setSelectedTxId(null)}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+          >
+            ← Transactions
+          </button>
+          <span className="text-gray-300">/</span>
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${sourceMeta.bg}`}>
+            {sourceMeta.icon} {sourceMeta.label}
+          </span>
+          <span className="font-mono text-xs text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">{selectedTx.ref}</span>
+          <span className="text-xs text-gray-600 truncate flex-1">{selectedTx.libelle}</span>
+          <StatusBadge status={selectedTx.status} />
+        </div>
+
+        {/* ── Deux panneaux égaux ── */}
+        <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+
+          {/* Gauche — PIÈCE */}
+          <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white flex flex-col overflow-hidden">
+            <div className="shrink-0 px-4 py-2 bg-blue-50/80 border-b border-blue-100 flex items-center gap-2">
+              <span className="text-sm">📄</span>
+              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Pièce</p>
+            </div>
+            <PieceSection tx={selectedTx} />
+          </div>
+
+          {/* Droite — TRAITEMENT */}
+          <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white flex flex-col overflow-hidden">
+            <div className="shrink-0 px-4 py-2 bg-amber-50/80 border-b border-amber-100 flex items-center gap-2">
+              <span className="text-sm">⚙️</span>
+              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Traitement</p>
+            </div>
+            {selectedTx.status === 'a_traiter'
+              ? <TraitementValidate key={selectedTx.id} tx={selectedTx} fiscalYearId={fiscalYearId} onValidate={handleValidate} />
+              : <TraitementView tx={selectedTx} />
+            }
+          </div>
+
+        </div>
+      </div>
+    )
+  }
+
+  // ── Vue liste : tableau des transactions ─────────────────────────────────
   return (
     <div className="h-full flex flex-col gap-4">
 
@@ -784,130 +783,110 @@ export function TransactionsPage() {
         )}
       </div>
 
-      {/* ── Corps principal : tableau + panneau latéral ── */}
-      <div className="flex-1 min-h-0 flex gap-3 overflow-hidden">
-
-        {/* Tableau des transactions */}
-        <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-          <div className="flex-1 min-h-0 overflow-auto">
-            {rows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full py-16 text-gray-400">
-                <span className="text-3xl mb-2">🔍</span>
-                <p className="text-sm font-medium">Aucune transaction trouvée</p>
-                <p className="text-xs mt-1">Modifiez les filtres pour élargir la recherche</p>
-              </div>
-            ) : (
-              <table className="min-w-full text-sm">
-                <thead className="sticky top-0 bg-gray-50 border-b border-gray-200 z-10">
-                  <tr>
-                    <th onClick={() => toggleSort('date')} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
-                      Date <SortIcon active={sortKey === 'date'} dir={sortDir} />
-                    </th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Réf.</th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Type</th>
-                    <th onClick={() => toggleSort('sourceName')} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none">
-                      Compte <SortIcon active={sortKey === 'sourceName'} dir={sortDir} />
-                    </th>
-                    <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[160px]">Libellé</th>
-                    <th className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">PJ</th>
-                    <th onClick={() => toggleSort('status')} className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
-                      Statut <SortIcon active={sortKey === 'status'} dir={sortDir} />
-                    </th>
-                    <th onClick={() => toggleSort('montant')} className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
-                      Montant <SortIcon active={sortKey === 'montant'} dir={sortDir} />
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {rows.map(tx => {
-                    const meta       = SOURCE_META[tx.sourceType]
-                    const isATraiter = tx.status === 'a_traiter'
-                    const isSelected = tx.id === selectedTxId
-                    return (
-                      <tr
-                        key={tx.id}
-                        onClick={() => openPanel(tx)}
-                        className={`transition-colors cursor-pointer ${
-                          isSelected
-                            ? 'bg-green-50 border-l-4 border-l-green-600'
-                            : isATraiter
-                              ? 'hover:bg-amber-50/50'
-                              : 'hover:bg-green-50/30'
-                        }`}
-                      >
-                        <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap tabular-nums text-xs">
-                          {formatDate(tx.date)}
-                        </td>
-                        <td className="px-4 py-2.5 whitespace-nowrap">
-                          <span className="font-mono text-xs text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">{tx.ref}</span>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${meta.bg}`}>
-                            {meta.icon} {meta.label}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 max-w-[160px]">
-                          <p className="text-xs text-gray-700 truncate" title={tx.sourceName}>{tx.sourceName}</p>
-                          <p className="text-[10px] text-gray-400 font-mono">{tx.accountTresorerie}</p>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <p className="text-xs text-gray-800 truncate max-w-[180px]" title={tx.libelle}>{tx.libelle}</p>
-                          {tx.contrepartie && (
-                            <p className="text-[10px] text-gray-400 font-mono mt-0.5">
-                              ↔ {tx.contrepartie.accountCode} — {tx.contrepartie.accountLabel}
-                            </p>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-center">
-                          {tx.pieces.length > 0 ? (
-                            <span className="text-xs text-blue-600 font-medium" title={tx.pieces.map(p => p.nom).join(', ')}>
-                              📎 {tx.pieces.length}
-                            </span>
-                          ) : (
-                            <span className="text-gray-300 text-xs">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-center">
-                          <StatusBadge status={tx.status} />
-                        </td>
-                        <td className={`px-4 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap text-xs ${tx.montant >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                          {tx.montant >= 0 ? '+' : '−'}{fmt(Math.abs(tx.montant))}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                {rows.length > 0 && (
-                  <tfoot className="sticky bottom-0 bg-gray-50 border-t-2 border-gray-200">
-                    <tr>
-                      <td colSpan={7} className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                        Total ({rows.length} ligne{rows.length > 1 ? 's' : ''})
+      {/* ── Tableau des transactions ── */}
+      <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0 overflow-auto">
+          {rows.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full py-16 text-gray-400">
+              <span className="text-3xl mb-2">🔍</span>
+              <p className="text-sm font-medium">Aucune transaction trouvée</p>
+              <p className="text-xs mt-1">Modifiez les filtres pour élargir la recherche</p>
+            </div>
+          ) : (
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-0 bg-gray-50 border-b border-gray-200 z-10">
+                <tr>
+                  <th onClick={() => toggleSort('date')} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
+                    Date <SortIcon active={sortKey === 'date'} dir={sortDir} />
+                  </th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Réf.</th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Type</th>
+                  <th onClick={() => toggleSort('sourceName')} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none">
+                    Compte <SortIcon active={sortKey === 'sourceName'} dir={sortDir} />
+                  </th>
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[160px]">Libellé</th>
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">PJ</th>
+                  <th onClick={() => toggleSort('status')} className="px-4 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
+                    Statut <SortIcon active={sortKey === 'status'} dir={sortDir} />
+                  </th>
+                  <th onClick={() => toggleSort('montant')} className="px-4 py-2.5 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap">
+                    Montant <SortIcon active={sortKey === 'montant'} dir={sortDir} />
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map(tx => {
+                  const meta       = SOURCE_META[tx.sourceType]
+                  const isATraiter = tx.status === 'a_traiter'
+                  return (
+                    <tr
+                      key={tx.id}
+                      onClick={() => openPanel(tx)}
+                      className={`transition-colors cursor-pointer ${
+                        isATraiter ? 'hover:bg-amber-50/50' : 'hover:bg-green-50/30'
+                      }`}
+                    >
+                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap tabular-nums text-xs">
+                        {formatDate(tx.date)}
                       </td>
-                      <td className={`px-4 py-2.5 text-right font-bold tabular-nums whitespace-nowrap text-sm ${
-                        rows.reduce((s, t) => s + t.montant, 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                        {(() => {
-                          const net = rows.reduce((s, t) => s + t.montant, 0)
-                          return `${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}`
-                        })()}
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span className="font-mono text-xs text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">{tx.ref}</span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${meta.bg}`}>
+                          {meta.icon} {meta.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 max-w-[160px]">
+                        <p className="text-xs text-gray-700 truncate" title={tx.sourceName}>{tx.sourceName}</p>
+                        <p className="text-[10px] text-gray-400 font-mono">{tx.accountTresorerie}</p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <p className="text-xs text-gray-800 truncate max-w-[180px]" title={tx.libelle}>{tx.libelle}</p>
+                        {tx.contrepartie && (
+                          <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                            ↔ {tx.contrepartie.accountCode} — {tx.contrepartie.accountLabel}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        {tx.pieces.length > 0 ? (
+                          <span className="text-xs text-blue-600 font-medium" title={tx.pieces.map(p => p.nom).join(', ')}>
+                            📎 {tx.pieces.length}
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <StatusBadge status={tx.status} />
+                      </td>
+                      <td className={`px-4 py-2.5 text-right font-semibold tabular-nums whitespace-nowrap text-xs ${tx.montant >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {tx.montant >= 0 ? '+' : '−'}{fmt(Math.abs(tx.montant))}
                       </td>
                     </tr>
-                  </tfoot>
-                )}
-              </table>
-            )}
-          </div>
+                  )
+                })}
+              </tbody>
+              {rows.length > 0 && (
+                <tfoot className="sticky bottom-0 bg-gray-50 border-t-2 border-gray-200">
+                  <tr>
+                    <td colSpan={7} className="px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Total ({rows.length} ligne{rows.length > 1 ? 's' : ''})
+                    </td>
+                    <td className={`px-4 py-2.5 text-right font-bold tabular-nums whitespace-nowrap text-sm ${
+                      rows.reduce((s, t) => s + t.montant, 0) >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                      {(() => {
+                        const net = rows.reduce((s, t) => s + t.montant, 0)
+                        return `${net >= 0 ? '+' : '−'}${fmt(Math.abs(net))}`
+                      })()}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          )}
         </div>
-
-        {/* Panneau latéral — Pièce + Traitement */}
-        {selectedTx && (
-          <TxSidePanel
-            key={selectedTx.id}
-            tx={selectedTx}
-            fiscalYearId={fiscalYearId}
-            onClose={() => setSelectedTxId(null)}
-            onValidate={handleValidate}
-          />
-        )}
       </div>
     </div>
   )
