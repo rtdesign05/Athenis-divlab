@@ -5,7 +5,7 @@ import type { AccountType } from '@athenis/shared-types'
 export function homeForType(type: string): string {
   if (type === 'PERSONAL') return '/personal/dashboard'
   if (type === 'CABINET') return '/cabinet/dashboard'
-  return '/app/dashboard'
+  return '/app'
 }
 
 interface Props {
