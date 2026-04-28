@@ -633,27 +633,84 @@ export function TransactionsPage() {
 
   const hasFilters = typeFilter !== 'all' || statusFilter !== 'all' || search || dateFrom || dateTo
 
+  // ── Navigation entre transactions ────────────────────────────────────────
+  const currentIndex = selectedTxId ? rows.findIndex(t => t.id === selectedTxId) : -1
+  const prevTx = currentIndex > 0              ? rows[currentIndex - 1] : null
+  const nextTx = currentIndex < rows.length - 1 ? rows[currentIndex + 1] : null
+
+  // Flèches clavier ← →
+  useEffect(() => {
+    if (!selectedTxId) return
+    function onKey(e: KeyboardEvent) {
+      // Ne pas capturer si le focus est dans un input / textarea / select
+      const tag = (e.target as HTMLElement).tagName
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
+      if (e.key === 'ArrowLeft'  && prevTx) setSelectedTxId(prevTx.id)
+      if (e.key === 'ArrowRight' && nextTx) setSelectedTxId(nextTx.id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedTxId, prevTx, nextTx])
+
   // ── Vue pleine page : transaction sélectionnée ────────────────────────────
   if (selectedTx) {
     const sourceMeta = SOURCE_META[selectedTx.sourceType]
     return (
       <div className="h-full flex flex-col gap-3">
 
-        {/* ── Fil d'Ariane / retour ── */}
-        <div className="shrink-0 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5">
+        {/* ── Barre de navigation ── */}
+        <div className="shrink-0 flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2">
+
+          {/* Retour */}
           <button
             onClick={() => setSelectedTxId(null)}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 transition-colors shrink-0"
           >
-            ← Transactions
+            ← Liste
           </button>
-          <span className="text-gray-300">/</span>
-          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${sourceMeta.bg}`}>
+
+          <span className="text-gray-200 shrink-0">|</span>
+
+          {/* Précédent */}
+          <button
+            onClick={() => prevTx && setSelectedTxId(prevTx.id)}
+            disabled={!prevTx}
+            title={prevTx ? `← ${prevTx.ref} — ${prevTx.libelle}` : undefined}
+            className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+          >
+            ‹ Préc.
+          </button>
+
+          {/* Indicateur de position */}
+          <span className="text-xs text-gray-400 tabular-nums shrink-0">
+            {currentIndex + 1} / {rows.length}
+          </span>
+
+          {/* Suivant */}
+          <button
+            onClick={() => nextTx && setSelectedTxId(nextTx.id)}
+            disabled={!nextTx}
+            title={nextTx ? `${nextTx.ref} — ${nextTx.libelle} →` : undefined}
+            className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+          >
+            Suiv. ›
+          </button>
+
+          <span className="text-gray-200 shrink-0">|</span>
+
+          {/* Infos transaction courante */}
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset shrink-0 ${sourceMeta.bg}`}>
             {sourceMeta.icon} {sourceMeta.label}
           </span>
-          <span className="font-mono text-xs text-gray-500 bg-gray-100 rounded px-1.5 py-0.5">{selectedTx.ref}</span>
+          <span className="font-mono text-xs text-gray-500 bg-gray-100 rounded px-1.5 py-0.5 shrink-0">{selectedTx.ref}</span>
           <span className="text-xs text-gray-600 truncate flex-1">{selectedTx.libelle}</span>
           <StatusBadge status={selectedTx.status} />
+
+          {/* Astuce clavier */}
+          <span className="hidden lg:inline-flex items-center gap-1 text-[10px] text-gray-300 shrink-0">
+            <kbd className="rounded border border-gray-200 bg-gray-50 px-1 py-0.5 font-mono">←</kbd>
+            <kbd className="rounded border border-gray-200 bg-gray-50 px-1 py-0.5 font-mono">→</kbd>
+          </span>
         </div>
 
         {/* ── Deux panneaux égaux ── */}
