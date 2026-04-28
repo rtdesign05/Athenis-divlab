@@ -28,6 +28,7 @@ function ModalClient({ initial, agenceNom, onSave, onClose }: ModalClientProps) 
     adresse:   initial?.adresse   ?? '',
     agence:    initial?.agence    ?? agenceNom ?? 'Siège',
     notes:     initial?.notes     ?? '',
+    compte:    initial?.compte    ?? '',
   })
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
@@ -35,7 +36,12 @@ function ModalClient({ initial, agenceNom, onSave, onClose }: ModalClientProps) 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.nom.trim()) return
-    onSave({ ...form, type: form.type as ClientType })
+    const { compte, ...rest } = form
+    onSave({
+      ...rest,
+      type: rest.type as ClientType,
+      ...(compte.trim() ? { compte: compte.trim() } : {}),
+    })
   }
 
   return (
@@ -90,6 +96,24 @@ function ModalClient({ initial, agenceNom, onSave, onClose }: ModalClientProps) 
               <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
               <textarea value={form.notes} onChange={set('notes')} rows={2}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 resize-none" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Compte comptable
+                <span className="ml-1 font-normal text-gray-400">(facultatif — ex : 411100)</span>
+              </label>
+              <input
+                value={form.compte}
+                onChange={set('compte')}
+                placeholder="411100"
+                maxLength={10}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500/30"
+              />
+              {form.compte.trim() && (
+                <p className="mt-1 text-[11px] text-indigo-600">
+                  → Ce compte apparaîtra automatiquement dans Comptabilité › Comptes
+                </p>
+              )}
             </div>
           </div>
           <div className="flex gap-2 pt-1">
@@ -201,6 +225,7 @@ export function ClientsPage() {
             <div className="flex flex-col items-center justify-center h-full py-16 text-gray-400">
               <span className="text-3xl mb-2">👤</span>
               <p className="text-sm font-medium">Aucun client trouvé</p>
+
             </div>
           ) : (
             <table className="w-full text-sm">
@@ -209,6 +234,7 @@ export function ClientsPage() {
                   <th className="px-4 py-2.5">Client</th>
                   <th className="px-4 py-2.5">Contact</th>
                   <th className="px-4 py-2.5">Agence</th>
+                  <th className="px-4 py-2.5">Compte</th>
                   <th className="px-4 py-2.5 text-right">CA total</th>
                   <th className="px-4 py-2.5 text-center">Cmds</th>
                   <th className="px-4 py-2.5 text-right">Depuis</th>
@@ -234,6 +260,13 @@ export function ClientsPage() {
                       <p className="text-[10px] text-gray-400">{c.telephone || '—'}</p>
                     </td>
                     <td className="px-4 py-2.5 text-[11px] text-gray-500">{c.agence}</td>
+                    <td className="px-4 py-2.5">
+                      {c.compte ? (
+                        <span className="font-mono text-xs text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5">{c.compte}</span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-right text-xs font-semibold text-gray-900">
                       {caMap[c.nom] ? fmt(caMap[c.nom]!) : <span className="text-gray-300">—</span>}
                     </td>

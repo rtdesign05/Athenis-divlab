@@ -36,6 +36,7 @@ function ModalFournisseur({ initial, agenceNom, onSave, onClose }: ModalFourniss
     adresse:   initial?.adresse   ?? '',
     agence:    initial?.agence    ?? agenceNom ?? 'Siège',
     notes:     initial?.notes     ?? '',
+    compte:    initial?.compte    ?? '',
   })
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
@@ -43,7 +44,12 @@ function ModalFournisseur({ initial, agenceNom, onSave, onClose }: ModalFourniss
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.nom.trim()) return
-    onSave({ ...form, categorie: form.categorie as FournisseurCategorie })
+    const { compte, ...rest } = form
+    onSave({
+      ...rest,
+      categorie: rest.categorie as FournisseurCategorie,
+      ...(compte.trim() ? { compte: compte.trim() } : {}),
+    })
   }
 
   return (
@@ -97,6 +103,24 @@ function ModalFournisseur({ initial, agenceNom, onSave, onClose }: ModalFourniss
               <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
               <textarea value={form.notes} onChange={set('notes')} rows={2}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 resize-none" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Compte comptable
+                <span className="ml-1 font-normal text-gray-400">(facultatif — ex : 401100)</span>
+              </label>
+              <input
+                value={form.compte}
+                onChange={set('compte')}
+                placeholder="401100"
+                maxLength={10}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500/30"
+              />
+              {form.compte.trim() && (
+                <p className="mt-1 text-[11px] text-orange-600">
+                  → Ce compte apparaîtra automatiquement dans Comptabilité › Comptes
+                </p>
+              )}
             </div>
           </div>
           <div className="flex gap-2 pt-1">
@@ -220,6 +244,7 @@ export function FournisseursPage() {
                   <th className="px-4 py-2.5">Catégorie</th>
                   <th className="px-4 py-2.5">Contact</th>
                   <th className="px-4 py-2.5">Agence</th>
+                  <th className="px-4 py-2.5">Compte</th>
                   <th className="px-4 py-2.5 text-right">Total achats</th>
                   <th className="px-4 py-2.5 text-center">Cmds</th>
                   <th className="px-4 py-2.5 text-right">Depuis</th>
@@ -243,6 +268,13 @@ export function FournisseursPage() {
                       <p className="text-[10px] text-gray-400">{f.telephone || '—'}</p>
                     </td>
                     <td className="px-4 py-2.5 text-[11px] text-gray-500">{f.agence}</td>
+                    <td className="px-4 py-2.5">
+                      {f.compte ? (
+                        <span className="font-mono text-xs text-orange-700 bg-orange-50 rounded px-1.5 py-0.5">{f.compte}</span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-right text-xs font-semibold text-gray-900">
                       {totalMap[f.nom] ? fmt(totalMap[f.nom]!) : <span className="text-gray-300">—</span>}
                     </td>

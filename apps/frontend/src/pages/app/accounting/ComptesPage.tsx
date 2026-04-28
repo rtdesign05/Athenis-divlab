@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { accountingApi, type PlanData, type CompteItem, type PlanEntry, type ChartAccountType } from '@/services/accountingApi'
+import { useGestion } from '@/contexts/GestionContext'
 
-type SubTab = 'plan' | 'comptes'
+type SubTab = 'plan' | 'comptes' | 'tiers'
 
 const TYPE_LABELS: Record<ChartAccountType, string> = {
   ACTIF:   'Actif',
@@ -437,6 +438,103 @@ function ComptesTab({ comptes, planEntries, onRefresh }: ComptesTabProps) {
   )
 }
 
+// ── Comptes tiers tab ─────────────────────────────────────────────────────────
+
+function TiersTab() {
+  const { comptesTiers } = useGestion()
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    if (!q) return comptesTiers
+    return comptesTiers.filter(c =>
+      c.numero.includes(q) ||
+      c.intitule.toLowerCase().includes(q),
+    )
+  }, [comptesTiers, search])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Comptes tiers</h2>
+          <p className="mt-0.5 text-xs text-gray-500">
+            Alimenté automatiquement depuis les clients et fournisseurs ayant un compte renseigné
+          </p>
+        </div>
+        <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600">
+          {comptesTiers.length} compte{comptesTiers.length !== 1 ? 's' : ''}
+        </span>
+      </div>
+
+      {comptesTiers.length > 0 && (
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Numéro ou intitulé…"
+          className="w-56 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500"
+        />
+      )}
+
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold text-gray-500">
+              <th className="px-4 py-3">N° compte</th>
+              <th className="px-4 py-3">Intitulé</th>
+              <th className="px-4 py-3">Type tiers</th>
+              <th className="px-4 py-3">Agence</th>
+              <th className="px-4 py-3">Classe</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">
+                  {comptesTiers.length === 0
+                    ? 'Aucun compte tiers — renseignez un numéro de compte sur un client ou fournisseur'
+                    : 'Aucun résultat'}
+                </td>
+              </tr>
+            ) : filtered.map(c => {
+              const classe = c.numero.charAt(0)
+              const isClient = c.type === 'client'
+              return (
+                <tr key={c.id} className="hover:bg-gray-50/50">
+                  <td className="px-4 py-2.5 font-mono text-xs font-semibold text-gray-800">{c.numero}</td>
+                  <td className="px-4 py-2.5 font-medium text-gray-900">{c.intitule}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      isClient
+                        ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 ring-inset'
+                        : 'bg-orange-50 text-orange-700 ring-1 ring-orange-200 ring-inset'
+                    }`}>
+                      {isClient ? '🏢 Client' : '🏭 Fournisseur'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-gray-500">{c.agence}</td>
+                  <td className="px-4 py-2.5 text-xs text-gray-500">{classe || '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {comptesTiers.length === 0 && (
+        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-6 py-8 text-center">
+          <p className="text-sm font-medium text-gray-600 mb-1">Comment alimenter cette liste ?</p>
+          <p className="text-xs text-gray-400">
+            Dans <strong>Gestion › Clients</strong> ou <strong>Gestion › Fournisseurs</strong>,
+            ouvrez le formulaire de création ou de modification et renseignez le champ{' '}
+            <strong>Compte comptable</strong> (ex&nbsp;: 411100 pour un client, 401100 pour un fournisseur).
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function ComptesPage() {
@@ -486,9 +584,19 @@ export function ComptesPage() {
         >
           Mes comptes
         </button>
+        <button
+          onClick={() => setTab('tiers')}
+          className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
+            tab === 'tiers' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Comptes tiers
+        </button>
       </div>
 
-      {loading ? (
+      {tab === 'tiers' ? (
+        <TiersTab />
+      ) : loading ? (
         <div className="flex items-center justify-center py-16">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-forest-500 border-t-transparent" />
         </div>

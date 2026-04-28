@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
 
 // ── Types commandes / achats ───────────────────────────────────────────────────
 
@@ -61,6 +61,7 @@ export interface Client {
   adresse:     string
   agence:      string
   notes:       string
+  compte?:     string  // N° de compte comptable (ex: 411000) — facultatif
   createdAt:   string  // ISO date
 }
 
@@ -75,7 +76,17 @@ export interface Fournisseur {
   adresse:     string
   agence:      string
   notes:       string
+  compte?:     string  // N° de compte comptable (ex: 401000) — facultatif
   createdAt:   string  // ISO date
+}
+
+// Compte tiers dérivé des clients/fournisseurs ayant un compte renseigné
+export interface CompteTiers {
+  id:      string           // CLI-xxx ou FRN-xxx
+  numero:  string           // numéro de compte
+  intitule: string          // nom du tiers
+  type:    'client' | 'fournisseur'
+  agence:  string
 }
 
 // ── Factures ventes ───────────────────────────────────────────────────────────
@@ -593,6 +604,7 @@ interface GestionContextValue {
   articles:       Article[]
   categoriesArticles: string[]
   addCategorieArticle(nom: string): void
+  comptesTiers:   CompteTiers[]
   facturesVentes:   FactureVente[]
   bonsLivraison:    BonLivraison[]
   retoursClients:   RetourClient[]
@@ -648,6 +660,16 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     if (!n || categoriesArticles.includes(n)) return
     setCategoriesArticles(prev => [...prev, n])
   }
+
+  // Comptes tiers dérivés des clients et fournisseurs ayant un compte renseigné
+  const comptesTiers = useMemo((): CompteTiers[] => [
+    ...clients
+      .filter(c => c.compte?.trim())
+      .map(c => ({ id: c.id, numero: c.compte!, intitule: c.nom, type: 'client'  as const, agence: c.agence })),
+    ...fournisseurs
+      .filter(f => f.compte?.trim())
+      .map(f => ({ id: f.id, numero: f.compte!, intitule: f.nom, type: 'fournisseur' as const, agence: f.agence })),
+  ], [clients, fournisseurs])
 
   function addBonLivraison(b: Omit<BonLivraison, 'id'>): BonLivraison {
     const last = bonsLivraison[0]?.id ?? 'BL-0000'
@@ -803,7 +825,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
 
   return (
     <GestionContext.Provider value={{
-      commandes, achats, clients, fournisseurs, articles, categoriesArticles, addCategorieArticle,
+      commandes, achats, clients, fournisseurs, articles, categoriesArticles, addCategorieArticle, comptesTiers,
       facturesVentes, bonsLivraison, retoursClients, facturesAchats, bonsReception,
       mouvementsStock, addMouvementStock,
       addBonLivraison, addRetourClient, addFactureAchat, addBonReception,
