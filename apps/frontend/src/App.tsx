@@ -200,6 +200,10 @@ const router = createBrowserRouter([
           { path: 'fiscalite',     lazy: lz(() => import('@/pages/app/settings/FiscalitePage'),     'FiscalitePage') },
         ],
       },
+
+      // ── SUPER_ADMIN : métriques SaaS ────────────────────────────────────────
+      { path: 'admin/metrics', lazy: lz(() => import('@/pages/app/admin/MetricsPage'), 'MetricsPage') },
+
     ]}],
   },
 

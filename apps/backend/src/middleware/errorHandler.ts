@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import jwt from 'jsonwebtoken'
 import { ZodError } from 'zod'
 import { logger } from '../lib/logger.js'
+import { Sentry } from '../lib/sentry.js'
 
 export class AppError extends Error {
   constructor(
@@ -100,6 +101,8 @@ export function errorHandler(
   // 6. Toute autre erreur — jamais d'objet vide dans les logs
   const info = serializeError(err)
   logger.error('Unhandled error', { ...info, path: req.path, method: req.method })
+  // Capture dans Sentry (no-op si DSN absent)
+  if (process.env['SENTRY_DSN']) Sentry.captureException(err)
   res.status(500).json({
     success: false,
     error: process.env['NODE_ENV'] === 'production' ? 'Erreur interne du serveur' : (info.message),

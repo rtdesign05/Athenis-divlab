@@ -6,7 +6,13 @@ import { AuthProvider } from '@/features/auth/AuthContext'
 import { Toaster } from '@/shared/components/feedback/Toaster'
 import { App } from './App'
 import { queryClient } from './lib/queryClient'
+import { initAnalytics } from './lib/analytics'
+import { initSentry } from './lib/sentry'
 import './index.css'
+
+// ── Monitoring & analytics (no-ops si variables d'env absentes) ──────────────
+initSentry()
+initAnalytics()
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')

@@ -1,3 +1,6 @@
+import { initSentry } from './lib/sentry.js'
+initSentry() // doit être appelé avant tout autre import Sentry
+
 import { createApp } from './app.js'
 import { env } from './config/env.js'
 import { prisma } from './lib/prisma.js'
