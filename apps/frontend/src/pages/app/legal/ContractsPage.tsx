@@ -219,7 +219,7 @@ export function ContractsPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map(({ label, value, color }) => (
           <div key={label} className="rounded-xl border border-gray-200 bg-white p-4">
             <p className="text-xs font-medium text-gray-500">{label}</p>
@@ -242,7 +242,7 @@ export function ContractsPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         {contracts.isLoading ? (
           <div className="p-8 text-center text-gray-400">Chargement…</div>
         ) : contracts.data?.length === 0 ? (

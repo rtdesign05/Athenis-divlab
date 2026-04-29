@@ -333,7 +333,7 @@ function CycleCard({
       </button>
 
       {open && (
-        <div className="border-t border-gray-100 bg-white">
+        <div className="border-t border-gray-100 bg-white overflow-x-auto">
           {filteredAccounts.length === 0 ? (
             <p className="px-5 py-4 text-sm text-gray-400 text-center">
               {search || filterStatus !== 'all' ? 'Aucun compte correspond aux filtres.' : 'Aucun compte dans ce cycle.'}

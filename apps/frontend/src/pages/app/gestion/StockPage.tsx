@@ -234,7 +234,7 @@ export function StockPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4 px-6 py-4 border-b border-gray-100">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 px-6 py-4 border-b border-gray-100">
         <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
           <p className="text-xs text-gray-500">Articles stockables</p>
           <p className="mt-1 text-2xl font-bold text-gray-900">{kpis.total}</p>
@@ -310,7 +310,7 @@ export function StockPage() {
       </div>
 
       {/* Corps */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-auto">
 
         {tab === 'niveaux' && (
           <table className="w-full text-sm">

@@ -38,7 +38,7 @@ export function StockDashboard() {
         <div className="shrink-0 border-b border-gray-100 px-4 py-2.5">
           <h3 className="text-sm font-semibold text-gray-700">Top 5 articles par valeur de stock</h3>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-gray-50">
               <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-500">

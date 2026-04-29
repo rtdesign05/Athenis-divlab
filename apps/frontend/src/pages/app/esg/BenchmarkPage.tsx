@@ -79,7 +79,7 @@ export function BenchmarkPage() {
       ) : bench.data && (
         <>
           {/* Score comparison */}
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <ScoreCompare label="Score Global"       company={bench.data.company.global}        sector={bench.data.sector.global} />
             <ScoreCompare label="Environnement (E)"  company={bench.data.company.environnement}  sector={bench.data.sector.environnement} />
             <ScoreCompare label="Social (S)"         company={bench.data.company.social}         sector={bench.data.sector.social} />

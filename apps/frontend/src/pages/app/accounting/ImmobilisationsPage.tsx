@@ -255,7 +255,7 @@ export function ScheduleModal({ assetId, onClose }: { assetId: string; onClose: 
           {isLoading && <Spinner />}
           {data && (
             <>
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                 <div className="rounded-lg bg-gray-50 p-3 text-center">
                   <p className="text-xs text-gray-500">Valeur brute</p>
                   <p className="text-sm font-semibold text-gray-900 mt-1">{fmt(Number(data.asset.grossValue))}</p>

@@ -85,7 +85,7 @@ export function TresoreriePage() {
       </div>
 
       {/* Prévisions */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {forecast.slice(1).map((f) => (
           <div key={f.label} className="rounded-xl border border-gray-200 bg-white p-4">
             <p className="text-xs font-medium text-gray-500">{f.label}</p>

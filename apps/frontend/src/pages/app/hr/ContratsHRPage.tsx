@@ -52,7 +52,7 @@ export function ContratsHRPage() {
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         {employees.isLoading ? (
           <div className="px-5 py-8 text-center text-sm text-gray-400">Chargement des contrats…</div>
         ) : (

@@ -317,7 +317,7 @@ function TraitementValidate({ tx, fiscalYearId, onValidate }: TraitementValidate
         {/* Prévisualisation de l'écriture */}
         <div className="px-4 py-3 border-b border-gray-100">
           <p className="text-xs font-semibold text-gray-700 mb-2">Écriture à générer</p>
-          <div className="rounded-lg border border-gray-200 overflow-hidden">
+          <div className="rounded-lg border border-gray-200 overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">

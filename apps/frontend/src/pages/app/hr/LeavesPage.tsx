@@ -167,7 +167,7 @@ export function LeavesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <p className="text-xs font-medium text-gray-500">En attente</p>
           <p className="text-3xl font-bold text-yellow-600">{stats.data?.pending ?? '—'}</p>
@@ -217,7 +217,7 @@ export function LeavesPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         {leaves.isLoading ? (
           <div className="p-8 text-center text-gray-400">Chargement…</div>
         ) : leaves.data?.length === 0 ? (

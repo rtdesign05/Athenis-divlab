@@ -140,7 +140,7 @@ export function CsrdPage() {
           {/* CO2 */}
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <h2 className="mb-4 text-sm font-semibold text-gray-700">ESRS E1 — Bilan carbone (GHG Protocol)</h2>
-            <div className="grid grid-cols-4 gap-4 text-center">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-center">
               {[
                 { label: 'Scope 1', value: report.data.co2.scope1, color: 'text-red-600' },
                 { label: 'Scope 2', value: report.data.co2.scope2, color: 'text-orange-600' },
@@ -159,7 +159,7 @@ export function CsrdPage() {
           <MaterialiteMatrix items={report.data.materialite} />
 
           {/* ESRS table */}
-          <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+          <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
             <div className="border-b border-gray-100 bg-gray-50 px-4 py-3">
               <h2 className="text-sm font-semibold text-gray-700">Analyse ESRS — Sujets de durabilité</h2>
             </div>

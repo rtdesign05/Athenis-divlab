@@ -380,7 +380,7 @@ export function ReviewsPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Total', value: reviews.data?.length ?? '—', color: 'text-gray-900' },
           { label: 'Planifiés', value: reviews.data?.filter(r => r.status === 'SCHEDULED').length ?? '—', color: 'text-blue-600' },
@@ -408,7 +408,7 @@ export function ReviewsPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         {reviews.isLoading ? (
           <div className="p-8 text-center text-gray-400">Chargement…</div>
         ) : reviews.data?.length === 0 ? (

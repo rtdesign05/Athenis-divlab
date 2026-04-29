@@ -33,7 +33,7 @@ export function EnvironnementPage() {
       </div>
 
       {/* CO₂ Total */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[
           { label: 'Scope 1 (direct)',       val: 42,  color: 'bg-red-500' },
           { label: 'Scope 2 (électricité)',  val: 28,  color: 'bg-orange-400' },
@@ -50,7 +50,7 @@ export function EnvironnementPage() {
       </div>
 
       {/* Table indicateurs */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         <div className="border-b border-gray-100 px-5 py-4 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-900">Tous les indicateurs</h2>
           {scopeData.isLoading && <span className="text-xs text-gray-400">Chargement…</span>}

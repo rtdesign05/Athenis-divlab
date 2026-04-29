@@ -30,7 +30,7 @@ export function SocialPage() {
         <p className="mt-1 text-sm text-gray-500">Indicateurs ESRS S1–S4</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="rounded-xl border border-gray-200 bg-white p-5">
           <p className="text-xs font-medium text-gray-500">Effectif total</p>
           <p className="mt-1.5 text-3xl font-bold text-gray-900">{employees.isLoading ? '—' : actifs}</p>
@@ -47,7 +47,7 @@ export function SocialPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         <div className="border-b border-gray-100 px-5 py-4">
           <h2 className="text-sm font-semibold text-gray-900">Indicateurs sociaux</h2>
         </div>

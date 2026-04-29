@@ -234,7 +234,7 @@ export function ActionPlanPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
           { label: 'Total',     value: stats.data?.total,       color: 'text-gray-900' },
           { label: 'À faire',   value: stats.data?.todo,        color: 'text-gray-600' },
@@ -276,7 +276,7 @@ export function ActionPlanPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         {actions.isLoading ? (
           <div className="p-8 text-center text-gray-400">Chargement…</div>
         ) : filtered.length === 0 ? (

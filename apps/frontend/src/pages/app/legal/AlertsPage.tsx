@@ -41,7 +41,7 @@ export function AlertsPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <p className="text-xs font-medium text-gray-500">Alertes ouvertes</p>
           <p className="text-3xl font-bold text-gray-900">{stats.data?.total ?? '—'}</p>

@@ -24,7 +24,7 @@ export function GouvernancePage() {
         <p className="mt-1 text-sm text-gray-500">Indicateurs ESRS G1 — composition et éthique</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="rounded-xl border border-gray-200 bg-white p-5">
           <p className="text-xs font-medium text-gray-500">Femmes au CA</p>
           <p className="mt-1.5 text-3xl font-bold text-gray-900">33%</p>
@@ -42,7 +42,7 @@ export function GouvernancePage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         <div className="border-b border-gray-100 px-5 py-4">
           <h2 className="text-sm font-semibold text-gray-900">Composition du conseil d'administration</h2>
         </div>
@@ -75,7 +75,7 @@ export function GouvernancePage() {
         </table>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         <div className="border-b border-gray-100 px-5 py-4">
           <h2 className="text-sm font-semibold text-gray-900">Indicateurs ESRS G1</h2>
         </div>

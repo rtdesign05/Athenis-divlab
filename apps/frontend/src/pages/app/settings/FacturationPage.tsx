@@ -182,7 +182,7 @@ export function FacturationPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-gray-800">Historique de paiements</h2>
 
-        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>

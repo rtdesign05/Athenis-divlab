@@ -248,7 +248,7 @@ export function GdprPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <p className="text-xs font-medium text-gray-500">Traitements</p>
           <p className="text-3xl font-bold text-gray-900">{stats.data?.total ?? '—'}</p>
@@ -268,7 +268,7 @@ export function GdprPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
         {entries.isLoading ? (
           <div className="p-8 text-center text-gray-400">Chargement…</div>
         ) : entries.data?.length === 0 ? (

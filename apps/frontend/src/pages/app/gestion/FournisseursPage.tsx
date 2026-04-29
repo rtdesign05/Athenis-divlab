@@ -230,7 +230,7 @@ export function FournisseursPage() {
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-auto">
           {visible.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full py-16 text-gray-400">
               <span className="text-3xl mb-2">🏭</span>
