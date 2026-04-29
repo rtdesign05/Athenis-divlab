@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo-athenis.svg', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'],
+      includeAssets: ['logo-athenis.svg', 'apple-touch-icon.png', 'icon-48.png', 'icon-192.png', 'icon-256.png', 'icon-512.png'],
       manifest: false, // we use our own public/manifest.json
       workbox: {
         // Cache strategy: network-first for API, cache-first for static assets
