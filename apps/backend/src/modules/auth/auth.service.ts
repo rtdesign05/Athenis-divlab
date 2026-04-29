@@ -286,7 +286,7 @@ export async function register(
           currencySymbol: countryCfg.currencySymbol,
           accountingZone: countryCfg.accountingZone as import('@prisma/client').AccountingZone,
           accountingPlan: countryCfg.accountingPlan,
-          vatRate: countryCfg.vatRates[0] ?? 0,
+          vatRate: ((countryCfg.vatRates[0] ?? 0) / 100),
           locale: countryCfg.locale,
           timezone: countryCfg.timezone,
         },
