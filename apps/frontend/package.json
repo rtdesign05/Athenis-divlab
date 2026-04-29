@@ -6,15 +6,21 @@
   "scripts": {
     "dev": "node ../../node_modules/vite/bin/vite.js",
     "build": "node ../../node_modules/typescript/bin/tsc --noEmit && node ../../node_modules/vite/bin/vite.js build",
+    "build:app": "node ../../node_modules/vite/bin/vite.js build",
     "preview": "node ../../node_modules/vite/bin/vite.js preview",
     "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit",
-    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint src --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "tauri": "node ../../node_modules/@tauri-apps/cli/tauri.js",
+    "tauri:dev": "node ../../node_modules/@tauri-apps/cli/tauri.js dev",
+    "tauri:build": "node ../../node_modules/@tauri-apps/cli/tauri.js build"
   },
   "dependencies": {
     "@athenis/shared-types": "*",
     "@react-pdf/renderer": "^4.5.1",
     "@tanstack/react-query": "^5.40.0",
     "@tanstack/react-query-devtools": "^5.40.0",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/cli": "^2.10.1",
     "@types/file-saver": "^2.0.7",
     "axios": "^1.7.2",
     "class-variance-authority": "^0.7.1",
