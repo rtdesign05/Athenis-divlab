@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { stocksApi } from '@/services/stocksApi'
-import { useCurrency } from '@/hooks/useCurrency'
+import type { Alerte } from '@/services/stocksApi'
 
 export function AlertesPage() {
-  const { fmt } = useCurrency()
-  const { data: alertes = [], isLoading } = useQuery({ queryKey: ['stocks', 'alertes'], queryFn: stocksApi.alertes })
+  const { data: alertes = [], isLoading } = useQuery<Alerte[]>({ queryKey: ['stocks', 'alertes'], queryFn: stocksApi.alertes })
 
   const ruptures = alertes.filter((a) => a.isRupture)
   const bas      = alertes.filter((a) => !a.isRupture)
@@ -37,7 +36,7 @@ export function AlertesPage() {
           <h3 className="mb-2 text-sm font-semibold text-red-600">🔴 Ruptures de stock ({ruptures.length})</h3>
           <div className="space-y-3">
             {ruptures.map((a) => (
-              <AlerteCard key={a.id} alerte={a} fmt={fmt} />
+              <AlerteCard key={a.id} alerte={a} />
             ))}
           </div>
         </div>
@@ -48,7 +47,7 @@ export function AlertesPage() {
           <h3 className="mb-2 text-sm font-semibold text-amber-600">⚠️ Stock bas ({bas.length})</h3>
           <div className="space-y-3">
             {bas.map((a) => (
-              <AlerteCard key={a.id} alerte={a} fmt={fmt} />
+              <AlerteCard key={a.id} alerte={a} />
             ))}
           </div>
         </div>
@@ -57,9 +56,7 @@ export function AlertesPage() {
   )
 }
 
-type Alerte = Awaited<ReturnType<typeof stocksApi.alertes>>[number]
-
-function AlerteCard({ alerte, fmt }: { alerte: Alerte; fmt: (v: number) => string }) {
+function AlerteCard({ alerte }: { alerte: Alerte }) {
   const [showEntree, setShowEntree] = useState(false)
 
   return (
@@ -122,14 +119,14 @@ function QuickEntry({ articleId, unite, onDone }: { articleId: string; unite: st
   const [err, setErr] = useState('')
 
   const mouv = useMutation({
-    mutationFn: stocksApi.createMouvement,
+    mutationFn: (dto: Parameters<typeof stocksApi.createMouvement>[0]) => stocksApi.createMouvement(dto),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['stocks'] }); onDone() },
   })
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setErr('')
-    try { await mouv.mutateAsync({ articleId, type: 'ENTREE_ACHAT', quantite: Number(qty), prixUnitaire: Number(pu) }) }
+    try { await mouv.mutateAsync({ articleId, type: 'ENTREE_ACHAT' as const, quantite: Number(qty), prixUnitaire: Number(pu) }) }
     catch (e: unknown) { setErr((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erreur') }
   }
 

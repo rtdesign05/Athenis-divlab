@@ -2,8 +2,9 @@ import { api } from '@/lib/api'
 import type { JwtPayload } from '@athenis/shared-types'
 
 export interface LoginData {
-  accessToken: string
-  requires2fa: boolean
+  accessToken?: string
+  /** Backend field name — true when TOTP is required before full login */
+  requiresTotp?: boolean
   tempToken?: string
   user?: UserProfile
 }

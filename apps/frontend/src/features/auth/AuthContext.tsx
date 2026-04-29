@@ -59,9 +59,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const res = await authApi.login(email, password)
-      const { accessToken, requires2fa, tempToken } = res.data.data
+      // Backend returns `requiresTotp`; we map it to `requires2fa` for callers
+      const { accessToken, requiresTotp, tempToken } = res.data.data
+      const requires2fa = requiresTotp ?? false
       if (!requires2fa && accessToken) setToken(accessToken)
-      const accountType = decodeJwt(accessToken)?.accountType ?? null
+      const accountType = accessToken ? (decodeJwt(accessToken)?.accountType ?? null) : null
       return { requires2fa, tempToken: tempToken ?? null, accountType }
     },
     [setToken],
@@ -70,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginVerifyTotp = useCallback(
     async (tempToken: string, code: string) => {
       const res = await authApi.loginTotp(tempToken, code)
-      setToken(res.data.data.accessToken)
+      if (res.data.data.accessToken) setToken(res.data.data.accessToken)
     },
     [setToken],
   )
@@ -78,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(
     async (data: RegisterRequest) => {
       const res = await authApi.register(data)
-      setToken(res.data.data.accessToken)
+      if (res.data.data.accessToken) setToken(res.data.data.accessToken)
     },
     [setToken],
   )

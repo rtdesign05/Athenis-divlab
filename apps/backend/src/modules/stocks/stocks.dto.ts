@@ -35,8 +35,9 @@ export const UpdateArticleDto = CreateArticleDto.omit({ stockInitial: true }).pa
 export const ListArticlesDto = z.object({
   familleId: z.string().optional(),
   search:    z.string().optional(),
-  alerte:    z.coerce.boolean().optional(),
-  isActive:  z.coerce.boolean().optional(),
+  // z.coerce.boolean() coerces the string "false" to true — use explicit mapping
+  alerte:    z.preprocess(v => v === 'true' || v === true, z.boolean()).optional(),
+  isActive:  z.preprocess(v => v === 'true' || v === true, z.boolean()).optional(),
   page:      z.coerce.number().int().positive().default(1),
   limit:     z.coerce.number().int().min(1).max(100).default(50),
 })

@@ -23,6 +23,23 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   try {
     const payload = jwt.verify(token, env.jwtSecret) as JwtPayload
 
+    // Verify user is still active in DB — catches revocations between token refresh cycles
+    // Only for company/cabinet users (personal users have no companyMember row)
+    if (payload.sub) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: payload.sub },
+          select: { isActive: true },
+        })
+        if (user && !user.isActive) {
+          res.status(403).json({ success: false, error: 'Compte désactivé', code: 'ACCOUNT_INACTIVE' })
+          return
+        }
+      } catch {
+        // DB unavailable — allow request (fail-open for availability)
+      }
+    }
+
     // Enrich with agence membership for company users
     if (payload.companyId && payload.sub) {
       try {

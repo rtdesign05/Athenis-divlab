@@ -11,8 +11,8 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Prisma
-apps/backend/prisma/migrations/
+# Prisma — migrations MUST be tracked (required for deployment)
+# apps/backend/prisma/migrations/
 
 # Test coverage
 coverage/

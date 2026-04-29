@@ -20,7 +20,8 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: process.env['NODE_ENV'] !== 'production',
+    // Never ship sourcemaps to production — they expose full source code
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
