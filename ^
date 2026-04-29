@@ -1,0 +1,7 @@
+npm error Lifecycle script `dev` failed with error:
+npm error code 1073807364
+npm error path C:\Users\admin\Documents\Athenis\.claude\worktrees\naughty-noyce-e77d1b\apps\backend
+npm error workspace @athenis/backend@1.0.0
+npm error location C:\Users\admin\Documents\Athenis\.claude\worktrees\naughty-noyce-e77d1b\apps\backend
+npm error command failed
+npm error command C:\WINDOWS\system32\cmd.exe /d /s /c tsx watch --env-file=../../.env src/index.ts

@@ -31,15 +31,14 @@ export function AppSidebar({ onClose }: { onClose?: () => void }) {
   const flyoutRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
 
-  const fullName    = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || ''
+  const fullName    = [(user as { firstName?: string } | null)?.firstName, (user as { lastName?: string } | null)?.lastName].filter(Boolean).join(' ') || user?.email || ''
   const companyName = (user as { companyName?: string } | null)?.companyName ?? null
-  const initial     = (user?.firstName ?? user?.email ?? '?').charAt(0).toUpperCase()
+  const initial     = ((user as { firstName?: string } | null)?.firstName ?? user?.email ?? '?').charAt(0).toUpperCase()
   const showLocale  = user?.accountType === 'COMPANY' && user.country && user.currencySymbol
 
   const visibleModules = MODULES.filter((m) => modules.includes(m.key))
   const navSections    = APP_NAV_SECTIONS.filter((s) => modules.includes(s.module))
 
-  const activeModule = visibleModules.find((m) => location.pathname.startsWith(m.path))?.key ?? null
   const [flyoutModule, setFlyoutModule] = useState<Module | null>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -207,7 +206,7 @@ export function AppSidebar({ onClose }: { onClose?: () => void }) {
               <NavLink
                 key={item.path}
                 to={item.path}
-                end={item.end}
+                {...(item.end !== undefined ? { end: item.end } : {})}
                 onClick={() => setFlyoutModule(null)}
                 className={({ isActive }) =>
                   `flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors ${

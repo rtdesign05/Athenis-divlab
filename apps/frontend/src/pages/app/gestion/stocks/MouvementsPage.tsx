@@ -36,7 +36,7 @@ function MouvModal({ articles, onClose }: { articles: Article[]; onClose: () => 
     : null
 
   const mouv = useMutation({
-    mutationFn: stocksApi.createMouvement,
+    mutationFn: (dto: Parameters<typeof stocksApi.createMouvement>[0]) => stocksApi.createMouvement(dto),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['stocks'] }); onClose() },
   })
 
@@ -44,7 +44,7 @@ function MouvModal({ articles, onClose }: { articles: Article[]; onClose: () => 
     e.preventDefault()
     setErr('')
     try {
-      await mouv.mutateAsync({ articleId, type, quantite: Number(qty), prixUnitaire: Number(pu), reference: ref || undefined, description: desc || undefined })
+      await mouv.mutateAsync({ articleId, type, quantite: Number(qty), prixUnitaire: Number(pu), ...(ref ? { reference: ref } : {}), ...(desc ? { description: desc } : {}) })
     } catch (e: unknown) {
       setErr((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erreur')
     }
@@ -145,7 +145,7 @@ export function MouvementsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['stocks', 'mouvements', { artFilter, typeFilter }],
-    queryFn:  () => stocksApi.listMouvements({ articleId: artFilter || undefined, type: (typeFilter || undefined) as MouvType | undefined, limit: 100 }),
+    queryFn:  () => stocksApi.listMouvements({ ...(artFilter ? { articleId: artFilter } : {}), ...(typeFilter ? { type: typeFilter as MouvType } : {}), limit: 100 }),
   })
   const { data: articlesData } = useQuery({ queryKey: ['stocks', 'articles', {}], queryFn: () => stocksApi.listArticles({ limit: 200 }) })
   const articles = articlesData?.items ?? []

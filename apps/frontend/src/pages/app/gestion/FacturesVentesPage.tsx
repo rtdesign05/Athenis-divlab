@@ -738,7 +738,7 @@ function parseCSV(text: string, defaultVat: number): ParsedRow[] {
   if (lines.length < 2) return []
 
   // Detect delimiter: semicolon or comma
-  const header = lines[0]
+  const header = lines[0]!
   const delim  = header.includes(';') ? ';' : ','
   const cols   = header.split(delim).map(c => c.trim().toLowerCase())
 

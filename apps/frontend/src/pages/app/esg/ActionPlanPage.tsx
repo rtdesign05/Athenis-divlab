@@ -36,7 +36,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
       deadline:    form.deadline || null,
       owner:       form.owner || null,
       kpiTarget:   form.kpiTarget || null,
-      co2Saving:   form.co2Saving ? Number(form.co2Saving) : undefined,
+      ...(form.co2Saving ? { co2Saving: Number(form.co2Saving) } : {}),
     })
     onClose()
   }

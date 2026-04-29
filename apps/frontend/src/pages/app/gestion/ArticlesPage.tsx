@@ -24,7 +24,7 @@ const CATEGORY_PALETTE = [
 
 function getCategorieStyle(cat: string, allCats: string[]): string {
   const idx = allCats.indexOf(cat)
-  return CATEGORY_PALETTE[(idx >= 0 ? idx : 0) % CATEGORY_PALETTE.length]
+  return CATEGORY_PALETTE[(idx >= 0 ? idx : 0) % CATEGORY_PALETTE.length] ?? ''
 }
 
 // ── Modal nouvelle catégorie ──────────────────────────────────────────────────

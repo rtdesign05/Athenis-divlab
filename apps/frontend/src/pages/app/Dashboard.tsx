@@ -88,14 +88,14 @@ function RelancesWidget() {
   const { fmt } = useCurrency()
   const { data } = useReminders()
   if (!data?.length) return null
-  const top = [...data].sort((a, b) => b.reminderLevel - a.reminderLevel).slice(0, 3)
+  const top = [...data].sort((a, b) => (b.reminderLevel ?? 0) - (a.reminderLevel ?? 0)).slice(0, 3)
   return (
     <SectionCard title="Relances en attente" icon="⚠️">
       <ul className="space-y-1.5">
         {top.map(inv => (
           <li key={inv.id} className="flex items-center justify-between text-xs">
             <span className="truncate text-gray-700 max-w-[120px]">{inv.client?.name ?? inv.number}</span>
-            <span className={`ml-1 shrink-0 font-medium ${inv.reminderLevel >= 3 ? 'text-red-600' : inv.reminderLevel === 2 ? 'text-amber-600' : 'text-blue-600'}`}>
+            <span className={`ml-1 shrink-0 font-medium ${(inv.reminderLevel ?? 0) >= 3 ? 'text-red-600' : (inv.reminderLevel ?? 0) === 2 ? 'text-amber-600' : 'text-blue-600'}`}>
               {fmt(inv.total)}
             </span>
           </li>
@@ -204,7 +204,7 @@ export function AppDashboard() {
   const { data: reminders } = useReminders()
   const { totalSolde } = useTresorerie()
 
-  const firstName   = user?.firstName || user?.email?.split('@')[0] || 'vous'
+  const firstName   = (user as { firstName?: string } | null)?.firstName || user?.email?.split('@')[0] || 'vous'
   const companyName = (user as { companyName?: string } | null)?.companyName ?? null
 
   const hasReminders = (reminders?.length ?? 0) > 0
@@ -247,7 +247,7 @@ export function AppDashboard() {
             label="Encours clients"
             value={stL ? '…' : fmt(stats?.pendingAmount ?? 0)}
             sub={stats?.overdueAmount ? `${fmt(stats.overdueAmount)} en retard` : 'Aucun retard'}
-            accent={stats?.overdueAmount ? 'red' : undefined}
+            {...(stats?.overdueAmount ? { accent: 'red' as const } : {})}
           />
           <Kpi
             label="Trésorerie nette"

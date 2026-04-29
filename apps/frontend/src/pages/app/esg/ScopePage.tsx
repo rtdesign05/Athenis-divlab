@@ -2,21 +2,6 @@ import { useState } from 'react'
 import { useUpsertEsg } from '@/hooks/useEsg'
 import type { UpsertEsgDto } from '@/services/esgApi'
 
-// ── Emission factors for display ──────────────────────────────────────────────
-const EF_DISPLAY = {
-  naturalGas:     { label: 'Gaz naturel (MWh PCI)',  factor: 0.205,    unit: 'tCO2e/MWh' },
-  fuelOil:        { label: 'Fioul domestique (L)',    factor: 0.00271,  unit: 'tCO2e/L' },
-  vehicles:       { label: 'Carburant véhicules (L)', factor: 0.00244,  unit: 'tCO2e/L' },
-  process:        { label: 'Émissions process (tCO2e)', factor: 1,      unit: 'tCO2e direct' },
-}
-
-const EF3_DISPLAY = {
-  businessTravel: { label: 'Déplacements pro (km)',   factor: 0.000255, unit: 'tCO2e/km' },
-  freight:        { label: 'Transport fret (t·km)',   factor: 0.000062, unit: 'tCO2e/t·km' },
-  waste:          { label: 'Déchets (kg)',            factor: 0.00000449, unit: 'tCO2e/kg' },
-  purchasedGoods: { label: 'Achats (k€)',             factor: 0.30,     unit: 'tCO2e/k€' },
-}
-
 const ELEC_FACTOR = 0.0000571 // tCO2e/kWh — réseau France
 
 function numField(
@@ -59,9 +44,9 @@ export function ScopePage() {
     e.preventDefault()
     const dto: UpsertEsgDto = {
       year,
-      scope1Details: Object.keys(s1).length ? s1 : undefined,
-      scope2Kwh: s2kwh,
-      scope3Details: Object.keys(s3).length ? s3 : undefined,
+      ...(Object.keys(s1).length ? { scope1Details: s1 } : {}),
+      ...(s2kwh !== undefined ? { scope2Kwh: s2kwh } : {}),
+      ...(Object.keys(s3).length ? { scope3Details: s3 } : {}),
       ...env,
       ...social,
       ...gov,
@@ -98,10 +83,10 @@ export function ScopePage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {numField('Gaz naturel (MWh PCI)', s1.naturalGas, v => setS1(x => ({ ...x, naturalGas: v })), `× 0.205 = ${((s1.naturalGas ?? 0) * 0.205).toFixed(3)} tCO2e`)}
-            {numField('Fioul (litres)', s1.fuelOil,      v => setS1(x => ({ ...x, fuelOil: v })),   `× 0.00271 = ${((s1.fuelOil ?? 0) * 0.00271).toFixed(3)} tCO2e`)}
-            {numField('Carburant véhicules (L)', s1.vehicles, v => setS1(x => ({ ...x, vehicles: v })), `× 0.00244 = ${((s1.vehicles ?? 0) * 0.00244).toFixed(3)} tCO2e`)}
-            {numField('Émissions process directes (tCO2e)', s1.process, v => setS1(x => ({ ...x, process: v })))}
+            {numField('Gaz naturel (MWh PCI)', s1.naturalGas, v => setS1(x => ({ ...x, ...(v !== undefined ? { naturalGas: v } : {}) })), `× 0.205 = ${((s1.naturalGas ?? 0) * 0.205).toFixed(3)} tCO2e`)}
+            {numField('Fioul (litres)', s1.fuelOil,      v => setS1(x => ({ ...x, ...(v !== undefined ? { fuelOil: v } : {}) })),   `× 0.00271 = ${((s1.fuelOil ?? 0) * 0.00271).toFixed(3)} tCO2e`)}
+            {numField('Carburant véhicules (L)', s1.vehicles, v => setS1(x => ({ ...x, ...(v !== undefined ? { vehicles: v } : {}) })), `× 0.00244 = ${((s1.vehicles ?? 0) * 0.00244).toFixed(3)} tCO2e`)}
+            {numField('Émissions process directes (tCO2e)', s1.process, v => setS1(x => ({ ...x, ...(v !== undefined ? { process: v } : {}) })))}
           </div>
         </div>
 
@@ -135,10 +120,10 @@ export function ScopePage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {numField('Déplacements pro (km)', s3.businessTravel, v => setS3(x => ({ ...x, businessTravel: v })), s3.businessTravel ? `× 0.000255 = ${((s3.businessTravel ?? 0) * 0.000255).toFixed(3)} tCO2e` : undefined)}
-            {numField('Fret routier (tonne·km)', s3.freight, v => setS3(x => ({ ...x, freight: v })), s3.freight ? `× 0.000062 = ${((s3.freight ?? 0) * 0.000062).toFixed(3)} tCO2e` : undefined)}
-            {numField('Déchets (kg)', s3.waste, v => setS3(x => ({ ...x, waste: v })), s3.waste ? `× 0.00000449 = ${((s3.waste ?? 0) * 0.00000449).toFixed(3)} tCO2e` : undefined)}
-            {numField('Achats (k€)', s3.purchasedGoods, v => setS3(x => ({ ...x, purchasedGoods: v })), s3.purchasedGoods ? `× 0.30 = ${((s3.purchasedGoods ?? 0) * 0.30).toFixed(3)} tCO2e` : undefined)}
+            {numField('Déplacements pro (km)', s3.businessTravel, v => setS3(x => ({ ...x, ...(v !== undefined ? { businessTravel: v } : {}) })), s3.businessTravel ? `× 0.000255 = ${((s3.businessTravel ?? 0) * 0.000255).toFixed(3)} tCO2e` : undefined)}
+            {numField('Fret routier (tonne·km)', s3.freight, v => setS3(x => ({ ...x, ...(v !== undefined ? { freight: v } : {}) })), s3.freight ? `× 0.000062 = ${((s3.freight ?? 0) * 0.000062).toFixed(3)} tCO2e` : undefined)}
+            {numField('Déchets (kg)', s3.waste, v => setS3(x => ({ ...x, ...(v !== undefined ? { waste: v } : {}) })), s3.waste ? `× 0.00000449 = ${((s3.waste ?? 0) * 0.00000449).toFixed(3)} tCO2e` : undefined)}
+            {numField('Achats (k€)', s3.purchasedGoods, v => setS3(x => ({ ...x, ...(v !== undefined ? { purchasedGoods: v } : {}) })), s3.purchasedGoods ? `× 0.30 = ${((s3.purchasedGoods ?? 0) * 0.30).toFixed(3)} tCO2e` : undefined)}
           </div>
         </div>
 
@@ -165,18 +150,18 @@ export function ScopePage() {
           <div className="rounded-xl border border-blue-200 bg-white p-5">
             <h2 className="mb-4 text-base font-semibold text-gray-900">Indicateurs sociaux (S)</h2>
             <div className="space-y-3">
-              {numField('Écart salarial H/F (%)', social.genderPayGap, v => setSocial(x => ({ ...x, genderPayGap: v })))}
-              {numField('Formation (h/salarié/an)', social.trainingHours, v => setSocial(x => ({ ...x, trainingHours: v })))}
-              {numField('Taux absentéisme (%)', social.absenteeismRate, v => setSocial(x => ({ ...x, absenteeismRate: v })))}
-              {numField('Accidents du travail', social.workplaceAccidents, v => setSocial(x => ({ ...x, workplaceAccidents: v ? Math.round(v) : undefined })))}
+              {numField('Écart salarial H/F (%)', social.genderPayGap, v => setSocial(x => ({ ...x, ...(v !== undefined ? { genderPayGap: v } : {}) })))}
+              {numField('Formation (h/salarié/an)', social.trainingHours, v => setSocial(x => ({ ...x, ...(v !== undefined ? { trainingHours: v } : {}) })))}
+              {numField('Taux absentéisme (%)', social.absenteeismRate, v => setSocial(x => ({ ...x, ...(v !== undefined ? { absenteeismRate: v } : {}) })))}
+              {numField('Accidents du travail', social.workplaceAccidents, v => setSocial(x => ({ ...x, ...(v !== undefined ? { workplaceAccidents: Math.round(v) } : {}) })))}
             </div>
           </div>
 
           <div className="rounded-xl border border-purple-200 bg-white p-5">
             <h2 className="mb-4 text-base font-semibold text-gray-900">Gouvernance (G)</h2>
             <div className="space-y-3">
-              {numField('Femmes au CA (%)', gov.boardFemaleRatio, v => setGov(x => ({ ...x, boardFemaleRatio: v })))}
-              {numField('Énergie renouvelable (%)', env.renewableRatio, v => setEnv(x => ({ ...x, renewableRatio: v })))}
+              {numField('Femmes au CA (%)', gov.boardFemaleRatio, v => setGov(x => ({ ...x, ...(v !== undefined ? { boardFemaleRatio: v } : {}) })))}
+              {numField('Énergie renouvelable (%)', env.renewableRatio, v => setEnv(x => ({ ...x, ...(v !== undefined ? { renewableRatio: v } : {}) })))}
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="ethics" className="accent-purple-600"
                   checked={gov.hasEthicsCode ?? false}

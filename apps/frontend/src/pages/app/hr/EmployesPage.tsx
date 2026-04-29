@@ -41,7 +41,7 @@ export function EmployesPage() {
     await createEmployee.mutateAsync({
       firstName: form.firstName,
       lastName:  form.lastName,
-      email:     form.email || undefined,
+      ...(form.email ? { email: form.email } : {}),
       employmentType: form.employmentType,
       grossSalary: Number(form.grossSalary),
       startDate:   form.startDate,

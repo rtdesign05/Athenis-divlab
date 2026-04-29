@@ -34,7 +34,7 @@ function MouvRapideModal({ article, type, onClose }: { article: Article; type: '
     e.preventDefault()
     setErr('')
     try {
-      await mouv.mutateAsync({ articleId: article.id, type: mouvType, quantite: Number(qty), prixUnitaire: Number(pu), description: desc || undefined })
+      await mouv.mutateAsync({ articleId: article.id, type: mouvType, quantite: Number(qty), prixUnitaire: Number(pu), ...(desc ? { description: desc } : {}) })
     } catch (e: unknown) {
       setErr((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erreur')
     }
@@ -127,25 +127,25 @@ function ArticleModal({ families, onClose, initial }: { families: StockFamily[];
     e.preventDefault()
     setErr('')
     const dto = {
-      reference:        form.reference || undefined,
       designation:      form.designation,
-      familleId:        form.familleId || undefined,
       unite:            form.unite,
       prixAchat:        Number(form.prixAchat),
       prixVente:        Number(form.prixVente),
       tvaAchat:         Number(form.tvaAchat) / 100,
       tvaVente:         Number(form.tvaVente) / 100,
-      stockInitial:     form.stockInitial ? Number(form.stockInitial) : undefined,
       stockMin:         Number(form.stockMin),
-      stockMax:         form.stockMax ? Number(form.stockMax) : undefined,
       methodeValuation: form.methodeValuation,
-      description:      form.description || undefined,
-      codeBarres:       form.codeBarres || undefined,
-      fournisseur:      form.fournisseur || undefined,
-      delaiAppro:       form.delaiAppro ? Number(form.delaiAppro) : undefined,
-      emplacement:      form.emplacement || undefined,
-      compteAchat:      form.compteAchat || undefined,
-      compteVente:      form.compteVente || undefined,
+      ...(form.reference        ? { reference:        form.reference }              : {}),
+      ...(form.familleId        ? { familleId:        form.familleId }              : {}),
+      ...(form.stockInitial     ? { stockInitial:     Number(form.stockInitial) }   : {}),
+      ...(form.stockMax         ? { stockMax:         Number(form.stockMax) }       : {}),
+      ...(form.description      ? { description:      form.description }            : {}),
+      ...(form.codeBarres       ? { codeBarres:       form.codeBarres }             : {}),
+      ...(form.fournisseur      ? { fournisseur:      form.fournisseur }            : {}),
+      ...(form.delaiAppro       ? { delaiAppro:       Number(form.delaiAppro) }     : {}),
+      ...(form.emplacement      ? { emplacement:      form.emplacement }            : {}),
+      ...(form.compteAchat      ? { compteAchat:      form.compteAchat }            : {}),
+      ...(form.compteVente      ? { compteVente:      form.compteVente }            : {}),
     }
     try {
       if (initial) await update.mutateAsync({ id: initial.id, dto })
@@ -323,7 +323,7 @@ export function ArticlesPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['stocks', 'articles', { search, famille }],
-    queryFn:  () => stocksApi.listArticles({ search: search || undefined, familleId: famille || undefined, limit: 100 }),
+    queryFn:  () => stocksApi.listArticles({ ...(search ? { search } : {}), ...(famille ? { familleId: famille } : {}), limit: 100 }),
   })
   const { data: families = [] } = useQuery({ queryKey: ['stocks', 'families'], queryFn: stocksApi.listFamilies })
 
@@ -417,7 +417,7 @@ export function ArticlesPage() {
         </table>
       </div>
 
-      {modal && <ArticleModal families={families} onClose={() => setModal(null)} initial={modal === 'new' ? undefined : modal} />}
+      {modal && <ArticleModal families={families} onClose={() => setModal(null)} {...(modal !== 'new' ? { initial: modal } : {})} />}
       {mouvModal && <MouvRapideModal article={mouvModal.article} type={mouvModal.type} onClose={() => setMouvModal(null)} />}
     </div>
   )

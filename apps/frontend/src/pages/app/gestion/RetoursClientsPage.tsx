@@ -41,7 +41,7 @@ function ModalRetour({ clients, factures, agenceNom, onSave, onClose }: ModalRet
     client:   '',
     agence:   agenceNom ?? 'Siège',
     date:     today,
-    motif:    MOTIFS_COURANTS[0],
+    motif:    MOTIFS_COURANTS[0] ?? '',
     motifLib: '',
     montant:  0,
   })

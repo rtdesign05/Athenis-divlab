@@ -155,7 +155,7 @@ function CreateQuoteModal({ open, onClose }: { open: boolean; onClose: () => voi
         <div>
           <label className="label">Notes</label>
           <textarea rows={2} className="input mt-1" value={form.notes ?? ''}
-            onChange={e => setForm(f => ({ ...f, notes: e.target.value || undefined }))} />
+            onChange={e => setForm(f => ({ ...f, ...(e.target.value ? { notes: e.target.value } : {}) }))} />
         </div>
         {create.isError && <p className="text-sm text-red-600">Erreur lors de la création.</p>}
         <div className="flex justify-end gap-3 pt-2">

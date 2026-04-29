@@ -142,7 +142,14 @@ export const stocksApi = {
     fournisseur?: string; delaiAppro?: number; emplacement?: string;
     compteAchat?: string; compteVente?: string;
   }) => api.post<{ data: Article }>('/stocks/articles', dto).then(d),
-  updateArticle: (id: string, dto: Partial<Parameters<typeof stocksApi.createArticle>[0]>) =>
+  updateArticle: (id: string, dto: Partial<{
+    designation: string; reference?: string; familleId?: string; unite?: string;
+    prixAchat: number; prixVente: number; tvaAchat?: number; tvaVente?: number;
+    stockInitial?: number; stockMin?: number; stockMax?: number;
+    methodeValuation?: StockMethod; description?: string; codeBarres?: string;
+    fournisseur?: string; delaiAppro?: number; emplacement?: string;
+    compteAchat?: string; compteVente?: string;
+  }>) =>
     api.put<{ data: Article }>(`/stocks/articles/${id}`, dto).then(d),
   deleteArticle: (id: string) =>
     api.delete(`/stocks/articles/${id}`),

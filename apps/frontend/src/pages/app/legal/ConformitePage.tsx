@@ -54,6 +54,7 @@ export function ConformitePage() {
           <div className="divide-y divide-gray-50">
             {ITEMS.filter((i) => i.cat === cat).map((item, idx) => {
               const s = STATUT[item.statut]
+              if (!s) return null
               return (
                 <div key={idx} className="flex items-center justify-between px-5 py-3">
                   <p className="text-sm text-gray-700">{item.label}</p>

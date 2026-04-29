@@ -528,8 +528,8 @@ export function BonsLivraisonPage() {
       const tag = (e.target as HTMLElement).tagName
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return
       const idx = items.findIndex(b => b.id === selectedId)
-      if (e.key === 'ArrowLeft'  && idx > 0)               setSelectedId(items[idx - 1].id)
-      if (e.key === 'ArrowRight' && idx < items.length - 1) setSelectedId(items[idx + 1].id)
+      if (e.key === 'ArrowLeft'  && idx > 0)               setSelectedId(items[idx - 1]!.id)
+      if (e.key === 'ArrowRight' && idx < items.length - 1) setSelectedId(items[idx + 1]!.id)
       if (e.key === 'Escape') setSelectedId(null)
     }
     window.addEventListener('keydown', onKey)

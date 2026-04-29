@@ -42,8 +42,8 @@ function CreateModal({ onClose }: { onClose: () => void }) {
     await create.mutateAsync({
       title, type,
       parties: parties.filter(p => p.name && p.email),
-      expiresAt: expiresAt || undefined,
-      notes: notes || undefined,
+      ...(expiresAt ? { expiresAt } : {}),
+      ...(notes ? { notes } : {}),
     })
     onClose()
   }
@@ -131,7 +131,7 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
     e.preventDefault()
     const result = await send.mutateAsync({
       id: contract.id,
-      dto: { signerName, signerEmail, signerRole: signerRole || undefined },
+      dto: { signerName, signerEmail, ...(signerRole ? { signerRole } : {}) },
     })
     setLinkGenerated(result.signLink)
   }

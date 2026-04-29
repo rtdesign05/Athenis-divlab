@@ -346,7 +346,7 @@ function TresoAccessSection({ roles, users }: { roles: CompanyRole[]; users: Set
 
       {(showModal || editing) && (
         <ModalTresoAccess
-          initial={editing ?? undefined}
+          {...(editing ? { initial: editing } : {})}
           sujets={sujets}
           onSave={addOrUpdate}
           onClose={() => { setShowModal(false); setEditing(null) }}

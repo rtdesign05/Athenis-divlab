@@ -125,7 +125,7 @@ export const esgApi = {
   actions: {
     stats:  ()                => api.get<{ data: ActionStats }>('/esg/actions/stats').then(d),
     list:   (year?: number)   => api.get<{ data: EsgAction[] }>('/esg/actions', { params: year ? { year } : {} }).then(d),
-    create: (dto: Omit<EsgAction, 'id' | 'createdAt' | 'kpiCurrent'> & { co2Saving?: number }) =>
+    create: (dto: Omit<EsgAction, 'id' | 'createdAt' | 'kpiCurrent' | 'co2Saving'> & { co2Saving?: number }) =>
               api.post<{ data: EsgAction }>('/esg/actions', dto).then(d),
     update: (id: string, dto: Partial<Pick<EsgAction, 'title'|'description'|'status'|'priority'|'owner'|'kpiTarget'|'kpiCurrent'>> & { deadline?: string; co2Saving?: number }) =>
               api.patch<{ data: EsgAction }>(`/esg/actions/${id}`, dto).then(d),

@@ -17,8 +17,8 @@ function FamilleModal({ onClose, initial }: { onClose: () => void; initial?: Sto
     e.preventDefault()
     setErr('')
     try {
-      if (initial) await update.mutateAsync({ id: initial.id, dto: { code: code.toUpperCase(), nom, description: desc || undefined } })
-      else          await create.mutateAsync({ code: code.toUpperCase(), nom, description: desc || undefined })
+      if (initial) await update.mutateAsync({ id: initial.id, dto: { code: code.toUpperCase(), nom, ...(desc ? { description: desc } : {}) } })
+      else          await create.mutateAsync({ code: code.toUpperCase(), nom, ...(desc ? { description: desc } : {}) })
     } catch (e: unknown) {
       setErr((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Erreur')
     }
@@ -122,7 +122,7 @@ export function FamillesPage() {
       {modal && (
         <FamilleModal
           onClose={() => setModal(null)}
-          initial={modal === 'new' ? undefined : modal}
+          {...(modal !== 'new' ? { initial: modal } : {})}
         />
       )}
     </div>
