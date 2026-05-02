@@ -25,6 +25,16 @@ const DEMO_PASSWORD = 'Demo1234!'
 async function main() {
   console.log('🌱  Athenis seed v2 — démarrage\n')
 
+  // ── 🔒 Garde anti-écrasement ──────────────────────────────────────────────
+  // Si des utilisateurs existent déjà, on ne touche à rien.
+  // Cela protège les données de production contre un seed accidentel.
+  const existingUserCount = await prisma.user.count()
+  if (existingUserCount > 0) {
+    console.log(`⚠️  La base contient déjà ${existingUserCount} utilisateur(s) — seed ignoré.`)
+    console.log('   Pour forcer le seed, supprimez manuellement les données existantes.')
+    return
+  }
+
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, BCRYPT_ROUNDS)
 
   // ── 1. AtheisCounter ──────────────────────────────────────────────────────
