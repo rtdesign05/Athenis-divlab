@@ -32,6 +32,7 @@ cabinetRouter.post('/switch/:companyId', async (req, res, next) => {
       req.params.companyId!,
       req.user!.sub,
       req.user!.email,
+      req.user!.role,   // pass real role — never hardcode ADMIN
     )
     res.json({ success: true, data })
   } catch (e) { next(e) }

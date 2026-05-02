@@ -1,6 +1,7 @@
 /**
  * Routes d'administration — métriques SaaS
  * Accès réservé : platformRole === SUPER_ADMIN
+ * (Le champ platformRole est distinct du champ role qui est un rôle d'entreprise.)
  */
 import { Router } from 'express'
 import { authenticate } from '../../middleware/authenticate.js'
@@ -8,14 +9,14 @@ import { prisma } from '../../lib/prisma.js'
 
 export const adminRouter = Router()
 
-// ── Guard SUPER_ADMIN (vérification DB car platformRole n'est pas dans le JWT) ──
+// ── Guard SUPER_ADMIN — vérifie platformRole en base (pas le JWT) ─────────────
 adminRouter.use(authenticate, async (req, res, next) => {
   try {
     const userId = req.user?.sub
     if (!userId) { res.status(401).json({ success: false, error: 'Non authentifié' }); return }
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { platformRole: true } })
     if (user?.platformRole !== 'SUPER_ADMIN') {
-      res.status(403).json({ success: false, error: 'Accès réservé aux administrateurs' })
+      res.status(403).json({ success: false, error: 'Accès réservé aux super-administrateurs' })
       return
     }
     next()

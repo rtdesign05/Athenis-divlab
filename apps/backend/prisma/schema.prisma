@@ -31,10 +31,13 @@ model User {
   isActive       Boolean   @default(true) @map("is_active")
 
   // Type de compte
-  accountType  AccountType @map("account_type")
+  accountType  AccountType  @map("account_type")
 
   // Rôle global (colonne DB: role)
-  role         Role        @default(READONLY)
+  role         Role         @default(READONLY)
+
+  // Rôle plateforme — seul SUPER_ADMIN accède aux métriques SaaS globales
+  platformRole PlatformRole @default(USER) @map("platform_role")
 
   // Lien direct company/cabinet (colonnes dans users)
   companyId    String?     @map("company_id")
@@ -71,6 +74,11 @@ enum Role {
   READONLY
   RH
   JURIDIQUE
+}
+
+enum PlatformRole {
+  USER
+  SUPER_ADMIN
 }
 
 model RefreshToken {

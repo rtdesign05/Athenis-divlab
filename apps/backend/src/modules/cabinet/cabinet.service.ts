@@ -123,6 +123,7 @@ export async function switchToCompany(
   companyId: string,
   userId: string,
   userEmail: string,
+  userRole: string,
 ) {
   // Must have an active mandat for this company
   const mandat = await prisma.mandat.findUnique({
@@ -155,7 +156,7 @@ export async function switchToCompany(
     sub:           userId,
     email:         userEmail,
     accountType:   'COMPANY' as const,
-    role:          'ADMIN'   as const,   // full access within allowed modules
+    role:          userRole as any,       // preserve the cabinet user's own role
     companyId:     company.id,
     cabinetId,                            // kept → signals cabinet view mode
     plan:          company.plan as any,
@@ -349,8 +350,44 @@ export async function getInvitationByToken(token: string) {
   return inv
 }
 
+// Verify the invitation was actually sent to this company (IDOR prevention).
+// Compares inv.companyEmail against the company's contact email in the DB.
+async function assertInvitationBelongsToCompany(
+  inv: { companyEmail: string | null },
+  companyId: string,
+) {
+  if (!inv.companyEmail) {
+    // Invitation has no target email — cannot verify ownership; deny to be safe.
+    throw new AppError(
+      "Cette invitation n'est pas destinée à votre entreprise",
+      403,
+      'FORBIDDEN',
+    )
+  }
+
+  const company = await prisma.company.findUnique({
+    where:  { id: companyId },
+    select: { email: true },
+  })
+  if (!company) throw new AppError('Entreprise introuvable', 404, 'NOT_FOUND')
+
+  const companyEmail = (company.email ?? '').toLowerCase().trim()
+  const invEmail     = inv.companyEmail.toLowerCase().trim()
+
+  if (!companyEmail || companyEmail !== invEmail) {
+    throw new AppError(
+      "Cette invitation n'est pas destinée à votre entreprise",
+      403,
+      'FORBIDDEN',
+    )
+  }
+}
+
 export async function acceptInvitation(token: string, companyId: string) {
   const inv = await getInvitationByToken(token)
+
+  // Verify ownership before accepting
+  await assertInvitationBelongsToCompany(inv, companyId)
 
   await prisma.$transaction(async (tx) => {
     await tx.cabinetInvitation.update({
@@ -385,9 +422,9 @@ export async function acceptInvitation(token: string, companyId: string) {
 
 export async function rejectInvitation(token: string, companyId: string) {
   const inv = await getInvitationByToken(token)
-  // companyId is validated implicitly — the invitation was sent to this company's email.
-  // We don't gate on it here because the token is already a secret; log it for auditing.
-  void companyId
+
+  // Verify ownership before rejecting
+  await assertInvitationBelongsToCompany(inv, companyId)
 
   return prisma.cabinetInvitation.update({
     where: { id: inv.id },
