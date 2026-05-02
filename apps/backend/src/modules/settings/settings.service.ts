@@ -1,7 +1,6 @@
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import crypto from 'crypto'
-import type { CompanyRole } from '@prisma/client'
 
 // ── Company Settings ──────────────────────────────────────────────────────────
 
@@ -17,6 +16,7 @@ function toCompanySettingsDto(raw: {
   currency: string
   accountingZone: string
   accountingPlan: string
+  accountNumberLength: number
   logoUrl: string | null
   formeJuridique: string | null
   siren: string | null
@@ -30,36 +30,37 @@ function toCompanySettingsDto(raw: {
   siteWeb: string | null
 }) {
   return {
-    id:               raw.id,
-    name:             raw.nom,
-    logo:             raw.logoUrl,
-    legalForm:        raw.formeJuridique,
-    siren:            raw.siren,
-    siret:            raw.siret,
+    id:                  raw.id,
+    name:                raw.nom,
+    logo:                raw.logoUrl,
+    legalForm:           raw.formeJuridique,
+    siren:               raw.siren,
+    siret:               raw.siret,
     // Fields not yet in DB — return null so frontend shows empty but doesn't crash
-    naf:              null as null,
-    vatNumber:        null as null,
-    capital:          raw.capital !== null ? Number(raw.capital) : null,
-    address:          raw.adresse,
-    postalCode:       raw.codePostal,
-    city:             raw.ville,
-    country:          raw.pays,
-    phone:            raw.telephone,
-    contactEmail:     raw.email,
-    website:          raw.siteWeb,
-    primaryColor:     null as null,
-    secondaryColor:   null as null,
-    font:             null as null,
-    invoiceMentions:  null as null,
-    paymentTerms:     null as null,
-    lateInterestRate: null as null,
-    discountRate:     null as null,
-    plan:             raw.plan,
-    modules:          raw.modules,
-    locale:           raw.locale,
-    timezone:         raw.timezone,
-    accountingZone:   raw.accountingZone,
-    accountingPlan:   raw.accountingPlan,
+    naf:                 null as null,
+    vatNumber:           null as null,
+    capital:             raw.capital !== null ? Number(raw.capital) : null,
+    address:             raw.adresse,
+    postalCode:          raw.codePostal,
+    city:                raw.ville,
+    country:             raw.pays,
+    phone:               raw.telephone,
+    contactEmail:        raw.email,
+    website:             raw.siteWeb,
+    primaryColor:        null as null,
+    secondaryColor:      null as null,
+    font:                null as null,
+    invoiceMentions:     null as null,
+    paymentTerms:        null as null,
+    lateInterestRate:    null as null,
+    discountRate:        null as null,
+    plan:                raw.plan,
+    modules:             raw.modules,
+    locale:              raw.locale,
+    timezone:            raw.timezone,
+    accountingZone:      raw.accountingZone,
+    accountingPlan:      raw.accountingPlan,
+    accountNumberLength: raw.accountNumberLength,
   }
 }
 
@@ -77,6 +78,7 @@ export async function getCompanySettings(companyId: string) {
       currency: true,
       accountingZone: true,
       accountingPlan: true,
+      accountNumberLength: true,
       logoUrl: true,
       formeJuridique: true,
       siren: true,
@@ -105,12 +107,16 @@ export function toCompanyUpdateData(body: Record<string, unknown>): Record<strin
   if ('address'      in body) d.adresse         = body.address       || null
   if ('postalCode'   in body) d.codePostal      = body.postalCode    || null
   if ('city'         in body) d.ville           = body.city          || null
-  if ('country'      in body) d.pays            = body.country       || 'CM'
+  if ('country'      in body) d.pays            = body.country       || 'FR'
   if ('phone'        in body) d.telephone       = body.phone         || null
   if ('contactEmail' in body) d.email           = body.contactEmail  || null
   if ('website'      in body) d.siteWeb         = body.website       || null
-  if ('locale'       in body) d.locale          = body.locale
-  if ('timezone'     in body) d.timezone        = body.timezone
+  if ('locale'              in body) d.locale             = body.locale
+  if ('timezone'            in body) d.timezone           = body.timezone
+  if ('accountNumberLength' in body && body.accountNumberLength) {
+    const len = Number(body.accountNumberLength)
+    if ([3,4,5,6,7,9].includes(len)) d.accountNumberLength = len
+  }
   // Fields not in DB (naf, vatNumber, primaryColor, secondaryColor, font,
   // invoiceMentions, paymentTerms, lateInterestRate, discountRate) — silently ignored
   return d
@@ -126,7 +132,7 @@ export async function updateCompanySettings(
     data: dbData as any,
     select: {
       id: true, nom: true, plan: true, modules: true, locale: true, timezone: true,
-      pays: true, currency: true, accountingZone: true, accountingPlan: true,
+      pays: true, currency: true, accountingZone: true, accountingPlan: true, accountNumberLength: true,
       logoUrl: true, formeJuridique: true, siren: true, siret: true, capital: true,
       adresse: true, codePostal: true, ville: true, telephone: true, email: true, siteWeb: true,
     },
@@ -150,6 +156,7 @@ export async function listUsers(companyId: string) {
             isActive: true,
             twoFAEnabled: true,
             lastLoginAt: true,
+            role: true,
           },
         },
       },
@@ -163,7 +170,7 @@ export async function listUsers(companyId: string) {
       select: {
         id: true,
         email: true,
-        role: true,
+        roleId: true,
         createdAt: true,
       },
     }),
@@ -174,13 +181,12 @@ export async function listUsers(companyId: string) {
     return {
       id:              user.id,
       email:           user.email,
-      // DB: nom = nom de famille (last name), prenom = prénom (first name)
       firstName:       user.prenom ?? null,
       lastName:        user.nom,
-      globalRole:      member.role as string,
-      companyRoleId:   member.role as string,
-      companyRoleName: member.role as string,
-      status:          member.status as string,
+      globalRole:      user.role,
+      companyRoleId:   member.roleId,
+      companyRoleName: member.roleId,
+      status:          member.status,
       totpEnabled:     user.twoFAEnabled,
       lastLoginAt:     user.lastLoginAt?.toISOString() ?? null,
       invitedAt:       member.invitedAt?.toISOString() ?? null,
@@ -193,9 +199,9 @@ export async function listUsers(companyId: string) {
     email:           inv.email,
     firstName:       null as null,
     lastName:        null as null,
-    globalRole:      inv.role as string,
-    companyRoleId:   inv.role as string,
-    companyRoleName: inv.role as string,
+    globalRole:      inv.roleId,
+    companyRoleId:   inv.roleId,
+    companyRoleName: inv.roleId,
     status:          'INVITED' as const,
     totpEnabled:     false as const,
     lastLoginAt:     null as null,
@@ -223,7 +229,7 @@ export async function inviteUser(
     nom: string
     email: string
     telephone?: string
-    role: CompanyRole
+    role: string
     permissions: Record<string, string>
     agenceIds: string[]
     isRestricted: boolean
@@ -272,39 +278,14 @@ export async function inviteUser(
     throw new AppError('Une invitation est déjà en attente pour cette adresse email', 409, 'INVITATION_ALREADY_EXISTS')
   }
 
-  // Validate agenceIds belong to this company
-  if (data.agenceIds.length > 0) {
-    const validAgences = await prisma.agence.count({
-      where: { companyId, id: { in: data.agenceIds } },
-    })
-    if (validAgences !== data.agenceIds.length) {
-      throw new AppError("Une ou plusieurs agences spécifiées sont invalides", 400, 'INVALID_AGENCE')
-    }
-  }
-
-  const roleEnum: CompanyRole = data.role
-
-  // Store prenom, nom, telephone in metadata inside permissions JSON
-  const permissionsWithMeta = {
-    ...data.permissions,
-    _meta: {
-      prenom:    data.prenom,
-      nom:       data.nom,
-      telephone: data.telephone ?? null,
-      isRestricted: data.isRestricted,
-    },
-  }
-
   return prisma.invitation.create({
     data: {
       companyId,
-      email:       data.email,
-      role:        roleEnum,
-      permissions: permissionsWithMeta,
-      agenceIds:   data.agenceIds,
-      token:       crypto.randomBytes(32).toString('hex'),
-      expiresAt:   new Date(Date.now() + 48 * 60 * 60 * 1000),
-      createdBy:   invitedBy,
+      email:     data.email,
+      roleId:    data.role,
+      token:     crypto.randomBytes(32).toString('hex'),
+      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
+      createdBy: invitedBy,
     },
   })
 }
@@ -324,7 +305,7 @@ export async function updateUserRole(
 
   return prisma.companyMember.update({
     where: { id: member.id },
-    data: { role: role as CompanyRole },
+    data: { roleId: role },
   })
 }
 
@@ -376,9 +357,7 @@ export async function listAgences(companyId: string) {
   return prisma.agence.findMany({
     where: { companyId },
     orderBy: [{ isSiege: 'desc' }, { nom: 'asc' }],
-    include: {
-      _count: { select: { members: true } },
-    },
+    include: { _count: { select: { members: true } } },
   })
 }
 
@@ -394,129 +373,72 @@ export async function createAgence(
     isSiege?: boolean
   },
 ) {
-  // Ensure unique code within company
-  const existing = await prisma.agence.findUnique({
-    where: { companyId_code: { companyId, code: data.code } },
+  const code = data.code.toUpperCase()
+  const exists = await prisma.agence.findUnique({
+    where: { companyId_code: { companyId, code } },
   })
-  if (existing) {
-    throw new AppError(`Le code agence "${data.code}" est déjà utilisé`, 409, 'CODE_ALREADY_EXISTS')
-  }
-
-  // If this is set as siege, unset others
-  if (data.isSiege) {
-    await prisma.agence.updateMany({
-      where: { companyId, isSiege: true },
-      data: { isSiege: false },
-    })
-  }
+  if (exists) throw new AppError('Ce code agence est déjà utilisé', 409, 'CODE_DUPLICATE')
 
   return prisma.agence.create({
     data: {
       companyId,
-      code:      data.code,
+      code,
       nom:       data.nom,
-      adresse:   data.adresse ?? null,
-      ville:     data.ville ?? null,
+      adresse:   data.adresse   ?? null,
+      ville:     data.ville     ?? null,
       telephone: data.telephone ?? null,
-      email:     data.email ?? null,
-      isSiege:   data.isSiege ?? false,
+      email:     data.email     ?? null,
+      isSiege:   data.isSiege   ?? false,
     },
+    include: { _count: { select: { members: true } } },
   })
 }
 
 export async function updateAgence(
   companyId: string,
   agenceId: string,
-  data: {
-    code?: string
-    nom?: string
-    adresse?: string
-    ville?: string
-    telephone?: string
-    email?: string
-    isSiege?: boolean
-    isActive?: boolean
-  },
+  data: { nom?: string; adresse?: string; ville?: string; telephone?: string; email?: string; isActive?: boolean },
 ) {
   const agence = await prisma.agence.findFirst({ where: { id: agenceId, companyId } })
   if (!agence) throw new AppError('Agence introuvable', 404, 'NOT_FOUND')
 
-  // Check code uniqueness if changing code
-  if (data.code && data.code !== agence.code) {
-    const existing = await prisma.agence.findUnique({
-      where: { companyId_code: { companyId, code: data.code } },
-    })
-    if (existing) {
-      throw new AppError(`Le code agence "${data.code}" est déjà utilisé`, 409, 'CODE_ALREADY_EXISTS')
-    }
-  }
-
-  // If setting as siege, unset others
-  if (data.isSiege) {
-    await prisma.agence.updateMany({
-      where: { companyId, isSiege: true, id: { not: agenceId } },
-      data: { isSiege: false },
-    })
-  }
-
   return prisma.agence.update({
     where: { id: agenceId },
-    data,
+    data: {
+      ...(data.nom       !== undefined ? { nom: data.nom }             : {}),
+      ...(data.adresse   !== undefined ? { adresse: data.adresse }     : {}),
+      ...(data.ville     !== undefined ? { ville: data.ville }         : {}),
+      ...(data.telephone !== undefined ? { telephone: data.telephone } : {}),
+      ...(data.email     !== undefined ? { email: data.email }         : {}),
+      ...(data.isActive  !== undefined ? { isActive: data.isActive }   : {}),
+    },
+    include: { _count: { select: { members: true } } },
   })
 }
 
 export async function deleteAgence(companyId: string, agenceId: string) {
   const agence = await prisma.agence.findFirst({ where: { id: agenceId, companyId } })
   if (!agence) throw new AppError('Agence introuvable', 404, 'NOT_FOUND')
-  if (agence.isSiege) {
-    throw new AppError("Le siège social ne peut pas être supprimé", 403, 'CANNOT_DELETE_SIEGE')
-  }
-
-  // Check for active members
-  const memberCount = await prisma.agenceMember.count({ where: { agenceId } })
-  if (memberCount > 0) {
-    throw new AppError(
-      `Cette agence a ${memberCount} membre(s) rattaché(s). Retirez-les avant de supprimer l'agence.`,
-      409,
-      'AGENCE_HAS_MEMBERS',
-    )
-  }
-
+  if (agence.isSiege) throw new AppError('Le siège social ne peut pas être supprimé', 403, 'SIEGE_PROTECTED')
   await prisma.agence.delete({ where: { id: agenceId } })
 }
 
 // ── Roles ─────────────────────────────────────────────────────────────────────
-// Roles are now an enum (CompanyRole), not a DB model. Return predefined values.
-
-type PermLevel = 'none' | 'read' | 'write' | 'admin'
-interface RolePerms { gestion: PermLevel; comptabilite: PermLevel; rh: PermLevel; juridique: PermLevel; esg: PermLevel; settings: PermLevel }
-
-const SYSTEM_ROLES: Array<{
-  id: string; name: string; description: string; isSystem: boolean; permissions: RolePerms; userCount: number
-}> = [
-  { id: 'OWNER',      name: 'Propriétaire',   description: 'Accès complet, propriétaire de l\'entreprise',  isSystem: true,  permissions: { gestion: 'admin', comptabilite: 'admin', rh: 'admin', juridique: 'admin', esg: 'admin', settings: 'admin'  }, userCount: 0 },
-  { id: 'ADMIN',      name: 'Administrateur', description: 'Accès complet à toutes les fonctionnalités',     isSystem: true,  permissions: { gestion: 'admin', comptabilite: 'admin', rh: 'admin', juridique: 'admin', esg: 'admin', settings: 'admin'  }, userCount: 0 },
-  { id: 'MANAGER',    name: 'Gestionnaire',   description: 'Gestion des opérations courantes',               isSystem: true,  permissions: { gestion: 'write', comptabilite: 'read',  rh: 'read',  juridique: 'read',  esg: 'read',  settings: 'read'   }, userCount: 0 },
-  { id: 'ACCOUNTANT', name: 'Comptable',      description: 'Accès aux modules comptables',                   isSystem: true,  permissions: { gestion: 'read',  comptabilite: 'write', rh: 'none',  juridique: 'none',  esg: 'none',  settings: 'none'   }, userCount: 0 },
-  { id: 'HR',         name: 'RH',             description: 'Gestion des ressources humaines',                isSystem: true,  permissions: { gestion: 'none',  comptabilite: 'none',  rh: 'write', juridique: 'read',  esg: 'none',  settings: 'none'   }, userCount: 0 },
-  { id: 'SALES',      name: 'Commercial',     description: 'Gestion des ventes et clients',                  isSystem: true,  permissions: { gestion: 'write', comptabilite: 'none',  rh: 'none',  juridique: 'none',  esg: 'none',  settings: 'none'   }, userCount: 0 },
-  { id: 'READONLY',   name: 'Lecture seule',  description: 'Consultation uniquement',                        isSystem: true,  permissions: { gestion: 'read',  comptabilite: 'read',  rh: 'read',  juridique: 'read',  esg: 'read',  settings: 'none'   }, userCount: 0 },
-  { id: 'CUSTOM',     name: 'Personnalisé',   description: 'Rôle avec permissions personnalisées',           isSystem: false, permissions: { gestion: 'none',  comptabilite: 'none',  rh: 'none',  juridique: 'none',  esg: 'none',  settings: 'none'   }, userCount: 0 },
-]
 
 export async function listRoles(companyId: string) {
-  // Get user counts per role from CompanyMember
-  const counts = await prisma.companyMember.groupBy({
-    by: ['role'],
+  const roles = await prisma.companyRole.findMany({
     where: { companyId },
-    _count: true,
+    orderBy: [{ isSystem: 'desc' }, { name: 'asc' }],
+    include: { _count: { select: { members: true } } },
   })
-  const countMap = new Map(counts.map(c => [c.role as string, c._count]))
-
-  return SYSTEM_ROLES.map(r => ({
-    ...r,
-    userCount: countMap.get(r.id) ?? 0,
-    createdAt: new Date('2024-01-01'),
+  return roles.map(r => ({
+    id:          r.id,
+    name:        r.name,
+    description: r.description,
+    isSystem:    r.isSystem,
+    permissions: r.permissions,
+    userCount:   r._count.members,
+    createdAt:   r.createdAt,
   }))
 }
 
@@ -524,18 +446,18 @@ export async function createRole(
   companyId: string,
   data: { name: string; description?: string; permissions: object },
 ) {
-  // Since roles are now an enum, we can't create custom roles in DB.
-  // Return a mock role object for backward compatibility.
-  return {
-    id: 'CUSTOM',
-    name: data.name,
-    description: data.description ?? null,
-    isSystem: false,
-    permissions: data.permissions,
-    companyId,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  }
+  const exists = await prisma.companyRole.findFirst({ where: { companyId, name: data.name } })
+  if (exists) throw new AppError('Un rôle avec ce nom existe déjà', 409, 'ROLE_DUPLICATE')
+
+  return prisma.companyRole.create({
+    data: {
+      companyId,
+      name:        data.name,
+      description: data.description ?? null,
+      isSystem:    false,
+      permissions: data.permissions as object,
+    },
+  })
 }
 
 export async function updateRole(
@@ -543,18 +465,33 @@ export async function updateRole(
   id: string,
   data: { name?: string; description?: string; permissions?: object },
 ) {
-  const role = SYSTEM_ROLES.find(r => r.id === id)
+  const role = await prisma.companyRole.findFirst({ where: { id, companyId } })
   if (!role) throw new AppError('Rôle introuvable', 404, 'NOT_FOUND')
-  if (role.isSystem && id !== 'CUSTOM') throw new AppError('Les rôles système ne peuvent pas être modifiés', 403, 'SYSTEM_ROLE')
+  if (role.isSystem && data.permissions === undefined && data.name === undefined) {
+    // allow description-only updates on system roles
+  } else if (role.isSystem && (data.name !== undefined)) {
+    throw new AppError('Le nom des rôles système ne peut pas être modifié', 403, 'SYSTEM_ROLE')
+  }
 
-  return { ...role, ...data, id, companyId, updatedAt: new Date() }
+  return prisma.companyRole.update({
+    where: { id },
+    data: {
+      ...(data.name        !== undefined ? { name: data.name }               : {}),
+      ...(data.description !== undefined ? { description: data.description } : {}),
+      ...(data.permissions !== undefined ? { permissions: data.permissions as object } : {}),
+    },
+  })
 }
 
-export async function deleteRole(_companyId: string, id: string) {
-  const role = SYSTEM_ROLES.find(r => r.id === id)
+export async function deleteRole(companyId: string, id: string) {
+  const role = await prisma.companyRole.findFirst({ where: { id, companyId } })
   if (!role) throw new AppError('Rôle introuvable', 404, 'NOT_FOUND')
   if (role.isSystem) throw new AppError('Les rôles système ne peuvent pas être supprimés', 403, 'SYSTEM_ROLE')
-  // no-op for enum-based roles
+
+  const usersWithRole = await prisma.companyMember.count({ where: { roleId: id } })
+  if (usersWithRole > 0) throw new AppError('Ce rôle est encore assigné à des utilisateurs', 409, 'ROLE_IN_USE')
+
+  await prisma.companyRole.delete({ where: { id } })
 }
 
 // ── Security Policy ───────────────────────────────────────────────────────────
@@ -576,12 +513,10 @@ const DEFAULT_SECURITY_POLICY = {
 }
 
 export async function getSecurityPolicy(_companyId: string) {
-  // securityPolicy field was removed from Company model — return defaults
   return DEFAULT_SECURITY_POLICY
 }
 
 export async function updateSecurityPolicy(_companyId: string, _policy: object) {
-  // securityPolicy field was removed from Company model — return defaults
   return DEFAULT_SECURITY_POLICY
 }
 
