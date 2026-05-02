@@ -19,6 +19,7 @@ const baseFields = {
 export const RegisterPersonalDto = z.object({
   ...baseFields,
   accountType: z.literal('PERSONAL'),
+  country: z.string().length(2).regex(/^[A-Za-z]{2}$/).default('FR').transform((v) => v.toUpperCase()),
 })
 
 export const RegisterCompanyDto = z.object({
@@ -26,10 +27,12 @@ export const RegisterCompanyDto = z.object({
   accountType: z.literal('COMPANY'),
   companyName: z.string().min(2).max(100).trim(),
   siren: z.string().length(9).regex(/^\d{9}$/).optional(),
+  niu: z.string().min(1).max(30).trim().optional(),
   secteur: z.string().max(100).trim().optional(),
   taille: z.enum(['TPE', 'PME', 'ETI', 'GE']).default('PME'),
-  plan: z.enum(['FREE', 'STARTER', 'PRO', 'PREMIUM']),
-  country: z.string().length(2).regex(/^[A-Z]{2}$/).default('FR').transform((v) => v.toUpperCase()),
+  // Note: `plan` is intentionally absent — all new companies start on FREE.
+  // Plan upgrades are handled through the billing flow only.
+  country: z.string().length(2).regex(/^[A-Za-z]{2}$/).default('FR').transform((v) => v.toUpperCase()),
 })
 
 export const RegisterCabinetDto = z.object({
@@ -37,6 +40,8 @@ export const RegisterCabinetDto = z.object({
   accountType: z.literal('CABINET'),
   cabinetName: z.string().min(2).max(100).trim(),
   siret: z.string().length(14).regex(/^\d{14}$/).optional(),
+  niu: z.string().min(1).max(30).trim().optional(),
+  country: z.string().length(2).regex(/^[A-Za-z]{2}$/).default('FR').transform((v) => v.toUpperCase()),
 })
 
 export const RegisterDto = z.discriminatedUnion('accountType', [
