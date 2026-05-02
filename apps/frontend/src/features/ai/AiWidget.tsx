@@ -115,7 +115,13 @@ export function AiWidget() {
       })
 
       if (!response.ok || !response.body) {
-        throw new Error('Erreur serveur')
+        // Tenter de lire le message d'erreur JSON
+        let errMsg = 'Erreur serveur'
+        try {
+          const errBody = await response.clone().json() as { error?: string }
+          if (errBody.error) errMsg = errBody.error
+        } catch {}
+        throw new Error(errMsg)
       }
 
       const reader = response.body.getReader()
@@ -151,9 +157,10 @@ export function AiWidget() {
 
       setMessages(prev => prev.map(m => m.id === assistantMsg.id ? { ...m, pending: false } : m))
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue'
       setMessages(prev => prev.map(m =>
         m.id === assistantMsg.id
-          ? { ...m, content: 'Désolé, une erreur est survenue. Vérifiez que ANTHROPIC_API_KEY est configurée.', pending: false }
+          ? { ...m, content: `⚠️ ${msg}`, pending: false }
           : m
       ))
     } finally {

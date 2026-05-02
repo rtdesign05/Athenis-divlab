@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import { useFiscalYears, useSelectedFiscalYearData } from '@/hooks/useFiscalYear'
 import { accountingApi } from '@/services/accountingApi'
@@ -194,8 +195,13 @@ interface MergedCompte {
 export function GrandLivrePage() {
   const { fmt }              = useCurrency()
   const { company, country } = useCompanySettings()
+  const navigate             = useNavigate()
+  const [searchParams]       = useSearchParams()
   const { data: allFY, isLoading: yearsLoading } = useFiscalYears()
   const globalFY = useSelectedFiscalYearData()
+
+  // ── Pré-filtrage depuis la Balance (paramètre URL ?compte=xxx) ────────────
+  const compteParam = searchParams.get('compte') ?? ''
 
   // ── Dates initiales = bornes de l'exercice global ─────────────────────────
   const defaultFrom = globalFY?.startDate.slice(0, 10) ?? toISO(new Date(new Date().getFullYear(), 0, 1))
@@ -203,7 +209,7 @@ export function GrandLivrePage() {
 
   const [dateFrom, setDateFrom] = useState(defaultFrom)
   const [dateTo,   setDateTo]   = useState(defaultTo)
-  const [search,   setSearch]   = useState('')
+  const [search,   setSearch]   = useState(compteParam)
 
   // ── Exercices couverts par la plage ──────────────────────────────────────
   const coveredFYs = useMemo(() => {
@@ -313,6 +319,28 @@ export function GrandLivrePage() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+
+      {/* Fil d'Ariane — affiché quand on vient de la Balance */}
+      {compteParam && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => navigate('/app/accounting/balance')}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            ← Balance générale
+          </button>
+          <span className="text-gray-300">›</span>
+          <span className="text-xs font-medium text-gray-700">
+            Compte <span className="font-mono text-[#1b4332]">{compteParam}</span>
+          </span>
+          <button
+            onClick={() => setSearch('')}
+            className="ml-2 rounded-full bg-[#1b4332]/10 px-2 py-0.5 text-[10px] font-medium text-[#1b4332] hover:bg-[#1b4332]/20 transition-colors"
+          >
+            Voir tous les comptes ✕
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">

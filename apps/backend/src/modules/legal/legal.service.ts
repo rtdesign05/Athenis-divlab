@@ -1,12 +1,16 @@
-import { prisma } from '../../lib/prisma.js'
+// Contract model does not exist in WSL2 DB — using in-memory stores for backward API compatibility
 import type {
   CreateContractInput, UpdateContractInput, ListContractsInput,
   SendSignatureInput, CreateGdprInput, UpdateGdprInput,
   CreateAlertInput, UpdateAlertInput,
 } from './legal.dto.js'
 
-// ContractSignature, LegalAlert, GdprEntry models don't exist in v2 schema
-// Using in-memory stores for backward API compatibility
+interface Contract {
+  id: string; companyId: string; reference: string; titre: string
+  type: string; status: string; parties: string[]; notes: string | null
+  dateSignature: Date | null; dateFin: Date | null; createdBy: string
+  createdAt: Date; updatedAt: Date
+}
 interface ContractSignature {
   id: string; contractId: string; signerName: string; signerEmail: string
   signerRole: string; token: string; status: 'PENDING' | 'SIGNED' | 'REFUSED'
@@ -25,60 +29,61 @@ interface GdprEntry {
 }
 
 import crypto from 'crypto'
-const sigStore  = new Map<string, ContractSignature>()
-const alertStore = new Map<string, LegalAlert>()
-const gdprStore  = new Map<string, GdprEntry>()
+const contractStore = new Map<string, Contract>()
+const sigStore      = new Map<string, ContractSignature>()
+const alertStore    = new Map<string, LegalAlert>()
+const gdprStore     = new Map<string, GdprEntry>()
 let seq = 0
 function genId(): string { return `${++seq}-${Date.now()}` }
 
-// ── Contracts ─────────────────────────────────────────────────────────────────
+// ── Contracts (in-memory) ─────────────────────────────────────────────────────
 
 export async function listContracts(companyId: string, query: ListContractsInput) {
-  return prisma.contract.findMany({
-    where: {
-      companyId,
-      ...(query.type   ? { type: query.type as never }     : {}),
-      ...(query.status ? { status: query.status as never } : {}),
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+  return [...contractStore.values()]
+    .filter(c => c.companyId === companyId
+      && (!query.type   || c.type === query.type)
+      && (!query.status || c.status === query.status))
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 }
 
 export async function getContract(companyId: string, id: string) {
-  return prisma.contract.findFirst({
-    where: { id, companyId },
-  })
+  const c = contractStore.get(id)
+  return (c?.companyId === companyId) ? c : null
 }
 
 export async function createContract(companyId: string, data: CreateContractInput, createdBy: string) {
-  const reference = `CTR-${Date.now()}`
-  const contract = await prisma.contract.create({
-    data: {
-      companyId,
-      reference,
-      titre:     data.title,
-      type:      data.type as never,
-      parties:   data.parties ?? [],
-      notes:     data.notes ?? null,
-      createdBy,
-      ...(data.expiresAt ? { dateFin: data.expiresAt } : {}),
-    },
-  })
+  const id = genId()
+  const now = new Date()
+  const contract: Contract = {
+    id, companyId,
+    reference:     `CTR-${Date.now()}`,
+    titre:         data.title,
+    type:          data.type,
+    status:        'DRAFT',
+    parties:       data.parties ?? [],
+    notes:         data.notes ?? null,
+    dateSignature: null,
+    dateFin:       data.expiresAt ?? null,
+    createdBy,
+    createdAt: now, updatedAt: now,
+  }
+  contractStore.set(id, contract)
+
   // Auto-generate expiry alert if expiresAt is set
   if (data.expiresAt) {
     const daysLeft = Math.ceil((data.expiresAt.getTime() - Date.now()) / 86_400_000)
     if (daysLeft <= 90) {
-      const id = genId()
-      alertStore.set(id, {
-        id, companyId,
-        contractId: contract.id,
+      const alertId = genId()
+      alertStore.set(alertId, {
+        id: alertId, companyId,
+        contractId: id,
         title:    `Contrat "${data.title}" expire bientôt`,
         message:  `Ce contrat expire dans ${daysLeft} jour(s). Pensez à le renouveler ou à le terminer.`,
         severity: daysLeft <= 30 ? 'CRITICAL' : 'WARNING',
         status:   'OPEN',
         dueDate:  data.expiresAt,
         dismissedAt: null, resolvedAt: null,
-        createdAt: new Date(),
+        createdAt: now,
       })
     }
   }
@@ -86,33 +91,35 @@ export async function createContract(companyId: string, data: CreateContractInpu
 }
 
 export async function updateContract(companyId: string, id: string, data: UpdateContractInput) {
-  const existing = await prisma.contract.findFirst({ where: { id, companyId } })
-  if (!existing) return null
-  return prisma.contract.update({
-    where: { id },
-    data: {
-      ...(data.title        ? { titre: data.title }            : {}),
-      ...(data.status       ? { status: data.status as never } : {}),
-      ...(data.parties      ? { parties: data.parties }        : {}),
-      ...(data.notes        !== undefined ? { notes: data.notes ?? null }        : {}),
-      ...(data.expiresAt    !== undefined ? { dateFin: data.expiresAt ?? null }  : {}),
-      ...(data.terminatedAt !== undefined ? { dateFin: data.terminatedAt ?? null } : {}),
-      ...(data.status === 'SIGNED' ? { dateSignature: new Date() } : {}),
-    },
-  })
+  const existing = contractStore.get(id)
+  if (!existing || existing.companyId !== companyId) return null
+  const updated: Contract = {
+    ...existing,
+    ...(data.title        ? { titre: data.title }          : {}),
+    ...(data.status       ? { status: data.status }        : {}),
+    ...(data.parties      ? { parties: data.parties }      : {}),
+    ...(data.notes        !== undefined ? { notes: data.notes ?? null }       : {}),
+    ...(data.expiresAt    !== undefined ? { dateFin: data.expiresAt ?? null } : {}),
+    ...(data.terminatedAt !== undefined ? { dateFin: data.terminatedAt ?? null } : {}),
+    ...(data.status === 'SIGNED' ? { dateSignature: new Date() } : {}),
+    updatedAt: new Date(),
+  }
+  contractStore.set(id, updated)
+  return updated
 }
 
 export async function deleteContract(companyId: string, id: string) {
-  const existing = await prisma.contract.findFirst({ where: { id, companyId } })
-  if (!existing) return null
-  return prisma.contract.delete({ where: { id } })
+  const existing = contractStore.get(id)
+  if (!existing || existing.companyId !== companyId) return null
+  contractStore.delete(id)
+  return existing
 }
 
 // ── Signature workflow (in-memory) ────────────────────────────────────────────
 
 export async function sendSignatureRequest(companyId: string, contractId: string, data: SendSignatureInput) {
-  const contract = await prisma.contract.findFirst({ where: { id: contractId, companyId } })
-  if (!contract) return null
+  const contract = contractStore.get(contractId)
+  if (!contract || contract.companyId !== companyId) return null
 
   const token = crypto.randomBytes(32).toString('hex')
   const id = genId()
@@ -127,10 +134,8 @@ export async function sendSignatureRequest(companyId: string, contractId: string
   }
   sigStore.set(id, signature)
 
-  await prisma.contract.update({
-    where: { id: contractId },
-    data:  { status: 'SENT' as never },
-  })
+  const updated: Contract = { ...contract, status: 'SENT', updatedAt: new Date() }
+  contractStore.set(contractId, updated)
 
   return { ...signature, signLink: `/sign/${token}` }
 }
@@ -143,10 +148,8 @@ export async function processSignature(token: string, action: 'sign' | 'refuse',
     sigStore.set(sig.id, { ...sig, status: 'SIGNED', signedAt: new Date() })
     const pending = [...sigStore.values()].filter(s => s.contractId === sig.contractId && s.status === 'PENDING').length
     if (pending === 0) {
-      await prisma.contract.update({
-        where: { id: sig.contractId },
-        data:  { status: 'SIGNED' as never, dateSignature: new Date() },
-      })
+      const contract = contractStore.get(sig.contractId)
+      if (contract) contractStore.set(contract.id, { ...contract, status: 'SIGNED', dateSignature: new Date(), updatedAt: new Date() })
     }
   } else {
     sigStore.set(sig.id, { ...sig, status: 'REFUSED', refusedAt: new Date(), refusedNote: note ?? null })
@@ -158,11 +161,12 @@ export async function processSignature(token: string, action: 'sign' | 'refuse',
 export async function getSignatureByToken(token: string) {
   const sig = [...sigStore.values()].find(s => s.token === token)
   if (!sig) return null
-  const contract = await prisma.contract.findFirst({
-    where: { id: sig.contractId },
-    select: { id: true, titre: true, type: true, notes: true, parties: true },
-  })
-  return { ...sig, contract }
+  const contract = contractStore.get(sig.contractId)
+  if (!contract) return { ...sig, contract: null }
+  return {
+    ...sig,
+    contract: { id: contract.id, titre: contract.titre, type: contract.type, notes: contract.notes, parties: contract.parties },
+  }
 }
 
 // ── GDPR (in-memory) ─────────────────────────────────────────────────────────
@@ -279,14 +283,15 @@ export async function updateAlert(companyId: string, id: string, data: UpdateAle
 }
 
 export async function syncExpiryAlerts(companyId: string) {
+  const now  = new Date()
   const soon = new Date(Date.now() + 90 * 86_400_000)
-  const expiring = await prisma.contract.findMany({
-    where: {
-      companyId,
-      status:  { in: ['SIGNED'] as never[] },
-      dateFin: { lte: soon, gte: new Date() },
-    },
-  })
+  const expiring = [...contractStore.values()].filter(c =>
+    c.companyId === companyId
+    && c.status === 'SIGNED'
+    && c.dateFin != null
+    && c.dateFin <= soon
+    && c.dateFin >= now
+  )
 
   const created = []
   for (const c of expiring) {
@@ -306,7 +311,7 @@ export async function syncExpiryAlerts(companyId: string) {
       status:   'OPEN',
       dueDate:  c.dateFin,
       dismissedAt: null, resolvedAt: null,
-      createdAt: new Date(),
+      createdAt: now,
     }
     alertStore.set(id, alert)
     created.push(alert)

@@ -1,4 +1,5 @@
 import { useState, useMemo, Fragment } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQueries } from '@tanstack/react-query'
 import { useFiscalYears, useSelectedFiscalYearData } from '@/hooks/useFiscalYear'
 import { accountingApi } from '@/services/accountingApi'
@@ -194,11 +195,20 @@ tfoot td{font-size:8.5pt;font-weight:bold;padding:4px 6px;border:.5px solid #ccc
 
 // ── Ligne de balance ──────────────────────────────────────────────────────────
 
-function BalanceRowUI({ r, fmt }: { r: BalanceRow; fmt: (v: number) => string }) {
+function BalanceRowUI({ r, fmt, onClick }: { r: BalanceRow; fmt: (v: number) => string; onClick: () => void }) {
   return (
-    <tr className="hover:bg-gray-50/50">
-      <td className="px-5 py-2.5 font-mono text-xs text-gray-600">{r.account}</td>
-      <td className="px-5 py-2.5 text-gray-700">{r.label}</td>
+    <tr
+      onClick={onClick}
+      className="hover:bg-[#1b4332]/5 cursor-pointer group transition-colors"
+      title={`Voir le détail du compte ${r.account}`}
+    >
+      <td className="px-5 py-2.5 font-mono text-xs text-[#1b4332] group-hover:underline">
+        {r.account}
+      </td>
+      <td className="px-5 py-2.5 text-gray-700 group-hover:text-[#1b4332]">
+        {r.label}
+        <span className="ml-2 opacity-0 group-hover:opacity-60 text-[10px] text-[#1b4332]">→ détail</span>
+      </td>
       <td className="px-5 py-2.5 text-right text-gray-700">{r.totalDebit  > 0 ? fmt(r.totalDebit)  : ''}</td>
       <td className="px-5 py-2.5 text-right text-gray-700">{r.totalCredit > 0 ? fmt(r.totalCredit) : ''}</td>
       <td className="px-5 py-2.5 text-right font-medium text-blue-700">
@@ -216,6 +226,7 @@ function BalanceRowUI({ r, fmt }: { r: BalanceRow; fmt: (v: number) => string })
 export function BalancePage() {
   const { fmt }              = useCurrency()
   const { company, country } = useCompanySettings()
+  const navigate             = useNavigate()
   const { data: allFY, isLoading: yearsLoading } = useFiscalYears()
   const globalFY = useSelectedFiscalYearData()
 
@@ -575,7 +586,12 @@ export function BalancePage() {
                               {CLASSE_LABEL[cls] ?? `Classe ${cls}`}
                             </td>
                           </tr>
-                          {rows.map(r => <BalanceRowUI key={r.account} r={r} fmt={fmt} />)}
+                          {rows.map(r => (
+                            <BalanceRowUI
+                              key={r.account} r={r} fmt={fmt}
+                              onClick={() => navigate(`/app/accounting/grand-livre?compte=${encodeURIComponent(r.account)}`)}
+                            />
+                          ))}
                           <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-xs">
                             <td colSpan={2} className="px-5 py-2 text-gray-600 italic">Sous-total {cls}</td>
                             <td className="px-5 py-2 text-right">{fmt(clsD)}</td>
@@ -586,7 +602,12 @@ export function BalancePage() {
                         </Fragment>
                       )
                     })
-                  : filteredRows.map(r => <BalanceRowUI key={r.account} r={r} fmt={fmt} />)
+                  : filteredRows.map(r => (
+                      <BalanceRowUI
+                        key={r.account} r={r} fmt={fmt}
+                        onClick={() => navigate(`/app/accounting/grand-livre?compte=${encodeURIComponent(r.account)}`)}
+                      />
+                    ))
                 }
               </tbody>
               <tfoot>

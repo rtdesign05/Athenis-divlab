@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js'
 import { Prisma } from '@prisma/client'
 import { AppError } from '../../middleware/errorHandler.js'
+import { nextInvoiceReference } from '../invoices/invoices.service.js'
 import type { CreateQuoteInput, UpdateQuoteInput, ListQuotesInput } from './quotes.dto.js'
 
 // Quote model does not exist in v2 schema — use in-memory store
@@ -101,26 +102,26 @@ export async function convertQuoteToInvoice(companyId: string, quoteId: string) 
   if (quote.status === 'REJECTED')
     throw new AppError('Cannot convert a rejected quote', 409, 'QUOTE_REJECTED')
 
-  const year  = new Date().getFullYear()
-  const count = await prisma.invoice.count({ where: { companyId, reference: { startsWith: `FA-${year}-` } } })
-  const reference = `FA-${year}-${String(count + 1).padStart(3, '0')}`
   const dueAt = new Date(Date.now() + 30 * 86_400_000)
 
-  const invoice = await prisma.invoice.create({
-    data: {
-      companyId,
-      clientId:    quote.clientId,
-      reference,
-      issuedAt:    new Date(),
-      dueAt,
-      amountHT:    new Prisma.Decimal(quote.amountHT),
-      vatRate:     new Prisma.Decimal(quote.vatRate),
-      amountTTC:   new Prisma.Decimal(quote.amountTTC),
-      description: quote.notes,
-      status:      'DRAFT',
-      createdBy:   'system',
-    },
-    include: { client: { select: { id: true, nom: true, email: true } } },
+  const invoice = await prisma.$transaction(async (tx) => {
+    const reference = await nextInvoiceReference(companyId, tx)
+    return tx.invoice.create({
+      data: {
+        companyId,
+        clientId:    quote.clientId,
+        reference,
+        issuedAt:    new Date(),
+        dueAt,
+        amountHT:    new Prisma.Decimal(quote.amountHT),
+        vatRate:     new Prisma.Decimal(quote.vatRate),
+        taxAmount:   new Prisma.Decimal(quote.amountTTC).minus(new Prisma.Decimal(quote.amountHT)).toDecimalPlaces(2),
+        amountTTC:   new Prisma.Decimal(quote.amountTTC),
+        description: quote.notes,
+        status:      'DRAFT',
+      },
+      include: { client: { select: { id: true, nom: true, email: true } } },
+    })
   })
   quoteStore.set(quoteId, { ...quote, status: 'CONVERTED', updatedAt: new Date() })
   return invoice

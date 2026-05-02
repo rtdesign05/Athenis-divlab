@@ -106,7 +106,6 @@ employeesRouter.get(
         gross,
         { firstName: emp.prenom ?? '', lastName: emp.nom, email: emp.email ?? '', employmentType: emp.contrat },
         month,
-        true,
       )
       res.json({ success: true, data: payslip })
     } catch (e) { next(e) }

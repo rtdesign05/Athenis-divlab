@@ -29,16 +29,14 @@ export async function getExpense(companyId: string, id: string) {
   return expense
 }
 
-export async function createExpense(companyId: string, data: CreateExpenseInput, createdBy: string) {
+export async function createExpense(companyId: string, data: CreateExpenseInput, _createdBy: string) {
   return prisma.expense.create({
     data: {
       companyId,
-      category:  data.category as ExpenseCategory,
-      note:      data.description ?? null,
-      date:      data.date,
-      amount:    new Prisma.Decimal(data.amount),
-      reference: `EXP-${Date.now()}`,
-      createdBy,
+      category:    data.category as ExpenseCategory,
+      description: data.description ?? '',
+      date:        data.date,
+      amount:      new Prisma.Decimal(data.amount),
     },
   })
 }
@@ -49,7 +47,7 @@ export async function updateExpense(companyId: string, id: string, data: UpdateE
     where: { id },
     data: {
       ...(data.category    !== undefined ? { category: data.category as ExpenseCategory } : {}),
-      ...(data.description !== undefined ? { note: data.description ?? null }       : {}),
+      ...(data.description !== undefined ? { description: data.description ?? '' }   : {}),
       ...(data.date        !== undefined ? { date: data.date }                      : {}),
       ...(data.amount      != null       ? { amount: new Prisma.Decimal(data.amount) } : {}),
     },

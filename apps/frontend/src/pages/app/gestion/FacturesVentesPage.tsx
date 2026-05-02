@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import {
@@ -9,6 +9,9 @@ import {
   type ModeleFacture,
 } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+import { SendEmailModal } from '@/components/gestion/SendEmailModal'
+import { encodePaymentToken } from '@/pages/pay/PaymentPage'
+import { printDocument } from '@/lib/printDocument'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -88,6 +91,79 @@ function docTitle(modele: ModeleFacture): string {
   }
 }
 
+// ── Email HTML builder ────────────────────────────────────────────────────────
+
+function buildFactureEmailHtml(
+  facture:     FactureVente,
+  companyName: string,
+  address:     string,
+  city:        string,
+  fmt:         (n: number) => string,
+  payUrl?:     string,
+): string {
+  const lignesRows = facture.lignes.map(l => `
+    <tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#374151">${l.description}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#374151;text-align:center">${l.quantite} ${l.unite}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#374151;text-align:right">${fmt(l.montantHT)}</td>
+    </tr>`).join('')
+
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+      <tr><td style="background:#1a3a2a;padding:28px 40px;text-align:center">
+        <span style="color:#fff;font-size:20px;font-weight:700">Athenis</span>
+      </td></tr>
+      <tr><td style="padding:36px 40px">
+        <h1 style="margin:0 0 4px;font-size:18px;color:#111827">${docTitle(facture.modele)} N° ${facture.id}</h1>
+        <p style="margin:0 0 24px;font-size:13px;color:#6b7280">De la part de <strong>${companyName}</strong>${address ? `, ${address}` : ''}${city ? `, ${city}` : ''}</p>
+        <!--CUSTOM_MESSAGE-->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:20px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+          <thead>
+            <tr style="background:#f9fafb">
+              <th style="padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;color:#9ca3af;text-align:left">Description</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;color:#9ca3af;text-align:center">Qté / Unité</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;color:#9ca3af;text-align:right">Total HT</th>
+            </tr>
+          </thead>
+          <tbody>${lignesRows}</tbody>
+        </table>
+        <table width="220" align="right" cellpadding="0" cellspacing="0" style="margin-bottom:28px">
+          <tr>
+            <td style="padding:4px 0;font-size:13px;color:#6b7280">Total HT</td>
+            <td style="padding:4px 0;font-size:13px;color:#111827;text-align:right;font-weight:600">${fmt(facture.montantHT)}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 0;font-size:13px;color:#6b7280">TVA (${facture.tva}%)</td>
+            <td style="padding:4px 0;font-size:13px;color:#6b7280;text-align:right">${fmt(facture.montantTTC - facture.montantHT)}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 0 0;font-size:15px;font-weight:700;color:#111827;border-top:2px solid #e5e7eb">Total TTC</td>
+            <td style="padding:8px 0 0;font-size:15px;font-weight:700;color:#111827;text-align:right;border-top:2px solid #e5e7eb">${fmt(facture.montantTTC)}</td>
+          </tr>
+        </table>
+        ${facture.conditionsPaiement ? `<p style="font-size:12px;color:#9ca3af;margin:0 0 20px">Conditions de paiement : ${facture.conditionsPaiement}</p>` : ''}
+        ${payUrl ? `
+        <div style="text-align:center;margin:28px 0 8px">
+          <a href="${payUrl}"
+             style="display:inline-block;background:#1a3a2a;color:#fff;text-decoration:none;padding:14px 36px;border-radius:12px;font-weight:700;font-size:16px;letter-spacing:.2px">
+            💳 Payer maintenant
+          </a>
+          <p style="margin:10px 0 0;font-size:11px;color:#9ca3af">Carte bancaire · MTN Mobile Money · Orange Money</p>
+        </div>` : ''}
+      </td></tr>
+      <tr><td style="background:#f9fafb;padding:18px 40px;text-align:center;border-top:1px solid #e5e7eb">
+        <p style="margin:0;font-size:12px;color:#9ca3af">© ${new Date().getFullYear()} ${companyName} — Document généré par Athenis</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`
+}
+
 // ── InvoiceView ───────────────────────────────────────────────────────────────
 
 interface InvoiceViewProps {
@@ -109,12 +185,39 @@ function InvoiceView({
 }: InvoiceViewProps) {
   const { fmt }    = useCurrency()
   const { company } = useCompanySettings()
+  const { clients } = useGestion()
+  const [emailOpen,   setEmailOpen]   = useState(false)
+  const [payLinkOpen, setPayLinkOpen] = useState(false)
+  const [copied,      setCopied]      = useState(false)
+  const docRef = useRef<HTMLDivElement>(null)
 
   const companyName    = company?.name    ?? 'Société Athenis'
   const companyAddress = company?.address ?? '12 Rue Bonanjo'
   const companyCity    = company?.city    ?? 'Douala'
   const companyPhone   = company?.phone   ?? ''
   const companyEmail   = company?.contactEmail ?? ''
+
+  // Cherche l'e-mail du client correspondant à la facture
+  const clientEmail = clients.find(c => c.nom === facture.client)?.email ?? ''
+
+  // Génère le lien de paiement pour cette facture
+  const payToken = encodePaymentToken({
+    ref:       facture.id,
+    amountTTC: facture.montantTTC,
+    currency:  'XAF',
+    client:    facture.client,
+    company:   companyName,
+    desc:      facture.lignes[0]?.description ?? '',
+    dueDate:   facture.echeance,
+  })
+  const payUrl = `${window.location.origin}/pay/${payToken}`
+
+  function copyPayLink() {
+    navigator.clipboard.writeText(payUrl).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   const prevFacture = currentIndex > 0               ? allFactures[currentIndex - 1] : null
   const nextFacture = currentIndex < allFactures.length - 1 ? allFactures[currentIndex + 1] : null
@@ -170,19 +273,120 @@ function InvoiceView({
           {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <button
-            onClick={() => window.print()}
+            onClick={() => setPayLinkOpen(true)}
+            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100"
+          >
+            💳 Lien de paiement
+          </button>
+          <button
+            onClick={() => setEmailOpen(true)}
+            className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100"
+          >
+            ✉️ Envoyer
+          </button>
+          <button
+            onClick={() => printDocument(docRef.current, `${docTitle(facture.modele)} ${facture.id}`)}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
           >
-            Imprimer
+            🖨️ PDF
           </button>
         </div>
       </div>
 
+      {/* ── Modal lien de paiement ─────────────────────────────────────────────── */}
+      {payLinkOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">💳 Lien de paiement</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Facture <span className="font-mono">{facture.id}</span> — {facture.client}
+                </p>
+              </div>
+              <button onClick={() => setPayLinkOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              {/* Amount */}
+              <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 text-center">
+                <p className="text-xs text-blue-600 font-medium uppercase tracking-wide mb-1">Montant à régler</p>
+                <p className="text-2xl font-bold text-blue-900">
+                  {new Intl.NumberFormat('fr-CM', { style: 'currency', currency: 'XAF', maximumFractionDigits: 0 }).format(facture.montantTTC)}
+                </p>
+              </div>
+
+              {/* Link */}
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-1.5">Lien à partager avec le client</p>
+                <div className="flex gap-2">
+                  <input
+                    readOnly value={payUrl}
+                    className="flex-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-mono text-gray-600 focus:outline-none overflow-hidden"
+                  />
+                  <button
+                    onClick={copyPayLink}
+                    className={`shrink-0 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                      copied ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {copied ? '✓ Copié' : 'Copier'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Methods */}
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <p className="text-xs font-medium text-gray-500 mb-3">Méthodes de paiement acceptées</p>
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="text-base">💳</span> Carte bancaire
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="text-base">📱</span> MTN MoMo
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="text-base">🟠</span> Orange Money
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => window.open(payUrl, '_blank')}
+                  className="flex-1 rounded-xl border border-blue-200 bg-blue-50 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                >
+                  👁️ Aperçu
+                </button>
+                <button
+                  onClick={() => { setPayLinkOpen(false); setEmailOpen(true) }}
+                  className="flex-1 rounded-xl bg-[#1a3a2a] py-2.5 text-sm font-medium text-white hover:bg-[#234d39]"
+                >
+                  ✉️ Envoyer par mail
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal e-mail */}
+      <SendEmailModal
+        open={emailOpen}
+        onClose={() => setEmailOpen(false)}
+        to={clientEmail}
+        subject={`${docTitle(facture.modele)} N° ${facture.id} — ${company?.name ?? 'Athenis'}`}
+        documentRef={facture.id}
+        documentType={MODELE_META[facture.modele].label}
+        clientName={facture.client}
+        bodyHtml={buildFactureEmailHtml(facture, company?.name ?? 'Athenis', company?.address ?? '', company?.city ?? 'Douala', fmt, payUrl)}
+      />
+
       {/* Document */}
       <div className="flex-1 min-h-0 overflow-y-auto bg-gray-100 p-6">
-        <div className="max-w-3xl mx-auto bg-white shadow-sm rounded-lg p-10 print:shadow-none print:rounded-none">
+        <div ref={docRef} className="max-w-3xl mx-auto bg-white shadow-sm rounded-lg p-10 print:shadow-none print:rounded-none">
 
           {/* Header */}
           <div className="flex justify-between items-start mb-8">
@@ -275,8 +479,33 @@ function InvoiceView({
             </div>
           </div>
 
+          {/* ── Bouton de paiement en ligne ── visible dans l'app, masqué à l'impression */}
+          <div className="mt-8 print:hidden">
+            <div className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 p-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-500 mb-0.5">
+                  Paiement en ligne disponible
+                </p>
+                <p className="text-sm font-bold text-gray-900">
+                  {fmt(facture.montantTTC)}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Carte bancaire · MTN Mobile Money · Orange Money
+                </p>
+              </div>
+              <a
+                href={payUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-[#1a3a2a] px-5 py-3 text-sm font-bold text-white shadow-md hover:bg-[#234d39] transition-colors"
+              >
+                💳 Payer maintenant
+              </a>
+            </div>
+          </div>
+
           {/* Footer */}
-          <div className="mt-10 pt-4 border-t border-gray-100 text-center text-xs text-gray-400">
+          <div className="mt-6 pt-4 border-t border-gray-100 text-center text-xs text-gray-400">
             {companyName} — {companyAddress}, {companyCity} — Document généré par Athenis
           </div>
         </div>

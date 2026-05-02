@@ -165,10 +165,10 @@ export async function getTVADeclaration(companyId: string, year: number, month: 
   const vatRate = company?.pays === 'CM' ? CM_TAX.vatRate : 0.20
   const expenses = await prisma.expense.findMany({
     where: { companyId, date: { gte: start, lte: end } },
-    select: { id: true, note: true, amount: true, category: true },
+    select: { id: true, description: true, amount: true, category: true },
   })
   const deductible = expenses.map(exp => ({
-    label:  exp.note ?? '',
+    label:  exp.description ?? '',
     baseHT: Number(exp.amount),
     taux:   vatRate * 100,
     tva:    Math.round(Number(exp.amount) * vatRate * 100) / 100,
@@ -473,7 +473,7 @@ export async function getCNPS(companyId: string, year: number, month: number) {
   const taxConfig = await prisma.taxConfig.findUnique({ where: { companyId } })
   const employees = await prisma.employee.findMany({
     where: { companyId },
-    select: { id: true, nom: true, prenom: true, salaireBrut: true, poste: true },
+    select: { id: true, nom: true, prenom: true, salaireBrut: true },
     orderBy: { nom: 'asc' },
   })
 
@@ -481,7 +481,7 @@ export async function getCNPS(companyId: string, year: number, month: number) {
     const salaire = Number(emp.salaireBrut)
     return {
       nom:         `${emp.prenom ?? ''} ${emp.nom}`.trim(),
-      poste:       emp.poste ?? '',
+      poste:       '',
       salaireBrut: salaire,
       cnpsPatronal: Math.round(salaire * CM_TAX.cnpsPatronalRate),
       cnpsSalarial: Math.round(salaire * CM_TAX.cnpsSalarialRate),

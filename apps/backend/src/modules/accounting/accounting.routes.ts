@@ -205,7 +205,7 @@ accountingRouter.get(
 
 accountingRouter.get(
   '/comptes',
-  checkModule('comptabilite', 'read'),
+  // Pas de checkModule : tout utilisateur authentifié peut lire son plan comptable
   async (req, res, next) => {
     try {
       const data = await svc.getComptes(getCompanyId(req))
@@ -367,7 +367,7 @@ accountingRouter.post(
     try {
       const { fiscalYearId, date, journal, reference, lines } = req.body as {
         fiscalYearId: string; date: string; journal: string; reference?: string
-        lines: { compte: string; libelle: string; debit: number; credit: number }[]
+        lines: { compte: string; libelle: string; intituleCompte?: string; debit: number; credit: number }[]
       }
       if (!fiscalYearId || !journal || !date || !Array.isArray(lines) || lines.length === 0) {
         throw new AppError('Champs requis manquants', 400, 'VALIDATION_ERROR')
@@ -382,6 +382,7 @@ accountingRouter.post(
           lines: lines.map(l => ({
             compte:  String(l.compte).trim(),
             libelle: String(l.libelle).trim(),
+            ...(l.intituleCompte ? { intituleCompte: String(l.intituleCompte).trim() } : {}),
             debit:   Number(l.debit)  || 0,
             credit:  Number(l.credit) || 0,
           })),

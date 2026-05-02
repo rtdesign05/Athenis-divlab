@@ -1,9 +1,12 @@
+import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { PERSONAL_NAV_ITEMS } from '@/config/navigation'
+import { ChangePasswordModal } from '@/shared/components/ChangePasswordModal'
 
 export function PersonalLayout() {
   const { user, logout } = useAuth()
+  const [pwOpen, setPwOpen] = useState(false)
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -37,12 +40,19 @@ export function PersonalLayout() {
         <div className="border-t border-forest-800 p-3">
           <div className="mb-1 truncate px-3 text-xs text-forest-300">{user?.email}</div>
           <button
+            onClick={() => setPwOpen(true)}
+            className="w-full rounded-lg px-3 py-2 text-left text-sm text-forest-300 transition-colors hover:bg-forest-800 hover:text-white"
+          >
+            🔑 Changer le mot de passe
+          </button>
+          <button
             onClick={() => void logout()}
             className="w-full rounded-lg px-3 py-2 text-left text-sm text-forest-300 transition-colors hover:bg-forest-800 hover:text-white"
           >
             Déconnexion
           </button>
         </div>
+        <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
       </aside>
 
       <main className="flex flex-1 flex-col overflow-hidden">

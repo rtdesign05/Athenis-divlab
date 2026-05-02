@@ -143,7 +143,7 @@ export const accountingApi = {
     date: string
     journal: string
     reference?: string
-    lines: { compte: string; libelle: string; debit: number; credit: number }[]
+    lines: { compte: string; libelle: string; intituleCompte?: string; debit: number; credit: number }[]
   }) => api.post<{ data: unknown[] }>('/accounting/journal/batch', data).then(d),
   updateJournalPiece: (pieceId: string, data: {
     date: string

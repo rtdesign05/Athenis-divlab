@@ -1,5 +1,5 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
-import { ProtectedRoute } from '@/features/auth/ProtectedRoute'
+import { ProtectedRoute, AdminRoute } from '@/features/auth/ProtectedRoute'
 import type React from 'react'
 
 const lz =
@@ -14,6 +14,9 @@ const router = createBrowserRouter([
   { path: '/auth/login',         lazy: lz(() => import('@/features/auth/LoginPage'),       'LoginPage') },
   { path: '/auth/register',      lazy: lz(() => import('@/pages/auth/AccountTypePage'),    'AccountTypePage') },
   { path: '/auth/register/form', lazy: lz(() => import('@/pages/auth/Register'),           'Register') },
+  { path: '/auth/verify-email',  lazy: lz(() => import('@/pages/auth/VerifyEmailPage'),    'VerifyEmailPage') },
+  { path: '/invitation/cabinet', lazy: lz(() => import('@/pages/invitation/CabinetInvitationPage'), 'CabinetInvitationPage') },
+  { path: '/pay/:token',         lazy: lz(() => import('@/pages/pay/PaymentPage'),                  'PaymentPage') },
 
   // ── Personal space ──────────────────────────────────────────────────────────
   {
@@ -65,8 +68,9 @@ const router = createBrowserRouter([
             path: 'ventes',
             children: [
               { index: true,           lazy: lz(() => import('@/pages/app/gestion/VentesPage'),         'VentesPage') },
-              { path: 'factures',      lazy: lz(() => import('@/pages/app/gestion/FacturesVentesPage'), 'FacturesVentesPage') },
-              { path: 'articles',      lazy: lz(() => import('@/pages/app/gestion/ArticlesPage'),       'ArticlesPage') },
+              { path: 'factures',      lazy: lz(() => import('@/pages/app/gestion/FacturesVentesPage'),     'FacturesVentesPage') },
+              { path: 'recurrentes',   lazy: lz(() => import('@/pages/app/gestion/VentesRecurrentesPage'), 'VentesRecurrentesPage') },
+              { path: 'articles',      lazy: lz(() => import('@/pages/app/gestion/ArticlesPage'),           'ArticlesPage') },
               { path: 'clients',       lazy: lz(() => import('@/pages/app/gestion/ClientsPage'),        'ClientsPage') },
               { path: 'livraisons',    lazy: lz(() => import('@/pages/app/gestion/BonsLivraisonPage'),  'BonsLivraisonPage') },
               { path: 'retours',       lazy: lz(() => import('@/pages/app/gestion/RetoursClientsPage'), 'RetoursClientsPage') },
@@ -129,13 +133,39 @@ const router = createBrowserRouter([
         path: 'hr',
         lazy: lz(() => import('@/layouts/modules/HRLayout'), 'HRLayout'),
         children: [
-          { index: true,       lazy: lz(() => import('@/pages/app/hr/HRDashboard'),    'HRDashboard') },
-          { path: 'employes',  lazy: lz(() => import('@/pages/app/hr/EmployesPage'),   'EmployesPage') },
+          { index: true, lazy: lz(() => import('@/pages/app/hr/HRDashboard'), 'HRDashboard') },
+          {
+            path: 'employes',
+            children: [
+              { index: true,             lazy: lz(() => import('@/pages/app/hr/EmployesPage'),        'EmployesPage') },
+              { path: 'organigramme',    lazy: lz(() => import('@/pages/app/hr/OrganigrammeHRPage'),  'OrganigrammeHRPage') },
+            ],
+          },
           { path: 'contrats',  lazy: lz(() => import('@/pages/app/hr/ContratsHRPage'), 'ContratsHRPage') },
-          { path: 'conges',    lazy: lz(() => import('@/pages/app/hr/LeavesPage'),     'LeavesPage') },
-          { path: 'paie',      lazy: lz(() => import('@/pages/app/hr/PayslipPage'),    'PayslipPage') },
-          { path: 'planning',  lazy: lz(() => import('@/pages/app/hr/PlanningPage'),   'PlanningPage') },
-          { path: 'entretiens',lazy: lz(() => import('@/pages/app/hr/ReviewsPage'),    'ReviewsPage') },
+          {
+            path: 'conges',
+            children: [
+              { index: true,        lazy: lz(() => import('@/pages/app/hr/LeavesPage'),           'LeavesPage') },
+              { path: 'calendrier', lazy: lz(() => import('@/pages/app/hr/CalendrierCongesPage'), 'CalendrierCongesPage') },
+              { path: 'historique', lazy: lz(() => import('@/pages/app/hr/HistoriqueCongesPage'), 'HistoriqueCongesPage') },
+            ],
+          },
+          {
+            path: 'paie',
+            children: [
+              { index: true,          lazy: lz(() => import('@/pages/app/hr/PayslipPage'),              'PayslipPage') },
+              { path: 'virements',    lazy: lz(() => import('@/pages/app/hr/VirementsPage'),            'VirementsPage') },
+              { path: 'declarations', lazy: lz(() => import('@/pages/app/hr/DeclarationsSocialesPage'), 'DeclarationsSocialesPage') },
+            ],
+          },
+          {
+            path: 'planning',
+            children: [
+              { index: true,   lazy: lz(() => import('@/pages/app/hr/PlanningPage'),     'PlanningPage') },
+              { path: 'mois',  lazy: lz(() => import('@/pages/app/hr/PlanningMoisPage'), 'PlanningMoisPage') },
+            ],
+          },
+          { path: 'entretiens', lazy: lz(() => import('@/pages/app/hr/ReviewsPage'), 'ReviewsPage') },
         ],
       },
 
@@ -207,6 +237,16 @@ const router = createBrowserRouter([
     ]}],
   },
 
+  // ── Admin space — SUPER_ADMIN uniquement ───────────────────────────────────
+  {
+    element: <AdminRoute />,
+    children: [{ path: '/admin', lazy: lz(() => import('@/layouts/AdminLayout'), 'AdminLayout'), children: [
+      { index: true, lazy: lz(() => import('@/pages/app/admin/MetricsPage'), 'MetricsPage') },
+      { path: 'users',  lazy: lz(() => import('@/pages/app/admin/UsersPage'),  'UsersPage') },
+      { path: 'health', lazy: lz(() => import('@/pages/app/admin/HealthPage'), 'HealthPage') },
+    ]}],
+  },
+
   // ── Cabinet space ───────────────────────────────────────────────────────────
   {
     element: <ProtectedRoute allow={['CABINET']} />,
@@ -214,8 +254,8 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="dashboard" replace /> },
       { path: 'dashboard', lazy: lz(() => import('@/pages/cabinet/Dashboard'), 'CabinetDashboard') },
       { path: 'clients',   lazy: lz(() => import('@/pages/cabinet/Clients'),   'CabinetClients') },
-      { path: 'access',    lazy: lz(() => import('@/pages/app/Placeholder'),   'Placeholder') },
-      { path: 'billing',   lazy: lz(() => import('@/pages/app/Placeholder'),   'Placeholder') },
+      { path: 'access',    lazy: lz(() => import('@/pages/cabinet/Access'),    'CabinetAccess') },
+      { path: 'billing',   lazy: lz(() => import('@/pages/cabinet/Billing'),   'CabinetBilling') },
     ]}],
   },
 

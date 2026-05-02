@@ -1,9 +1,7 @@
 import { useState } from 'react'
-import {
-  useReviews, useReview, useCreateReview, useUpdateReview, useDeleteReview,
-} from '@/hooks/useHr'
-import { useEmployees } from '@/hooks/useHr'
-import type { ReviewStatus, AnnualReview, ReviewObjective, UpdateReviewDto } from '@/services/hrApi'
+import { useHR, type HRReview, type HRObjective } from '@/contexts/HRContext'
+
+type ReviewStatus = HRReview['status']
 
 const STATUS_BADGE: Record<ReviewStatus, string> = {
   DRAFT:     'bg-gray-100 text-gray-600',
@@ -17,7 +15,7 @@ const STATUS_LABEL: Record<ReviewStatus, string> = {
 
 const STARS = [1, 2, 3, 4, 5]
 
-function StarRating({ value, onChange }: { value: number | null; onChange?: (v: number) => void }) {
+function StarRating({ value, onChange }: { value: number | null | undefined; onChange?: (v: number) => void }) {
   return (
     <div className="flex gap-1">
       {STARS.map(s => (
@@ -35,9 +33,9 @@ function StarRating({ value, onChange }: { value: number | null; onChange?: (v: 
 function ObjectiveRow({
   obj, editable, onChange, onDelete,
 }: {
-  obj: ReviewObjective
+  obj: HRObjective
   editable: boolean
-  onChange: (o: ReviewObjective) => void
+  onChange: (o: HRObjective) => void
   onDelete: () => void
 }) {
   return (
@@ -115,50 +113,44 @@ function ObjectiveRow({
 }
 
 // ── Review detail / edit panel ────────────────────────────────────────────────
-function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => void }) {
-  const { data: review, isLoading } = useReview(reviewId)
-  const updateReview = useUpdateReview()
+function ReviewPanel({ review, onClose }: { review: HRReview; onClose: () => void }) {
+  const { employees, updateReview } = useHR()
+  const employee = employees.find(e => e.id === review.employeeId)
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState<UpdateReviewDto>({})
+  const [form, setForm] = useState<Partial<HRReview>>({})
 
-  if (isLoading || !review) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div className="w-full max-w-2xl rounded-xl bg-white p-8 text-center text-gray-400">Chargement…</div>
-      </div>
-    )
-  }
-
-  const objectives: ReviewObjective[] = (form.objectives ?? review.objectives) as ReviewObjective[]
+  const current = editing ? { ...review, ...form } : review
+  const objectives: HRObjective[] = editing ? (form.objectives ?? review.objectives) : review.objectives
 
   const startEdit = () => {
-    const next: UpdateReviewDto = { status: review.status, objectives: review.objectives }
-    if (review.scheduledAt) next.scheduledAt = review.scheduledAt
-    if (review.completedAt) next.completedAt = review.completedAt
-    if (review.rating)      next.rating      = review.rating
-    if (review.notes)       next.notes       = review.notes
-    setForm(next)
+    setForm({
+      status: review.status,
+      ...(review.scheduledAt ? { scheduledAt: review.scheduledAt } : {}),
+      ...(review.completedAt ? { completedAt: review.completedAt } : {}),
+      ...(review.rating      ? { rating: review.rating }           : {}),
+      ...(review.notes       ? { notes: review.notes }             : {}),
+      objectives: review.objectives,
+    })
     setEditing(true)
   }
 
-  const save = async () => {
-    await updateReview.mutateAsync({ id: reviewId, dto: form })
+  const save = () => {
+    updateReview(review.id, form)
     setEditing(false)
   }
 
   const addObjective = () => {
-    const newObj: ReviewObjective = {
+    const newObj: HRObjective = {
       id: crypto.randomUUID(),
       title: '',
       target: '',
       progress: 0,
-      dueDate: null,
       done: false,
     }
     setForm(f => ({ ...f, objectives: [...objectives, newObj] }))
   }
 
-  const updateObj = (idx: number, obj: ReviewObjective) => {
+  const updateObj = (idx: number, obj: HRObjective) => {
     const next = objectives.slice()
     next[idx] = obj
     setForm(f => ({ ...f, objectives: next }))
@@ -174,7 +166,7 @@ function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => v
         <div className="sticky top-0 flex items-center justify-between border-b border-gray-100 bg-white px-6 py-4">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">
-              Entretien — {review.employee ? `${review.employee.firstName} ${review.employee.lastName}` : ''}
+              Entretien — {employee ? `${employee.firstName} ${employee.lastName}` : review.employeeId}
             </h2>
             <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[review.status]}`}>
               {STATUS_LABEL[review.status]}
@@ -193,9 +185,9 @@ function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => v
                   className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
                   Annuler
                 </button>
-                <button onClick={save} disabled={updateReview.isPending}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                  {updateReview.isPending ? 'Sauvegarde…' : 'Sauvegarder'}
+                <button onClick={save}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm text-white hover:bg-blue-700">
+                  Sauvegarder
                 </button>
               </>
             )}
@@ -216,7 +208,7 @@ function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => v
                 />
               ) : (
                 <p className="text-sm text-gray-700">
-                  {review.scheduledAt ? new Date(review.scheduledAt).toLocaleString('fr-FR') : '—'}
+                  {current.scheduledAt ? new Date(current.scheduledAt).toLocaleString('fr-FR') : '—'}
                 </p>
               )}
             </div>
@@ -233,7 +225,7 @@ function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => v
                   ))}
                 </select>
               ) : (
-                <p className="text-sm text-gray-700">{STATUS_LABEL[review.status]}</p>
+                <p className="text-sm text-gray-700">{STATUS_LABEL[current.status]}</p>
               )}
             </div>
           </div>
@@ -258,7 +250,7 @@ function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => v
                 placeholder="Points abordés, retours, axes d'amélioration…"
               />
             ) : (
-              <p className="text-sm text-gray-700 whitespace-pre-line">{review.notes || '—'}</p>
+              <p className="text-sm text-gray-700 whitespace-pre-line">{current.notes || '—'}</p>
             )}
           </div>
 
@@ -297,14 +289,19 @@ function ReviewPanel({ reviewId, onClose }: { reviewId: string; onClose: () => v
 
 // ── Create modal ──────────────────────────────────────────────────────────────
 function CreateModal({ onClose }: { onClose: () => void }) {
-  const employees = useEmployees(true)
-  const create = useCreateReview()
+  const { employees, addReview } = useHR()
   const [employeeId, setEmployeeId] = useState('')
   const [scheduledAt, setScheduledAt] = useState('')
 
-  const submit = async (e: React.FormEvent) => {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    await create.mutateAsync({ employeeId, ...(scheduledAt ? { scheduledAt } : {}) })
+    addReview({
+      employeeId,
+      year: new Date().getFullYear(),
+      status: 'SCHEDULED',
+      ...(scheduledAt ? { scheduledAt } : {}),
+      objectives: [],
+    })
     onClose()
   }
 
@@ -320,7 +317,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
               value={employeeId}
               onChange={e => setEmployeeId(e.target.value)}>
               <option value="">Sélectionner…</option>
-              {employees.data?.items.map(emp => (
+              {employees.map(emp => (
                 <option key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</option>
               ))}
             </select>
@@ -338,9 +335,9 @@ function CreateModal({ onClose }: { onClose: () => void }) {
               className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
               Annuler
             </button>
-            <button type="submit" disabled={create.isPending || !employeeId}
+            <button type="submit" disabled={!employeeId}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-              {create.isPending ? 'Création…' : 'Planifier'}
+              Planifier
             </button>
           </div>
         </form>
@@ -351,20 +348,22 @@ function CreateModal({ onClose }: { onClose: () => void }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function ReviewsPage() {
+  const { reviews, employees, deleteReview } = useHR()
   const [statusFilter, setStatusFilter] = useState<ReviewStatus | 'ALL'>('ALL')
   const [showCreate, setShowCreate] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const reviews = useReviews(statusFilter !== 'ALL' ? { status: statusFilter } : undefined)
-  const deleteReview = useDeleteReview()
-
   const statuses: (ReviewStatus | 'ALL')[] = ['ALL', 'DRAFT', 'SCHEDULED', 'COMPLETED', 'CANCELLED']
 
+  const filtered = statusFilter === 'ALL' ? reviews : reviews.filter(r => r.status === statusFilter)
+
   const avgRating = (() => {
-    const rated = reviews.data?.filter(r => r.rating) ?? []
+    const rated = reviews.filter(r => r.rating)
     if (!rated.length) return null
     return (rated.reduce((s, r) => s + (r.rating ?? 0), 0) / rated.length).toFixed(1)
   })()
+
+  const selectedReview = selectedId ? reviews.find(r => r.id === selectedId) ?? null : null
 
   return (
     <div className="space-y-6 p-6">
@@ -382,9 +381,9 @@ export function ReviewsPage() {
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total', value: reviews.data?.length ?? '—', color: 'text-gray-900' },
-          { label: 'Planifiés', value: reviews.data?.filter(r => r.status === 'SCHEDULED').length ?? '—', color: 'text-blue-600' },
-          { label: 'Complétés', value: reviews.data?.filter(r => r.status === 'COMPLETED').length ?? '—', color: 'text-green-600' },
+          { label: 'Total', value: reviews.length, color: 'text-gray-900' },
+          { label: 'Planifiés', value: reviews.filter(r => r.status === 'SCHEDULED').length, color: 'text-blue-600' },
+          { label: 'Complétés', value: reviews.filter(r => r.status === 'COMPLETED').length, color: 'text-green-600' },
           { label: 'Note moy.', value: avgRating ? `${avgRating}/5` : '—', color: 'text-yellow-600' },
         ].map(({ label, value, color }) => (
           <div key={label} className="rounded-xl border border-gray-200 bg-white p-4">
@@ -409,9 +408,7 @@ export function ReviewsPage() {
 
       {/* Table */}
       <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
-        {reviews.isLoading ? (
-          <div className="p-8 text-center text-gray-400">Chargement…</div>
-        ) : reviews.data?.length === 0 ? (
+        {filtered.length === 0 ? (
           <div className="p-8 text-center text-gray-400">Aucun entretien</div>
         ) : (
           <table className="w-full text-sm">
@@ -426,16 +423,15 @@ export function ReviewsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {reviews.data?.map((review: AnnualReview) => {
+              {filtered.map(review => {
+                const emp = employees.find(e => e.id === review.employeeId)
                 const doneCount = review.objectives.filter(o => o.done).length
                 const totalObj  = review.objectives.length
                 return (
                   <tr key={review.id} className="hover:bg-gray-50 cursor-pointer"
                     onClick={() => setSelectedId(review.id)}>
                     <td className="px-4 py-3 font-medium text-gray-900">
-                      {review.employee
-                        ? `${review.employee.firstName} ${review.employee.lastName}`
-                        : review.employeeId.slice(0, 8)}
+                      {emp ? `${emp.firstName} ${emp.lastName}` : review.employeeId}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[review.status]}`}>
@@ -449,7 +445,9 @@ export function ReviewsPage() {
                     </td>
                     <td className="px-4 py-3 text-center">
                       {review.rating ? (
-                        <span className="text-sm font-medium text-yellow-500">{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}</span>
+                        <span className="text-sm font-medium text-yellow-500">
+                          {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+                        </span>
                       ) : '—'}
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -470,7 +468,7 @@ export function ReviewsPage() {
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm('Supprimer cet entretien ?')) deleteReview.mutate(review.id)
+                            if (confirm('Supprimer cet entretien ?')) deleteReview(review.id)
                           }}
                           className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
                           Suppr.
@@ -486,7 +484,7 @@ export function ReviewsPage() {
       </div>
 
       {showCreate && <CreateModal onClose={() => setShowCreate(false)} />}
-      {selectedId && <ReviewPanel reviewId={selectedId} onClose={() => setSelectedId(null)} />}
+      {selectedReview && <ReviewPanel review={selectedReview} onClose={() => setSelectedId(null)} />}
     </div>
   )
 }

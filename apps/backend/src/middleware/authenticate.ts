@@ -31,56 +31,21 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
           where: { id: payload.sub },
           select: { isActive: true },
         })
-        if (user && !user.isActive) {
+        if (!user || !user.isActive) {
           res.status(403).json({ success: false, error: 'Compte désactivé', code: 'ACCOUNT_INACTIVE' })
           return
         }
       } catch {
-        // DB unavailable — allow request (fail-open for availability)
+        // DB unavailable — fail closed to prevent disabled accounts from accessing the API
+        res.status(503).json({ success: false, error: 'Service temporairement indisponible', code: 'DB_UNAVAILABLE' })
+        return
       }
     }
 
-    // Enrich with agence membership for company users
-    if (payload.companyId && payload.sub) {
-      try {
-        const member = await prisma.companyMember.findUnique({
-          where: { userId: payload.sub },
-          include: {
-            agences: {
-              select: {
-                agenceId:     true,
-                isRestricted: true,
-                agence:       { select: { nom: true } },
-              },
-            },
-          },
-        })
-        if (member && member.agences.length > 0) {
-          payload.agenceIds    = member.agences.map((a) => a.agenceId)
-          payload.isRestricted = member.agences.some((a) => a.isRestricted)
-
-          // Popule agenceNom avec l'agence principale de l'utilisateur restreint
-          // → permet aux pages Gestion de filtrer sans re-login
-          if (payload.isRestricted) {
-            const primary     = member.agences.find((a) => a.isRestricted) ?? member.agences[0]
-            payload.agenceNom = primary?.agence?.nom ?? null
-          } else {
-            payload.agenceNom = null // admin → voit tout
-          }
-        } else {
-          payload.agenceIds    = []
-          payload.isRestricted = false
-          payload.agenceNom    = null
-        }
-      } catch {
-        // DB unavailable — degrade gracefully (no restriction)
-        payload.agenceIds = []
-        payload.isRestricted = false
-      }
-    } else {
-      payload.agenceIds = payload.agenceIds ?? []
-      payload.isRestricted = payload.isRestricted ?? false
-    }
+    // Agences don't exist in WSL2 — set empty defaults
+    payload.agenceIds    = payload.agenceIds    ?? []
+    payload.isRestricted = payload.isRestricted ?? false
+    payload.agenceNom    = payload.agenceNom    ?? null
 
     req.user = payload
     next()

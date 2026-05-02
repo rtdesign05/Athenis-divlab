@@ -108,6 +108,7 @@ type DbUser = {
   createdAt: Date
   atheisNumber: string | null
   role: string
+  platformRole: string
   companyId: string | null
   cabinetId: string | null
 }
@@ -160,6 +161,7 @@ const USER_SELECT = {
   createdAt: true,
   atheisNumber: true,
   role: true,
+  platformRole: true,
   companyId: true,
   cabinetId: true,
 } as const
@@ -336,6 +338,7 @@ export async function register(
     email: dbUser.email,
     accountType: dbUser.accountType as AccountType,
     role,
+    platformRole: (dbUser.platformRole ?? 'USER') as 'USER' | 'SUPER_ADMIN',
     companyId,
     cabinetId: dbUser.cabinetId ?? null,
     plan,
@@ -430,6 +433,7 @@ export async function login(
     email: user.email,
     accountType: user.accountType as AccountType,
     role,
+    platformRole: (user.platformRole ?? 'USER') as 'USER' | 'SUPER_ADMIN',
     companyId,
     cabinetId,
     plan,
@@ -496,6 +500,7 @@ export async function loginVerifyTotp(
     email: user.email,
     accountType: user.accountType as AccountType,
     role,
+    platformRole: (user.platformRole ?? 'USER') as 'USER' | 'SUPER_ADMIN',
     companyId,
     cabinetId,
     plan,
@@ -530,6 +535,7 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
           isActive: true,
           atheisNumber: true,
           role: true,
+          platformRole: true,
           companyId: true,
           cabinetId: true,
         },
@@ -579,6 +585,7 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
       email: u.email,
       accountType: u.accountType as AccountType,
       role,
+      platformRole: ((u as { platformRole?: string }).platformRole ?? 'USER') as 'USER' | 'SUPER_ADMIN',
       companyId,
       cabinetId,
       plan,

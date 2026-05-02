@@ -174,7 +174,9 @@ export interface Payslip {
   totalSalariale: number
   totalPatronale: number
   netBeforeTax: number
-  csgDeductible: number
+  irppBase: number      // base imposable après abattement 30%
+  irpp: number          // IRPP mensuel
+  cac: number           // Centimes additionnels communaux (10% IRPP)
   netImposable: number
   netToPay: number
   totalCost: number

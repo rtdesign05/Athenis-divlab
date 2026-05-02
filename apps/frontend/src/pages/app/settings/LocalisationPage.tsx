@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/features/auth/useAuth'
 import { getCountryConfig, getFlagEmoji } from '@athenis/shared-types'
 import { settingsApi, type CompanySettings } from '@/services/settingsApi'
+import { useQueryClient } from '@tanstack/react-query'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -48,12 +49,25 @@ function AutoBadge() {
 
 // ── main page ─────────────────────────────────────────────────────────────────
 
+// Longueur des numéros de compte autorisées en SYSCOHADA
+const ACCOUNT_LENGTHS = [
+  { value: 3, label: '3 chiffres  (ex : 411)' },
+  { value: 4, label: '4 chiffres  (ex : 4110)' },
+  { value: 5, label: '5 chiffres  (ex : 41100)' },
+  { value: 6, label: '6 chiffres  (ex : 411001)' },
+  { value: 7, label: '7 chiffres  (ex : 4110012)' },
+  { value: 9, label: '9 chiffres  (ex : 411001000)' },
+]
+
 export function LocalisationPage() {
   const { user } = useAuth()
+  const qc = useQueryClient()
   const [company, setCompany]   = useState<CompanySettings | null>(null)
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState<string | null>(null)
   const [uiLang, setUiLang]     = useState<'fr' | 'en'>('fr')
+  const [savingLength, setSavingLength] = useState(false)
+  const [lengthSaved,  setLengthSaved]  = useState(false)
 
   async function loadData() {
     setLoading(true)
@@ -91,6 +105,21 @@ export function LocalisationPage() {
   const countryCode = company.country || user?.country || 'FR'
   const cfg = getCountryConfig(countryCode)
   const locale = company.locale || cfg.locale
+
+  async function saveAccountLength(len: number) {
+    setSavingLength(true)
+    try {
+      const updated = await settingsApi.updateCompany({ accountNumberLength: len })
+      setCompany(updated)
+      qc.invalidateQueries({ queryKey: ['company'] })
+      setLengthSaved(true)
+      setTimeout(() => setLengthSaved(false), 2500)
+    } catch {
+      /* silently fail */
+    } finally {
+      setSavingLength(false)
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -153,9 +182,37 @@ export function LocalisationPage() {
             </span>
             <AutoBadge />
           </Row>
+
+          {/* ── Longueur des numéros de compte (éditable) ── */}
+          <div className="flex items-center justify-between px-0 py-3">
+            <div>
+              <span className="text-sm text-gray-600">Longueur des numéros de compte</span>
+              <p className="mt-0.5 text-xs text-gray-400">
+                Nombre de chiffres des sous-comptes créés manuellement
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select
+                value={company.accountNumberLength ?? 4}
+                disabled={savingLength}
+                onChange={e => saveAccountLength(Number(e.target.value))}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-forest-500 disabled:opacity-60"
+              >
+                {ACCOUNT_LENGTHS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              {savingLength && (
+                <span className="text-xs text-gray-400">Sauvegarde…</span>
+              )}
+              {lengthSaved && !savingLength && (
+                <span className="text-xs text-forest-600 font-medium">✓ Enregistré</span>
+              )}
+            </div>
+          </div>
         </div>
         <p className="text-xs text-gray-400 pt-1">
-          Ces paramètres sont définis à l'inscription.
+          Zone comptable et plan définis à l'inscription. La longueur des comptes est configurable à tout moment.
         </p>
       </div>
 

@@ -43,12 +43,13 @@ export const APP_NAV_SECTIONS: NavSection[] = [
     module: 'rh',
     label: 'Ressources humaines',
     items: [
-      { label: 'Vue d\'ensemble', path: '/app/hr',            icon: '▦',  end: true },
-      { label: 'Employés',        path: '/app/hr/employes',   icon: '👤' },
-      { label: 'Contrats',        path: '/app/hr/contrats',   icon: '📜' },
-      { label: 'Congés',          path: '/app/hr/conges',     icon: '🏖️' },
-      { label: 'Paie',            path: '/app/hr/paie',       icon: '💶' },
-      { label: 'Planning',        path: '/app/hr/planning',   icon: '📅' },
+      { label: 'Vue d\'ensemble', path: '/app/hr',              icon: '▦',  end: true },
+      { label: 'Employés',        path: '/app/hr/employes',     icon: '👤' },
+      { label: 'Contrats',        path: '/app/hr/contrats',     icon: '📜' },
+      { label: 'Congés',          path: '/app/hr/conges',       icon: '🏖️' },
+      { label: 'Paie',            path: '/app/hr/paie',         icon: '💶' },
+      { label: 'Planning',        path: '/app/hr/planning',     icon: '📅' },
+      { label: 'Entretiens',      path: '/app/hr/entretiens',   icon: '🗣️' },
     ],
   },
   {
@@ -113,6 +114,7 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
   '/app/gestion/ventes': [
     { label: 'Commandes clients',  to: '/app/gestion/ventes',              end: true },
     { label: 'Factures ventes',    to: '/app/gestion/ventes/factures' },
+    { label: 'Ventes récurrentes', to: '/app/gestion/ventes/recurrentes' },
     { label: 'Articles',           to: '/app/gestion/ventes/articles' },
     { label: 'Stock',              to: '/app/gestion/ventes/stock' },
     { label: 'Clients',            to: '/app/gestion/ventes/clients' },
@@ -120,7 +122,7 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
     { label: 'Retours clients',    to: '/app/gestion/ventes/retours' },
   ],
   '/app/gestion/achats': [
-    { label: 'Commandes fournisseurs', to: '/app/gestion/achats',          end: true },
+    { label: 'Bons de commande',        to: '/app/gestion/achats',          end: true },
     { label: 'Factures achats',        to: '/app/gestion/achats/factures' },
     { label: 'Articles',               to: '/app/gestion/achats/articles' },
     { label: 'Stock',                  to: '/app/gestion/achats/stock' },
@@ -160,6 +162,9 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
   '/app/hr/planning': [
     { label: 'Vue semaine',          to: '/app/hr/planning',                     end: true },
     { label: 'Vue mois',             to: '/app/hr/planning/mois' },
+  ],
+  '/app/hr/entretiens': [
+    { label: 'Entretiens annuels',   to: '/app/hr/entretiens',                  end: true },
   ],
 
   // ── Juridique ─────────────────────────────────────────────────────────────

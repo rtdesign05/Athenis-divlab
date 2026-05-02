@@ -33,7 +33,7 @@ const empTypeLabel: Record<string, string> = {
   CONTRACT: 'CDD', INTERN: 'Stagiaire',
 }
 
-export function BulletinPaiePdf({ payslip }: { payslip: Payslip }) {
+export function BulletinPaiePdf({ payslip, companyName = 'Votre Entreprise' }: { payslip: Payslip; companyName?: string }) {
   const month = new Date(payslip.month + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 
   return (
@@ -46,7 +46,7 @@ export function BulletinPaiePdf({ payslip }: { payslip: Payslip }) {
             <Text style={S.headerSub}>Période : {month}</Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>VOTRE ENTREPRISE</Text>
+            <Text style={{ color: 'white', fontSize: 9, fontFamily: 'Helvetica-Bold' }}>{companyName.toUpperCase()}</Text>
             <Text style={S.headerSub}>Douala, Cameroun</Text>
           </View>
         </View>
@@ -103,11 +103,9 @@ export function BulletinPaiePdf({ payslip }: { payslip: Payslip }) {
         <Text style={S.section}>RÉCAPITULATIF</Text>
         <View style={{ borderWidth: 1, borderColor: '#000' }}>
           {([
-            ['Salaire brut',                   fmt(payslip.grossSalary)],
-            ['Total cotisations salariales',   `- ${fmt(payslip.totalSalariale)}`],
-            ['Net avant impôts',               fmt(payslip.netBeforeTax)],
-            ['CSG déductible',                 `- ${fmt(payslip.csgDeductible)}`],
-            ['Net imposable',                  fmt(payslip.netImposable)],
+            ['Salaire brut',                      fmt(payslip.grossSalary)],
+            ['Total cotisations salariales CNPS',  `- ${fmt(payslip.totalSalariale)}`],
+            ['Net imposable (avant IRPP)',          fmt(payslip.netImposable)],
           ] as [string, string][]).map(([label, value], i) => (
             <View key={label} style={{ ...S.identRow, backgroundColor: i % 2 === 0 ? '#fff' : '#f5f7fc' }}>
               <Text style={S.identLabel}>{label}</Text>

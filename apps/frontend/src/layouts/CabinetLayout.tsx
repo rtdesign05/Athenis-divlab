@@ -1,10 +1,13 @@
+import { useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { CABINET_NAV_ITEMS } from '@/config/navigation'
+import { ChangePasswordModal } from '@/shared/components/ChangePasswordModal'
 
 export function CabinetLayout() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const [pwOpen, setPwOpen] = useState(false)
 
   const isClientView = location.pathname.startsWith('/cabinet/clients/')
   const clientId = isClientView ? location.pathname.split('/')[3] : null
@@ -40,14 +43,21 @@ export function CabinetLayout() {
 
         <div className="border-t border-forest-800 p-3">
           <div className="truncate px-3 text-xs text-forest-300">{user?.email}</div>
-          <div className="px-3 text-xs text-forest-400">PREMIUM · Cabinet</div>
+          <div className="px-3 text-xs text-forest-400">Cabinet</div>
+          <button
+            onClick={() => setPwOpen(true)}
+            className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm text-forest-300 transition-colors hover:bg-forest-800 hover:text-white"
+          >
+            🔑 Changer le mot de passe
+          </button>
           <button
             onClick={() => void logout()}
-            className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm text-forest-300 transition-colors hover:bg-forest-800 hover:text-white"
+            className="w-full rounded-lg px-3 py-2 text-left text-sm text-forest-300 transition-colors hover:bg-forest-800 hover:text-white"
           >
             Déconnexion
           </button>
         </div>
+        <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
       </aside>
 
       <main className="flex flex-1 flex-col overflow-hidden">

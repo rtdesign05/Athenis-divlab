@@ -5,6 +5,8 @@ export interface JwtPayload {
   email: string
   accountType: AccountType
   role: UserRole
+  /** Rôle plateforme — null sur les anciens tokens, 'SUPER_ADMIN' pour les opérateurs */
+  platformRole?: 'USER' | 'SUPER_ADMIN' | null
   companyId: string | null
   cabinetId: string | null
   plan: Plan | null
@@ -30,6 +32,7 @@ export interface RegisterPersonalRequest {
   password: string
   firstName?: string
   lastName?: string
+  country?: string
 }
 
 export interface RegisterCompanyRequest {
@@ -40,9 +43,10 @@ export interface RegisterCompanyRequest {
   lastName?: string
   companyName: string
   siren?: string
+  niu?: string
   secteur?: string
   taille?: 'TPE' | 'PME' | 'ETI' | 'GE'
-  plan: Plan
+  // Note: plan is intentionally absent — all new companies start on FREE.
   country?: string
 }
 
@@ -54,6 +58,8 @@ export interface RegisterCabinetRequest {
   lastName?: string
   cabinetName: string
   siret?: string
+  niu?: string
+  country?: string
 }
 
 export type RegisterRequest =

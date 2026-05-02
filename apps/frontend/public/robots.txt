@@ -1,0 +1,20 @@
+# Athenis — robots.txt
+
+# Bloquer les crawlers sur toutes les pages authentifiées
+User-agent: *
+Disallow: /app/
+Disallow: /personal/
+Disallow: /cabinet/
+Disallow: /api/
+Disallow: /auth/
+
+# Autoriser la page de connexion et les assets publics
+Allow: /auth/login
+Allow: /auth/register
+Allow: /*.png
+Allow: /*.svg
+Allow: /*.ico
+Allow: /manifest.json
+
+# Sitemap (décommenter si un sitemap est généré)
+# Sitemap: https://app.athenis.cm/sitemap.xml

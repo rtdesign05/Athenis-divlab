@@ -158,7 +158,7 @@ export async function listBankTransactions(companyId: string, query: ListBankTxI
 export async function autoReconcile(companyId: string) {
   const transactions = [...txStore.values()].filter(tx => tx.companyId === companyId && tx.status === 'UNMATCHED')
   const invoices = await prisma.invoice.findMany({
-    where: { companyId, status: { in: ['PENDING', 'OVERDUE'] } },
+    where: { companyId, status: { in: ['SENT', 'OVERDUE'] } },
     select: { id: true, amountTTC: true, dueAt: true, reference: true },
   })
   const expenses = await prisma.expense.findMany({

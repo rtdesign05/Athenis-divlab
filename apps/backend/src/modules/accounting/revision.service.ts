@@ -1,6 +1,17 @@
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 
+/** Cache fiscal year lookup to avoid repeated DB calls per revision operation */
+const fyYearCache = new Map<string, number>()
+
+async function getFiscalYearYear(fiscalYearId: string): Promise<number> {
+  if (fyYearCache.has(fiscalYearId)) return fyYearCache.get(fiscalYearId)!
+  const fy = await prisma.fiscalYear.findUnique({ where: { id: fiscalYearId }, select: { year: true } })
+  const year = fy?.year ?? new Date().getFullYear()
+  fyYearCache.set(fiscalYearId, year)
+  return year
+}
+
 // ── SYSCOHADA Cycle definitions (by account number prefixes) ──────────────────
 //
 // Prefixes are matched in declaration order — more specific prefixes must come
@@ -293,10 +304,11 @@ export async function reviewAccount(
     }
   }
 
+  const fyYear = await getFiscalYearYear(fiscalYearId)
   await prisma.accountReview.upsert({
     where:  { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber } },
     update: { status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), note: note ?? null, cycle, isAnomaly: false },
-    create: { companyId, fiscalYearId, accountNumber, cycle, status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), note: note ?? null },
+    create: { companyId, fiscalYearId, year: fyYear, accountNumber, cycle, status: 'REVIEWED', reviewedBy, reviewedAt: new Date(), note: note ?? null },
   })
 }
 
@@ -305,10 +317,11 @@ export async function unreviewAccount(
   fiscalYearId: string,
   accountNumber: string,
 ): Promise<void> {
+  const fyYearUnreview = await getFiscalYearYear(fiscalYearId)
   await prisma.accountReview.upsert({
     where:  { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber } },
     update: { status: 'PENDING', reviewedBy: null, reviewedAt: null, note: null, isAnomaly: false },
-    create: { companyId, fiscalYearId, accountNumber, cycle: 0, status: 'PENDING' },
+    create: { companyId, fiscalYearId, year: fyYearUnreview, accountNumber, cycle: 0, status: 'PENDING' },
   })
 }
 
@@ -322,10 +335,11 @@ export async function markAnomaly(
 ): Promise<void> {
   if (!anomalyNote.trim()) throw new AppError('La note d\'anomalie est obligatoire', 400, 'NOTE_REQUIRED')
 
+  const fyYearAnomaly = await getFiscalYearYear(fiscalYearId)
   await prisma.accountReview.upsert({
     where:  { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber } },
     update: { status: 'ANOMALY', reviewedBy, reviewedAt: new Date(), anomalyNote, isAnomaly: true, cycle },
-    create: { companyId, fiscalYearId, accountNumber, cycle, status: 'ANOMALY', reviewedBy, reviewedAt: new Date(), anomalyNote, isAnomaly: true },
+    create: { companyId, fiscalYearId, year: fyYearAnomaly, accountNumber, cycle, status: 'ANOMALY', reviewedBy, reviewedAt: new Date(), anomalyNote, isAnomaly: true },
   })
 }
 
@@ -361,13 +375,14 @@ export async function markAllReviewed(
   const accounts = await getBalanceAccounts(companyId, fiscalYearId)
   const now      = new Date()
 
+  const fyYearAll = await getFiscalYearYear(fiscalYearId)
   await Promise.all(
     accounts.map((acct) => {
       const cycleId = assignCycle(acct.number)
       return prisma.accountReview.upsert({
         where:  { companyId_fiscalYearId_accountNumber: { companyId, fiscalYearId, accountNumber: acct.number } },
         update: { status: 'REVIEWED', reviewedBy, reviewedAt: now, cycle: cycleId },
-        create: { companyId, fiscalYearId, accountNumber: acct.number, cycle: cycleId, status: 'REVIEWED', reviewedBy, reviewedAt: now },
+        create: { companyId, fiscalYearId, year: fyYearAll, accountNumber: acct.number, cycle: cycleId, status: 'REVIEWED', reviewedBy, reviewedAt: now },
       })
     }),
   )

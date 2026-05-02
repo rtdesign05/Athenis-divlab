@@ -1,7 +1,9 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type BLStatut, type BonLivraison, type LigneLivraison } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+import { SendEmailModal } from '@/components/gestion/SendEmailModal'
+import { printDocument } from '@/lib/printDocument'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -21,6 +23,53 @@ function fmtDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
+// ── Email HTML builder ────────────────────────────────────────────────────────
+
+function buildBLEmailHtml(bl: BonLivraison, companyName: string, address: string, city: string): string {
+  const lignesRows = bl.lignes.map((l, i) => `
+    <tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#374151;text-align:center">${i + 1}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:12px;color:#6b7280;font-family:monospace">${l.reference}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#374151">${l.designation}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:13px;color:#374151;text-align:right">${l.quantite} ${l.unite}</td>
+    </tr>`).join('')
+
+  return `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+      <tr><td style="background:#1a3a2a;padding:28px 40px;text-align:center">
+        <span style="color:#fff;font-size:20px;font-weight:700">Athenis</span>
+      </td></tr>
+      <tr><td style="padding:36px 40px">
+        <h1 style="margin:0 0 4px;font-size:18px;color:#111827">Bon de livraison N° ${bl.id}</h1>
+        <p style="margin:0 0 8px;font-size:13px;color:#6b7280">De la part de <strong>${companyName}</strong>${address ? `, ${address}` : ''}${city ? `, ${city}` : ''}</p>
+        <p style="margin:0 0 24px;font-size:13px;color:#6b7280">Commande : <strong>${bl.commande}</strong> | Agence : ${bl.agence}</p>
+        <!--CUSTOM_MESSAGE-->
+        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+          <thead>
+            <tr style="background:#f9fafb">
+              <th style="padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;color:#9ca3af;text-align:center;width:32px">N°</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;color:#9ca3af;text-align:left">Référence</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;color:#9ca3af;text-align:left">Désignation</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;color:#9ca3af;text-align:right">Quantité</th>
+            </tr>
+          </thead>
+          <tbody>${lignesRows}</tbody>
+        </table>
+        ${bl.adresseLivraison ? `<p style="font-size:12px;color:#9ca3af;margin:0">Adresse de livraison : ${bl.adresseLivraison}</p>` : ''}
+      </td></tr>
+      <tr><td style="background:#f9fafb;padding:18px 40px;text-align:center;border-top:1px solid #e5e7eb">
+        <p style="margin:0;font-size:12px;color:#9ca3af">© ${new Date().getFullYear()} ${companyName} — Document généré par Athenis</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`
+}
+
 // ── BLView — document pleine page ─────────────────────────────────────────────
 
 interface BLViewProps {
@@ -33,13 +82,18 @@ interface BLViewProps {
 }
 
 function BLView({ bl, allBL, currentIndex, onClose, onNavigate, onStatut }: BLViewProps) {
-  const { company } = useCompanySettings()
+  const { company }  = useCompanySettings()
+  const { clients }  = useGestion()
+  const [emailOpen, setEmailOpen] = useState(false)
+  const docRef = useRef<HTMLDivElement>(null)
 
   const companyName    = company?.name         ?? 'Société Athenis'
   const companyAddress = company?.address      ?? '12 Rue Bonanjo'
   const companyCity    = company?.city         ?? 'Douala'
   const companyPhone   = company?.phone        ?? ''
   const companyEmail   = company?.contactEmail ?? ''
+
+  const clientEmail = clients.find(c => c.nom === bl.client)?.email ?? ''
 
   const prev = currentIndex > 0              ? allBL[currentIndex - 1] : null
   const next = currentIndex < allBL.length - 1 ? allBL[currentIndex + 1] : null
@@ -82,17 +136,33 @@ function BLView({ bl, allBL, currentIndex, onClose, onNavigate, onStatut }: BLVi
           {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
 
-        <div className="ml-auto">
-          <button onClick={() => window.print()}
+        <div className="ml-auto flex items-center gap-2">
+          <button onClick={() => setEmailOpen(true)}
+            className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100">
+            ✉️ Envoyer
+          </button>
+          <button onClick={() => printDocument(docRef.current, `BON DE LIVRAISON ${bl.id}`)}
             className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-            🖨️ Imprimer
+            🖨️ PDF
           </button>
         </div>
       </div>
 
+      {/* Modal e-mail */}
+      <SendEmailModal
+        open={emailOpen}
+        onClose={() => setEmailOpen(false)}
+        to={clientEmail}
+        subject={`Bon de livraison N° ${bl.id} — ${companyName}`}
+        documentRef={bl.id}
+        documentType="Bon de livraison"
+        clientName={bl.client}
+        bodyHtml={buildBLEmailHtml(bl, companyName, companyAddress, companyCity)}
+      />
+
       {/* ── Document ─────────────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto bg-gray-100 p-6">
-        <div className="max-w-3xl mx-auto bg-white shadow-sm rounded-lg p-10 print:shadow-none print:rounded-none">
+        <div ref={docRef} className="max-w-3xl mx-auto bg-white shadow-sm rounded-lg p-10 print:shadow-none print:rounded-none">
 
           {/* En-tête */}
           <div className="flex justify-between items-start mb-8">

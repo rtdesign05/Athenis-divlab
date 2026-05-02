@@ -81,5 +81,6 @@ export function useInvalidateAccounting() {
     qc.invalidateQueries({ queryKey: ['grand-livre-journal'] })
     qc.invalidateQueries({ queryKey: ['financial-statements'] })
     qc.invalidateQueries({ queryKey: ['etats-financiers'] })
+    qc.invalidateQueries({ queryKey: ['comptes'] })
   }
 }

@@ -1,20 +1,53 @@
+import { useQuery }               from '@tanstack/react-query'
 import { useDashboardStats, useCashFlow, useReminders } from '@/hooks/useBilling'
-import { useLeaveStats, useEmployeeStats } from '@/hooks/useHr'
-import { useFiscalDashboard } from '@/hooks/useFiscal'
-import { useEsgScore } from '@/hooks/useEsg'
-import { usePermissions } from '@/features/auth/usePermissions'
-import { useCurrency } from '@/hooks/useCurrency'
-import { toSafeAmount } from '@/shared/utils/currency'
-import { useTresorerie } from '@/contexts/TresorerieContext'
-import { useAuth } from '@/features/auth/useAuth'
-import { AtheisId } from '@/shared/components/ui/AtheisId'
-import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
-import type { CashFlowWeek } from '@/services/billingApi'
+import { useLeaveStats, useEmployeeStats }              from '@/hooks/useHr'
+import { useFiscalDashboard }                          from '@/hooks/useFiscal'
+import { useEsgScore }                                 from '@/hooks/useEsg'
+import { usePermissions }                              from '@/features/auth/usePermissions'
+import { useCurrency }                                 from '@/hooks/useCurrency'
+import { toSafeAmount }                                from '@/shared/utils/currency'
+import { useTresorerie }                               from '@/contexts/TresorerieContext'
+import { useAuth }                                     from '@/features/auth/useAuth'
+import { AtheisId }                                    from '@/shared/components/ui/AtheisId'
+import { ErrorBoundary }                               from '@/shared/components/feedback/ErrorBoundary'
+import { api }                                         from '@/lib/api'
+import type { CashFlowWeek }                           from '@/services/billingApi'
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-function Kpi({ label, value, sub, accent }: { label: string; value: React.ReactNode; sub?: React.ReactNode; accent?: 'green' | 'red' | 'amber' | 'blue' }) {
-  const border = accent === 'red' ? 'border-l-4 border-l-red-400' : accent === 'amber' ? 'border-l-4 border-l-amber-400' : accent === 'green' ? 'border-l-4 border-l-green-400' : ''
+interface CRData {
+  year: number
+  produits: { chiffreAffaires: number; tvaCollectee: number; totalProduits: number }
+  charges:  { chargesExploitation: number; masseSalariale: number; chargesTotal: number }
+  resultatBrut: number
+  margeNette:   number
+}
+
+// ── Hook: compte de résultat (silencieux si module indisponible) ───────────────
+
+function useCompteResultat(year: number) {
+  return useQuery<CRData>({
+    queryKey: ['accounting', 'compte-resultat', year] as const,
+    queryFn:  async () => {
+      const r = await api.get<{ success: boolean; data: CRData }>(`/accounting/compte-de-resultat?year=${year}`)
+      return r.data.data
+    },
+    retry:        false,
+    staleTime:    5 * 60_000,
+    // ne pas propager l'erreur si le module comptabilité n'est pas activé
+  })
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function Kpi({ label, value, sub, accent }: {
+  label: string; value: React.ReactNode; sub?: React.ReactNode
+  accent?: 'green' | 'red' | 'amber' | 'blue'
+}) {
+  const border =
+    accent === 'red'   ? 'border-l-4 border-l-red-400'   :
+    accent === 'amber' ? 'border-l-4 border-l-amber-400' :
+    accent === 'green' ? 'border-l-4 border-l-green-400' : ''
   return (
     <div className={`rounded-xl border border-gray-200 bg-white p-3 ${border}`}>
       <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
@@ -24,7 +57,9 @@ function Kpi({ label, value, sub, accent }: { label: string; value: React.ReactN
   )
 }
 
-function SectionCard({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
+function SectionCard({ title, icon, children }: {
+  title: string; icon: string; children: React.ReactNode
+}) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-3">
       <p className="mb-2 text-xs font-semibold text-gray-600 flex items-center gap-1.5">
@@ -35,11 +70,11 @@ function SectionCard({ title, icon, children }: { title: string; icon: string; c
   )
 }
 
-// ── Cash-flow chart ───────────────────────────────────────────────────────────
+// ── Cash-flow chart (compact) ─────────────────────────────────────────────────
 
 function CashFlowChart({ weeks }: { weeks: CashFlowWeek[] }) {
-  const W = 660, H = 140
-  const PAD = { t: 10, r: 10, b: 24, l: 46 }
+  const W = 660, H = 110
+  const PAD = { t: 8, r: 10, b: 22, l: 40 }
   const iW = W - PAD.l - PAD.r, iH = H - PAD.t - PAD.b
   const maxInc = Math.max(...weeks.map(w => w.expectedIncome), 1)
   const minCum = Math.min(...weeks.map(w => w.cumulative), 0)
@@ -57,7 +92,7 @@ function CashFlowChart({ weeks }: { weeks: CashFlowWeek[] }) {
         return (
           <g key={t}>
             <line x1={PAD.l} x2={W - PAD.r} y1={y} y2={y} stroke="#f3f4f6" strokeWidth="1" />
-            <text x={PAD.l - 4} y={y + 3} fontSize="8" fill="#9ca3af" textAnchor="end">
+            <text x={PAD.l - 4} y={y + 3} fontSize="7" fill="#9ca3af" textAnchor="end">
               {val >= 1_000_000 ? `${(val/1_000_000).toFixed(1)}M` : val >= 1000 ? `${(val/1000).toFixed(0)}k` : val.toFixed(0)}
             </text>
           </g>
@@ -79,6 +114,28 @@ function CashFlowChart({ weeks }: { weeks: CashFlowWeek[] }) {
         <text key={i} x={xPos(i)} y={H - 3} fontSize="7" fill="#9ca3af" textAnchor="middle">{w.label}</text>
       ) : null)}
     </svg>
+  )
+}
+
+// ── SIG Card ──────────────────────────────────────────────────────────────────
+
+function SigCard({
+  label, value, sub, positive, loading,
+}: {
+  label: string; value: string; sub?: string; positive?: boolean; loading?: boolean
+}) {
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+      <p className={`mt-0.5 text-sm font-bold leading-tight ${
+        loading ? 'text-gray-300' :
+        positive === undefined ? 'text-gray-900' :
+        positive ? 'text-emerald-700' : 'text-red-600'
+      }`}>
+        {loading ? '…' : value}
+      </p>
+      {sub && <p className="mt-0.5 text-[10px] text-gray-400">{sub}</p>}
+    </div>
   )
 }
 
@@ -199,21 +256,54 @@ export function AppDashboard() {
   const { fmt }    = useCurrency()
   const { user }   = useAuth()
   const { modules } = usePermissions()
-  const { data: stats, isLoading: stL } = useDashboardStats()
+  const currentYear = new Date().getFullYear()
+
+  const { data: stats,    isLoading: stL } = useDashboardStats()
   const { data: cashFlow, isLoading: cfL } = useCashFlow()
-  const { data: reminders } = useReminders()
-  const { totalSolde } = useTresorerie()
+  const { data: reminders }                = useReminders()
+  const { totalSolde }                     = useTresorerie()
+  const { data: cr,       isLoading: crL } = useCompteResultat(currentYear)
 
   const firstName   = (user as { firstName?: string } | null)?.firstName || user?.email?.split('@')[0] || 'vous'
   const companyName = (user as { companyName?: string } | null)?.companyName ?? null
-
   const hasReminders = (reminders?.length ?? 0) > 0
+
+  // ── SIG ─────────────────────────────────────────────────────────────────────
+  // Préférer les données HT du compte de résultat si disponibles,
+  // sinon utiliser dashboardStats (valeurs TTC, moins précises).
+  const sig = (() => {
+    if (cr) {
+      const ca  = cr.produits.chiffreAffaires
+      const va  = ca - cr.charges.chargesExploitation          // VA = CA - consommations intermédiaires
+      const ebe = va - cr.charges.masseSalariale                // EBE = VA - charges de personnel
+      const rn  = cr.resultatBrut                              // Résultat net (avant IS)
+      return {
+        ca,  va, ebe, rn,
+        marge:    cr.margeNette,
+        growth:   stats?.revenue.growth ?? null,
+        fromCR:   true,
+      }
+    }
+    if (stats) {
+      const ca = stats.revenue.current
+      const mb = stats.grossProfit.amount
+      return {
+        ca,  va: null, ebe: null, rn: mb,
+        marge:   (stats.grossProfit.margin ?? 0) * 100,
+        growth:  stats.revenue.growth,
+        fromCR:  false,
+      }
+    }
+    return null
+  })()
+
+  const loading = stL && crL
 
   return (
     <ErrorBoundary>
       <div className="h-full flex flex-col gap-3 p-4 overflow-hidden">
 
-        {/* Header */}
+        {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="shrink-0 flex items-center justify-between">
           <div>
             <h1 className="text-base font-semibold text-gray-900">Bonjour, {firstName}</h1>
@@ -222,10 +312,12 @@ export function AppDashboard() {
               {user?.atheisNumber && <AtheisId number={user.atheisNumber} size="sm" />}
             </p>
           </div>
-          <p className="text-xs text-gray-400">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          <p className="text-xs text-gray-400">
+            {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </p>
         </div>
 
-        {/* KPI row */}
+        {/* ── KPI row ─────────────────────────────────────────────────────── */}
         <div className="shrink-0 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <Kpi
             label="CA exercice"
@@ -257,32 +349,148 @@ export function AppDashboard() {
           />
         </div>
 
-        {/* Main area */}
-        <div className="flex-1 min-h-0 flex gap-3">
+        {/* ── Main area ───────────────────────────────────────────────────── */}
+        <div className="flex-1 min-h-0 flex gap-3 overflow-hidden">
 
-          {/* Left — cash flow chart */}
-          <div className="flex-1 min-w-0 rounded-xl border border-gray-200 bg-white p-3 flex flex-col">
-            <div className="shrink-0 flex items-center justify-between mb-1">
-              <h2 className="text-xs font-semibold text-gray-700">Trésorerie prévisionnelle — 90 jours</h2>
-              {cashFlow && (
-                <span className={`text-xs font-semibold ${cashFlow.summary.netCashFlow >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                  Solde net : {fmt(cashFlow.summary.netCashFlow)}
-                </span>
-              )}
+          {/* Left column */}
+          <div className="flex-1 min-w-0 flex flex-col gap-3 overflow-hidden">
+
+            {/* Graphique cash-flow — hauteur fixe, compact */}
+            <div className="shrink-0 rounded-xl border border-gray-200 bg-white p-3" style={{ height: 160 }}>
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="text-xs font-semibold text-gray-700">
+                  Trésorerie prévisionnelle — 90 jours
+                </h2>
+                {cashFlow && (
+                  <span className={`text-xs font-semibold ${cashFlow.summary.netCashFlow >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                    Solde net : {fmt(cashFlow.summary.netCashFlow)}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1" style={{ height: 108 }}>
+                {cfL
+                  ? <div className="h-full animate-pulse rounded-lg bg-gray-100" />
+                  : cashFlow
+                  ? <CashFlowChart weeks={cashFlow.weeks} />
+                  : <div className="h-full flex items-center justify-center text-xs text-gray-400">Aucune donnée de trésorerie</div>
+                }
+              </div>
+              <div className="mt-1 flex gap-4 text-[10px] text-gray-400">
+                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded bg-green-400/65" /> Revenus att.</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded bg-red-400/65" /> Dépenses</span>
+                <span className="flex items-center gap-1"><span className="inline-block w-4 border-b-2 border-blue-700" /> Solde cumulé</span>
+              </div>
             </div>
-            <div className="flex-1 min-h-0">
-              {cfL
-                ? <div className="h-full animate-pulse rounded-lg bg-gray-100" />
-                : cashFlow
-                ? <CashFlowChart weeks={cashFlow.weeks} />
-                : <div className="h-full flex items-center justify-center text-xs text-gray-400">Aucune donnée de trésorerie</div>
-              }
+
+            {/* ── Soldes Intermédiaires de Gestion ──────────────────────── */}
+            <div className="shrink-0 rounded-xl border border-gray-200 bg-white p-3">
+              <div className="flex items-center justify-between mb-2.5">
+                <h2 className="text-xs font-semibold text-gray-700">
+                  Soldes intermédiaires de gestion
+                  <span className="ml-1.5 font-normal text-gray-400">{currentYear}</span>
+                </h2>
+                {sig?.fromCR && (
+                  <span className="text-[10px] text-gray-400">Données comptables HT</span>
+                )}
+                {sig && !sig.fromCR && (
+                  <span className="text-[10px] text-amber-500">Données de facturation TTC</span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                {/* CA */}
+                <SigCard
+                  label="Chiffre d'affaires"
+                  value={sig ? fmt(sig.ca) : '—'}
+                  {...(sig?.growth != null ? { sub: `${sig.growth >= 0 ? '▲' : '▼'} ${Math.abs(sig.growth).toFixed(1)}% N-1` } : {})}
+                  loading={loading}
+                />
+
+                {/* Valeur Ajoutée ou Marge brute */}
+                {sig?.fromCR ? (
+                  <SigCard
+                    label="Valeur ajoutée"
+                    value={sig.va !== null ? fmt(sig.va) : '—'}
+                    sub="CA − consommations ext."
+                    {...(sig.va !== null ? { positive: sig.va >= 0 } : {})}
+                    loading={loading}
+                  />
+                ) : (
+                  <SigCard
+                    label="Marge brute"
+                    value={sig ? fmt(sig.rn) : '—'}
+                    sub="CA − charges d'exploit."
+                    {...(sig ? { positive: sig.rn >= 0 } : {})}
+                    loading={loading}
+                  />
+                )}
+
+                {/* EBE */}
+                {sig?.fromCR ? (
+                  <SigCard
+                    label="EBE"
+                    value={sig.ebe !== null ? fmt(sig.ebe) : '—'}
+                    sub="VA − charges personnel"
+                    {...(sig.ebe !== null ? { positive: sig.ebe >= 0 } : {})}
+                    loading={loading}
+                  />
+                ) : (
+                  <SigCard
+                    label="EBE"
+                    value="—"
+                    sub="Module comptabilité requis"
+                  />
+                )}
+
+                {/* Résultat net */}
+                <SigCard
+                  label={sig?.fromCR ? 'Résultat net' : 'Résultat brut'}
+                  value={sig ? fmt(sig.rn) : '—'}
+                  sub={sig?.fromCR ? 'Avant impôt sur les bénéfices' : 'CA − total charges'}
+                  {...(sig ? { positive: sig.rn >= 0 } : {})}
+                  loading={loading}
+                />
+
+                {/* Taux de marge */}
+                <SigCard
+                  label="Taux de marge"
+                  value={sig ? `${sig.marge >= 0 ? '+' : ''}${sig.marge.toFixed(1)} %` : '—'}
+                  sub="Marge nette / CA"
+                  {...(sig ? { positive: sig.marge >= 0 } : {})}
+                  loading={loading}
+                />
+              </div>
             </div>
-            <div className="shrink-0 mt-1.5 flex gap-4 text-[10px] text-gray-400">
-              <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded bg-green-400/65" /> Revenus attendus</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded bg-red-400/65" /> Dépenses</span>
-              <span className="flex items-center gap-1"><span className="inline-block w-4 border-b-2 border-blue-700" /> Solde cumulé</span>
+
+            {/* Activité ventes — card en bas (ancienne widget déplacée ici) */}
+            <div className="shrink-0 rounded-xl border border-gray-200 bg-white p-3">
+              <p className="mb-2 text-xs font-semibold text-gray-600 flex items-center gap-1.5">
+                <span>💹</span>Activité ventes
+              </p>
+              <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                <div>
+                  <p className="text-lg font-bold text-gray-900">{stL ? '—' : stats?.pendingCount ?? 0}</p>
+                  <p className="text-[10px] text-gray-400">Factures ouvertes</p>
+                </div>
+                <div>
+                  <p className={`text-lg font-bold ${(stats?.overdueCount ?? 0) > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                    {stL ? '—' : stats?.overdueCount ?? 0}
+                  </p>
+                  <p className="text-[10px] text-gray-400">En retard</p>
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-gray-900">{stL ? '—' : fmt(stats?.pendingAmount ?? 0)}</p>
+                  <p className="text-[10px] text-gray-400">Encours</p>
+                </div>
+                <div>
+                  <p className={`text-sm font-bold leading-tight ${(stats?.overdueAmount ?? 0) > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                    {stL ? '—' : fmt(stats?.overdueAmount ?? 0)}
+                  </p>
+                  <p className="text-[10px] text-gray-400">Échus</p>
+                </div>
+              </div>
             </div>
+
           </div>
 
           {/* Right — cross-module widgets */}
@@ -291,22 +499,7 @@ export function AppDashboard() {
             <RhWidget modules={modules} />
             <FiscalWidget modules={modules} />
             <EsgWidget modules={modules} />
-
-            {/* Ventes en cours */}
-            <SectionCard title="Activité ventes" icon="💹">
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <div>
-                  <p className="text-lg font-bold text-gray-900">{stL ? '—' : stats?.pendingCount ?? 0}</p>
-                  <p className="text-[10px] text-gray-400">Factures ouvertes</p>
-                </div>
-                <div>
-                  <p className={`text-lg font-bold ${(stats?.overdueCount ?? 0) > 0 ? 'text-red-600' : 'text-gray-900'}`}>{stL ? '—' : stats?.overdueCount ?? 0}</p>
-                  <p className="text-[10px] text-gray-400">En retard</p>
-                </div>
-              </div>
-            </SectionCard>
           </div>
-
         </div>
       </div>
     </ErrorBoundary>

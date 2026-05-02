@@ -1,4 +1,4 @@
-﻿import { useState, useCallback, useMemo, useEffect } from 'react'
+﻿import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSelectedFiscalYearData, useFiscalYears, useCloseFiscalYear } from '@/hooks/useFiscalYear'
@@ -8,6 +8,7 @@ import { FiscalYearSelector } from '@/components/accounting/FiscalYearSelector'
 import { useEmployeeStats } from '@/hooks/useHr'
 import { useCurrency } from '@/hooks/useCurrency'
 import { toSafeAmount } from '@/shared/utils/currency'
+import { printDocument } from '@/lib/printDocument'
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -581,6 +582,7 @@ function OhadaSituation({ d, fyData }: { d: FinancialStatements; fyData: FiscalY
 
   const [dateFrom, setDateFrom] = useState(fyStart)
   const [dateTo,   setDateTo]   = useState(todayCapped)
+  const printRef = useRef<HTMLDivElement>(null)
 
   const { data: glData, isLoading } = useQuery({
     queryKey: ['grand-livre-situation', fyData.id],
@@ -682,7 +684,7 @@ function OhadaSituation({ d, fyData }: { d: FinancialStatements; fyData: FiscalY
             className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30" />
         </div>
         <button
-          onClick={() => window.print()}
+          onClick={() => printDocument(printRef.current, `États financiers — ${dateFrom} au ${dateTo}`)}
           className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -696,7 +698,7 @@ function OhadaSituation({ d, fyData }: { d: FinancialStatements; fyData: FiscalY
       {isLoading ? (
         <Spinner />
       ) : (
-        <>
+        <div ref={printRef} className="space-y-5">
           {/* Result summary */}
           <div className={`flex items-center gap-3 rounded-lg p-4 border ${
             resultatNet >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
@@ -737,7 +739,7 @@ function OhadaSituation({ d, fyData }: { d: FinancialStatements; fyData: FiscalY
               <p className="text-sm">Aucune écriture sur la période sélectionnée.</p>
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   )

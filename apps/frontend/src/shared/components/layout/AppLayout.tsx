@@ -7,6 +7,8 @@ import { AiWidget } from '@/features/ai/AiWidget'
 import { TresorerieProvider } from '@/contexts/TresorerieContext'
 import { GestionProvider } from '@/contexts/GestionContext'
 import { CompanySettingsProvider } from '@/contexts/CompanySettingsContext'
+import { ContractsProvider } from '@/contexts/ContractsContext'
+import { CabinetViewBanner } from '@/features/cabinet/CabinetViewBanner'
 
 export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -34,13 +36,16 @@ export function AppLayout() {
 
       {/* Main column */}
       <div className="flex flex-1 flex-col overflow-hidden">
+        <CabinetViewBanner />
         <Topbar onMenuClick={() => setSidebarOpen((v) => !v)} />
         <main className="flex-1 overflow-hidden">
           <ErrorBoundary>
             <CompanySettingsProvider>
               <TresorerieProvider>
                 <GestionProvider>
-                  <Outlet />
+                  <ContractsProvider>
+                    <Outlet />
+                  </ContractsProvider>
                 </GestionProvider>
               </TresorerieProvider>
             </CompanySettingsProvider>

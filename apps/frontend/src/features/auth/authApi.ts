@@ -7,6 +7,7 @@ export interface LoginData {
   requiresTotp?: boolean
   tempToken?: string
   user?: UserProfile
+  requiresEmailVerification?: boolean
 }
 
 export interface UserProfile {
@@ -40,4 +41,10 @@ export const authApi = {
 
   register: (data: unknown) =>
     api.post<ApiWrap<LoginData>>('/auth/register', data),
+
+  verifyEmail: (token: string) =>
+    api.get<ApiWrap<LoginData>>('/auth/verify-email', { params: { token } }),
+
+  resendVerification: (email: string) =>
+    api.post<ApiWrap<null>>('/auth/resend-verification', { email }),
 }

@@ -3,6 +3,11 @@ import {
   useContracts, useCreateContract, useUpdateContract, useDeleteContract, useSendSignature,
 } from '@/hooks/useLegal'
 import type { ContractType, ContractStatus, ContractParty, LegalContract } from '@/services/legalApi'
+import {
+  useContracts as useEmploymentContracts,
+  type EmploymentContract,
+  type ContractStatus as EmpStatus,
+} from '@/contexts/ContractsContext'
 
 const TYPE_LABEL: Record<ContractType, string> = {
   EMPLOYMENT: 'Contrat de travail', SERVICE: 'Prestation de services',
@@ -186,23 +191,87 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
   )
 }
 
+// ── Employment contracts section (from HR module) ─────────────────────────────
+const EMP_TYPE_LABEL: Record<string, string> = {
+  FULL_TIME: 'CDI — Temps plein', PART_TIME: 'CDI — Temps partiel',
+  CONTRACT:  'CDD',               INTERN:    'Convention de stage',
+}
+const EMP_STATUS_BADGE: Record<EmpStatus, string> = {
+  DRAFT: 'bg-gray-100 text-gray-600', SIGNED: 'bg-green-100 text-green-700', TERMINATED: 'bg-red-100 text-red-600',
+}
+const EMP_STATUS_LABEL: Record<EmpStatus, string> = {
+  DRAFT: 'Brouillon', SIGNED: 'Signé', TERMINATED: 'Résilié',
+}
+const fmtDateEmp = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('fr-FR') : '—'
+
+function EmploymentContractsSection({ contracts }: { contracts: EmploymentContract[] }) {
+  if (contracts.length === 0) return null
+  return (
+    <div className="rounded-xl border border-blue-200 bg-blue-50/30 overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 border-b border-blue-200">
+        <span className="text-blue-600 text-sm">👤</span>
+        <h2 className="text-sm font-semibold text-blue-800">Contrats de travail — Module RH</h2>
+        <span className="ml-auto text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">{contracts.length}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-xs text-gray-500 uppercase tracking-wide bg-white/50 border-b border-blue-100">
+            <tr>
+              <th className="px-4 py-2 text-left font-medium">Employé</th>
+              <th className="px-4 py-2 text-left font-medium">Type de contrat</th>
+              <th className="px-4 py-2 text-center font-medium">Début</th>
+              <th className="px-4 py-2 text-center font-medium">Fin</th>
+              <th className="px-4 py-2 text-center font-medium">Signé le</th>
+              <th className="px-4 py-2 text-center font-medium">Statut</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-blue-50">
+            {contracts.map(c => (
+              <tr key={c.id} className="hover:bg-white/60 transition-colors">
+                <td className="px-4 py-3">
+                  <p className="font-medium text-gray-800">{c.employeeName}</p>
+                  <p className="text-xs text-gray-400">{c.poste} · {c.departement}</p>
+                </td>
+                <td className="px-4 py-3 text-gray-600 text-xs">{EMP_TYPE_LABEL[c.contractType] ?? c.contractType}</td>
+                <td className="px-4 py-3 text-center text-xs text-gray-600">{fmtDateEmp(c.startDate)}</td>
+                <td className="px-4 py-3 text-center text-xs text-gray-600">{fmtDateEmp(c.endDate)}</td>
+                <td className="px-4 py-3 text-center text-xs text-gray-500">{fmtDateEmp(c.signedAt)}</td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${EMP_STATUS_BADGE[c.status]}`}>
+                    {EMP_STATUS_LABEL[c.status]}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="px-4 py-2 text-xs text-blue-600 bg-blue-50 border-t border-blue-100">
+        Ces contrats sont gérés dans le module <strong>RH → Contrats</strong>. Modifiez-les depuis ce module.
+      </p>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export function ContractsPage() {
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'ALL'>('ALL')
   const [showCreate, setShowCreate]     = useState(false)
   const [signContract, setSignContract] = useState<LegalContract | null>(null)
 
-  const contracts   = useContracts(statusFilter !== 'ALL' ? { status: statusFilter } : undefined)
-  const updateCtr   = useUpdateContract()
-  const deleteCtr   = useDeleteContract()
+  const contracts    = useContracts(statusFilter !== 'ALL' ? { status: statusFilter } : undefined)
+  const updateCtr    = useUpdateContract()
+  const deleteCtr    = useDeleteContract()
+  const empCtx       = useEmploymentContracts()
+  const empContracts = empCtx.contracts
 
   const statuses: (ContractStatus | 'ALL')[] = ['ALL', 'DRAFT', 'PENDING_SIGNATURE', 'SIGNED', 'EXPIRED', 'TERMINATED']
 
   const kpis = [
-    { label: 'Total',      value: contracts.data?.length ?? '—',                                            color: 'text-gray-900' },
-    { label: 'Signés',     value: contracts.data?.filter(c => c.status === 'SIGNED').length ?? '—',         color: 'text-green-600' },
-    { label: 'En attente', value: contracts.data?.filter(c => c.status === 'PENDING_SIGNATURE').length ?? '—', color: 'text-yellow-600' },
-    { label: 'Expirés',    value: contracts.data?.filter(c => c.status === 'EXPIRED').length ?? '—',        color: 'text-red-600' },
+    { label: 'Total',          value: (contracts.data?.length ?? 0) + empContracts.length, color: 'text-gray-900' },
+    { label: 'Signés',         value: (contracts.data?.filter(c => c.status === 'SIGNED').length ?? 0) + empContracts.filter(c => c.status === 'SIGNED').length, color: 'text-green-600' },
+    { label: 'En attente',     value: contracts.data?.filter(c => c.status === 'PENDING_SIGNATURE').length ?? '—', color: 'text-yellow-600' },
+    { label: 'Contrats travail', value: empContracts.length, color: 'text-blue-600' },
   ]
 
   return (
@@ -210,7 +279,7 @@ export function ContractsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Contrats</h1>
-          <p className="text-sm text-gray-500">Bibliothèque et workflow de signature</p>
+          <p className="text-sm text-gray-500">Bibliothèque juridique et contrats de travail</p>
         </div>
         <button onClick={() => setShowCreate(true)}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
@@ -227,6 +296,9 @@ export function ContractsPage() {
           </div>
         ))}
       </div>
+
+      {/* Employment contracts from HR module */}
+      <EmploymentContractsSection contracts={empContracts} />
 
       {/* Status tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl bg-gray-100 p-1 w-fit">

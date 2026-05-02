@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type Client, type ClientType } from '@/contexts/GestionContext'
+import { CompteCombobox } from '@/components/accounting/CompteCombobox'
 
 const TYPE_STYLE: Record<ClientType, string> = {
   entreprise:  'bg-indigo-50 text-indigo-700 ring-indigo-200',
@@ -102,12 +103,13 @@ function ModalClient({ initial, agenceNom, onSave, onClose }: ModalClientProps) 
                 Compte comptable
                 <span className="ml-1 font-normal text-gray-400">(facultatif — ex : 411100)</span>
               </label>
-              <input
+              <CompteCombobox
                 value={form.compte}
-                onChange={set('compte')}
+                onChange={v => setForm(f => ({ ...f, compte: v }))}
+                onSelect={c => setForm(f => ({ ...f, compte: c.code }))}
                 placeholder="411100"
-                maxLength={10}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                filterClasses={['4']}
               />
               {form.compte.trim() && (
                 <p className="mt-1 text-[11px] text-indigo-600">

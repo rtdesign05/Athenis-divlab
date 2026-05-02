@@ -3,6 +3,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react'
 import { tokenStore } from '@/lib/tokenStore'
@@ -12,14 +13,22 @@ import type { JwtPayload, RegisterRequest } from '@athenis/shared-types'
 export interface AuthContextValue {
   user: JwtPayload | null
   isLoading: boolean
+  /** True when a cabinet user is viewing a company's space */
+  isViewingAsCompany: boolean
+  /** Name of the company being viewed (only set in cabinet view mode) */
+  companyViewName: string | null
   login: (
     email: string,
     password: string,
-  ) => Promise<{ requires2fa: boolean; tempToken: string | null; accountType: string | null }>
+  ) => Promise<{ requires2fa: boolean; tempToken: string | null; user: import('@athenis/shared-types').JwtPayload | null }>
   loginVerifyTotp: (tempToken: string, code: string) => Promise<void>
-  register: (data: RegisterRequest) => Promise<void>
+  register: (data: RegisterRequest) => Promise<{ requiresEmailVerification: boolean }>
   logout: () => Promise<void>
   setToken: (token: string) => void
+  /** Cabinet switches to view a company: swaps the active token, stores the cabinet token */
+  enterCompanyView: (viewToken: string, companyName: string) => void
+  /** Returns from company view back to cabinet space */
+  exitCompanyView: () => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
@@ -36,8 +45,13 @@ function decodeJwt(token: string): JwtPayload | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<JwtPayload | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser]                 = useState<JwtPayload | null>(null)
+  const [isLoading, setIsLoading]       = useState(true)
+  const [companyViewName, setCompanyViewName] = useState<string | null>(null)
+
+  // Cabinet token saved while viewing a company — stored in a ref so it
+  // doesn't trigger re-renders and survives callback recreation
+  const savedCabinetToken = useRef<string | null>(null)
 
   const setToken = useCallback((token: string) => {
     tokenStore.set(token)
@@ -59,12 +73,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const res = await authApi.login(email, password)
-      // Backend returns `requiresTotp`; we map it to `requires2fa` for callers
       const { accessToken, requiresTotp, tempToken } = res.data.data
       const requires2fa = requiresTotp ?? false
       if (!requires2fa && accessToken) setToken(accessToken)
-      const accountType = accessToken ? (decodeJwt(accessToken)?.accountType ?? null) : null
-      return { requires2fa, tempToken: tempToken ?? null, accountType }
+      const decodedUser = accessToken ? decodeJwt(accessToken) : null
+      return { requires2fa, tempToken: tempToken ?? null, user: decodedUser }
     },
     [setToken],
   )
@@ -80,7 +93,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(
     async (data: RegisterRequest) => {
       const res = await authApi.register(data)
-      if (res.data.data.accessToken) setToken(res.data.data.accessToken)
+      const { accessToken, requiresEmailVerification } = res.data.data
+      if (accessToken) setToken(accessToken)
+      return { requiresEmailVerification: requiresEmailVerification ?? false }
     },
     [setToken],
   )
@@ -89,14 +104,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await authApi.logout()
     } catch {
-      // ignore — server may already have revoked the token
+      // ignore
     }
+    savedCabinetToken.current = null
+    setCompanyViewName(null)
     tokenStore.set(null)
     setUser(null)
   }, [])
 
+  // Cabinet view mode ─────────────────────────────────────────────────────────
+
+  const enterCompanyView = useCallback(
+    (viewToken: string, companyName: string) => {
+      savedCabinetToken.current = tokenStore.get() // save current cabinet token
+      setCompanyViewName(companyName)
+      setToken(viewToken)
+    },
+    [setToken],
+  )
+
+  const exitCompanyView = useCallback(() => {
+    const cabinetToken = savedCabinetToken.current
+    if (cabinetToken) {
+      savedCabinetToken.current = null
+      setCompanyViewName(null)
+      setToken(cabinetToken)
+    }
+  }, [setToken])
+
+  // Derived flag: we are in cabinet view mode when the active JWT has
+  // accountType=COMPANY AND cabinetId set (cabinet token keeps cabinetId)
+  const isViewingAsCompany =
+    user?.accountType === 'COMPANY' && user?.cabinetId != null
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, loginVerifyTotp, register, logout, setToken }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isLoading,
+        isViewingAsCompany,
+        companyViewName,
+        login,
+        loginVerifyTotp,
+        register,
+        logout,
+        setToken,
+        enterCompanyView,
+        exitCompanyView,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )

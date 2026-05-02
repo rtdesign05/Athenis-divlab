@@ -50,10 +50,11 @@ export function usePdf() {
   }
 
   // ── HR ────────────────────────────────────────────────────────────────────────
-  const downloadBulletinPaie = async (payslip: Payslip) => {
+  const downloadBulletinPaie = async (payslip: Payslip, companyName?: string) => {
     const { BulletinPaiePdf } = await import('@/features/hr/pdf/BulletinPaiePdf')
     const name = `${payslip.employee.lastName}_${payslip.employee.firstName}`
-    await generate(React.createElement(BulletinPaiePdf, { payslip }) as PdfElement, `BulletinPaie_${slug(name)}_${payslip.month}.pdf`)
+    const props = companyName ? { payslip, companyName } : { payslip }
+    await generate(React.createElement(BulletinPaiePdf, props) as PdfElement, `BulletinPaie_${slug(name)}_${payslip.month}.pdf`)
   }
 
   // ── Accounting ────────────────────────────────────────────────────────────────

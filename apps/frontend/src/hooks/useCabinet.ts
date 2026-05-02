@@ -21,8 +21,8 @@ export function useCabinetPortfolio() {
     queryFn:  cabinetApi.portfolio,
     select:   (data) => ({
       companies: data,
-      totalRevenu: data.reduce((s, c) => s + toSafeAmount(c.kpis.paidAmount), 0),
-      totalPending: data.reduce((s, c) => s + toSafeAmount(c.kpis.pendingAmount), 0),
+      totalFacture:  data.reduce((s, c) => s + toSafeAmount(c.kpis.totalFacture), 0),
+      totalDepenses: data.reduce((s, c) => s + toSafeAmount(c.kpis.totalDepenses), 0),
     }),
   })
 }

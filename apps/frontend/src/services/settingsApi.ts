@@ -41,8 +41,9 @@ export interface CompanySettings {
   modules:          string[]
   locale:           string
   timezone:         string
-  accountingZone:   string
-  accountingPlan:   string
+  accountingZone:      string
+  accountingPlan:      string
+  accountNumberLength: number
 }
 
 export interface SettingsUser {

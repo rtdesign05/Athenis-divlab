@@ -1,9 +1,12 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { CompteCombobox, useAllComptes, normalizeCompteCode } from '@/components/accounting/CompteCombobox'
 import { useCurrency } from '@/hooks/useCurrency'
 import { formatDate } from '@/shared/utils/date'
 import { accountingApi } from '@/services/accountingApi'
 import { useInvalidateAccounting } from '@/hooks/useFiscalYear'
 import { useAuth } from '@/features/auth/useAuth'
+import { useGestion } from '@/contexts/GestionContext'
 import {
   useTresorerie,
   type Transaction,
@@ -14,84 +17,7 @@ import {
   type PieceType,
 } from '@/contexts/TresorerieContext'
 
-// ── Plan comptable OHADA (contreparties fréquentes) ───────────────────────────
-
-const COMPTES_OHADA = [
-  // Classe 1
-  { code: '101000', label: 'Capital social' },
-  { code: '161000', label: 'Emprunts auprès des établissements de crédit' },
-  { code: '162000', label: 'Dettes de location-financement' },
-  // Classe 4 — Tiers
-  { code: '401000', label: 'Fournisseurs' },
-  { code: '401100', label: 'Fournisseurs — achats de marchandises' },
-  { code: '401200', label: 'Fournisseurs — charges et services' },
-  { code: '404000', label: 'Fournisseurs d\'immobilisations' },
-  { code: '408000', label: 'Fournisseurs — factures non parvenues' },
-  { code: '411000', label: 'Clients' },
-  { code: '411100', label: 'Clients — ventes ordinaires' },
-  { code: '411200', label: 'Clients — prestations de services' },
-  { code: '419000', label: 'Avances et acomptes reçus sur commandes' },
-  { code: '421000', label: 'Personnel — rémunérations dues' },
-  { code: '422000', label: 'Personnel — avances et acomptes' },
-  { code: '431000', label: 'Organismes sociaux (CNPS)' },
-  { code: '441000', label: 'État — impôts et taxes à payer' },
-  { code: '441100', label: 'TVA collectée' },
-  { code: '441200', label: 'TVA sur importations' },
-  { code: '444000', label: 'État — IS à payer' },
-  { code: '445100', label: 'TVA déductible sur achats' },
-  { code: '447000', label: 'Patente et autres impôts locaux' },
-  { code: '451000', label: 'Groupe — opérations intra-groupe' },
-  { code: '467000', label: 'Créditeurs divers' },
-  { code: '471000', label: 'Comptes d\'attente — débiteurs' },
-  { code: '472000', label: 'Comptes d\'attente — créditeurs' },
-  // Classe 5 — Trésorerie
-  { code: '517100', label: 'Disponibilités MTN Mobile Money' },
-  { code: '517200', label: 'Disponibilités Orange Money' },
-  { code: '521100', label: 'Banque BICEC — Compte courant' },
-  { code: '521200', label: 'Banque UBA — Compte épargne' },
-  { code: '521300', label: 'Ecobank — Compte devises (EUR)' },
-  { code: '571000', label: 'Caisse principale (siège)' },
-  { code: '571100', label: 'Petite caisse (siège)' },
-  // Classe 6 — Charges
-  { code: '601000', label: 'Achats de marchandises' },
-  { code: '602000', label: 'Achats de matières premières' },
-  { code: '604000', label: 'Achats de fournitures consommables' },
-  { code: '605100', label: 'Eau, énergie, télécommunications' },
-  { code: '612000', label: 'Locations et charges locatives' },
-  { code: '613000', label: 'Contrats de crédit-bail' },
-  { code: '614000', label: 'Charges d\'entretien et réparations' },
-  { code: '615000', label: 'Primes d\'assurances' },
-  { code: '621000', label: 'Personnel intérimaire et honoraires' },
-  { code: '623000', label: 'Publicité, publications, relations publiques' },
-  { code: '624000', label: 'Transports de biens et transports collectifs' },
-  { code: '625000', label: 'Déplacements, missions et réceptions' },
-  { code: '626000', label: 'Frais postaux et de télécommunications' },
-  { code: '627000', label: 'Services bancaires et charges assimilées' },
-  { code: '628000', label: 'Divers services extérieurs' },
-  { code: '631000', label: 'Impôts, taxes et droits assimilés (directs)' },
-  { code: '632000', label: 'Droits d\'enregistrement et de timbre' },
-  { code: '641000', label: 'Salaires et appointements' },
-  { code: '642000', label: 'Cotisations sociales employeur (CNPS)' },
-  { code: '643000', label: 'Primes et gratifications' },
-  { code: '661000', label: 'Charges d\'intérêts — emprunts' },
-  { code: '671000', label: 'Pertes sur créances irrécouvrables' },
-  { code: '673000', label: 'Charges nettes sur cessions d\'immobilisations' },
-  { code: '681000', label: 'Dotations aux amortissements' },
-  // Classe 7 — Produits
-  { code: '701000', label: 'Ventes de marchandises' },
-  { code: '702000', label: 'Ventes de produits finis' },
-  { code: '706000', label: 'Prestations de services' },
-  { code: '707000', label: 'Rabais, remises, ristournes accordés (−)' },
-  { code: '711000', label: 'Variations de stocks' },
-  { code: '721000', label: 'Production immobilisée' },
-  { code: '731000', label: 'Subventions d\'exploitation reçues' },
-  { code: '761000', label: 'Revenus des participations' },
-  { code: '762000', label: 'Revenus des placements' },
-  { code: '771000', label: 'Intérêts et produits assimilés' },
-  { code: '773000', label: 'Subventions d\'équipement accordées' },
-  { code: '791000', label: 'Reprises sur amortissements' },
-]
-
+// (Plans statiques supprimés — CompteCombobox charge le plan via API)
 
 // ── Métadonnées visuelles par source ──────────────────────────────────────────
 
@@ -216,192 +142,358 @@ interface TraitementValidateProps {
   onValidate:   (txId: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]) => void
 }
 
+type AccountOption = { code: string; label: string }
+
 function TraitementValidate({ tx, fiscalYearId, onValidate }: TraitementValidateProps) {
   const { fmt }              = useCurrency()
   const invalidateAccounting = useInvalidateAccounting()
+  const { addFournisseur, addClient } = useGestion()
+  const qc = useQueryClient()
 
-  const [accountQuery,    setAccountQuery]    = useState('')
-  const [selectedAccount, setSelectedAccount] = useState<typeof COMPTES_OHADA[0] | null>(null)
-  const [libelle,         setLibelle]         = useState(tx.libelle)
-  const [showDropdown,    setShowDropdown]    = useState(false)
-  const [newPieces,       setNewPieces]       = useState<PieceJustificative[]>([])
-  const [saving,          setSaving]          = useState(false)
-  const [error,           setError]           = useState<string | null>(null)
+  const isEncaissement = tx.montant > 0
+  const amount         = Math.abs(tx.montant)
 
-  const dropdownRef  = useRef<HTMLDivElement>(null)
+  // ── Lignes confirmées ─────────────────────────────────────────────────────
+  type CLine = { id: string; account: AccountOption; montant: number }
+
+  const [lines,     setLines]     = useState<CLine[]>([])
+  const [libelle,   setLibelle]   = useState(tx.libelle)
+  const [newPieces, setNewPieces] = useState<PieceJustificative[]>([])
+  const [saving,    setSaving]    = useState(false)
+  const [error,     setError]     = useState<string | null>(null)
+
+  // ── Formulaire de saisie en cours ─────────────────────────────────────────
+  const [curAccount,  setCurAccount]  = useState<AccountOption | null>(null)
+  const [curQuery,    setCurQuery]    = useState('')
+  const [curMontant,  setCurMontant]  = useState(amount)
+  const [formError,   setFormError]   = useState('')
+
+  // ── Création de compte inline ─────────────────────────────────────────────
+  const { comptes } = useAllComptes()
+  const [showCreate,       setShowCreate]       = useState(false)
+  const [createLabel,      setCreateLabel]      = useState('')
+  const [createLabelError, setCreateLabelError] = useState(false)
+
+  // Code normalisé à afficher / utiliser pour la création
+  const normalizedCurQuery = normalizeCompteCode(curQuery.trim())
+  const exactMatch   = comptes.some(c => c.code === normalizedCurQuery)
+  const canCreateCpt = curQuery.trim().length >= 2 && !curAccount && !exactMatch && !showCreate
+
+  function typeFromCode(code: string) {
+    if (/^41/.test(code)) return 'ACTIF' as const
+    if (/^4/.test(code))  return 'PASSIF' as const
+    if (/^7/.test(code))  return 'PRODUIT' as const
+    if (/^[123]/.test(code)) return 'ACTIF' as const
+    return 'CHARGE' as const
+  }
+
+  const createCompteMutation = useMutation({
+    mutationFn: () => accountingApi.addCompte({
+      numero:   normalizedCurQuery,     // ← code normalisé (9 chiffres si numérique)
+      intitule: createLabel.trim(),
+      classe:   parseInt(normalizedCurQuery[0] ?? '4') || 4,
+      type:     typeFromCode(normalizedCurQuery),
+      isSystem: false,
+    }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['comptes'] })
+      const account: AccountOption = { code: data.numero, label: data.intitule }
+      // Enregistrement automatique tiers
+      if (/^40/.test(data.numero))
+        addFournisseur({ nom: data.intitule, categorie: 'Autre', email: '', telephone: '', adresse: '', agence: 'Siège', notes: '', compte: data.numero })
+      if (/^41/.test(data.numero))
+        addClient({ nom: data.intitule, type: 'entreprise', email: '', telephone: '', adresse: '', agence: 'Siège', notes: '', compte: data.numero })
+      setCurAccount(account)
+      setCurQuery(data.numero)
+      setShowCreate(false)
+      setCreateLabel('')
+      setCreateLabelError(false)
+      setFormError('')
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setFormError(msg ?? 'Erreur lors de la création du compte.')
+    },
+  })
+
+  function handleCreateCompte() {
+    if (!createLabel.trim()) { setCreateLabelError(true); return }
+    setCreateLabelError(false)
+    createCompteMutation.mutate()
+  }
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Fermer le dropdown au clic extérieur
-  useEffect(() => {
-    function h(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setShowDropdown(false)
+  const totalLines = lines.reduce((s, l) => s + l.montant, 0)
+  const remaining  = parseFloat((amount - totalLines).toFixed(2))
+  const isBalanced = Math.abs(remaining) < 0.01
+
+  // ── Supprimer une ligne confirmée → recalcule le solde ────────────────────
+  function removeLine(id: string) {
+    setLines(prev => {
+      const next         = prev.filter(l => l.id !== id)
+      const newTotal     = next.reduce((s, l) => s + l.montant, 0)
+      const newRemaining = parseFloat((amount - newTotal).toFixed(2))
+      setCurMontant(Math.max(0, newRemaining))
+      return next
+    })
+  }
+
+  // ── Confirmer la ligne en cours ───────────────────────────────────────────
+  function handleAddLine() {
+    if (!curAccount)             { setFormError('Sélectionnez un compte.');                             return }
+    if (curMontant <= 0)         { setFormError('Le montant doit être supérieur à 0.');                  return }
+    if (curMontant > remaining + 0.01) {
+      setFormError(`Le montant dépasse le solde restant (${fmt(remaining)}).`); return
     }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
-
-  const filteredAccounts = useMemo(() => {
-    const q = accountQuery.trim().toLowerCase()
-    if (!q) return COMPTES_OHADA.filter(c => ['4', '6', '7'].includes(c.code.charAt(0))).slice(0, 12)
-    return COMPTES_OHADA.filter(c =>
-      c.code.startsWith(q) || c.label.toLowerCase().includes(q)
-    ).slice(0, 15)
-  }, [accountQuery])
-
-  function handleSelectAccount(account: typeof COMPTES_OHADA[0]) {
-    setSelectedAccount(account)
-    setAccountQuery(`${account.code} — ${account.label}`)
-    setShowDropdown(false)
+    setFormError('')
+    setLines(prev => [...prev, { id: `l${Date.now()}`, account: curAccount, montant: curMontant }])
+    const afterAdd = parseFloat((remaining - curMontant).toFixed(2))
+    setCurAccount(null)
+    setCurQuery('')
+    setCurMontant(Math.max(0, afterAdd))
+    setShowCreate(false)
+    setCreateLabel('')
   }
 
   function handleFileAdd(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
-    const added: PieceJustificative[] = files.map(f => ({
-      id:      `pj-new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      nom:     f.name,
-      type:    'autre' as PieceType,
-      addedAt: new Date().toISOString(),
+    const added: PieceJustificative[] = Array.from(e.target.files ?? []).map(f => ({
+      id: `pj-new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, nom: f.name, type: 'autre' as PieceType, addedAt: new Date().toISOString(),
     }))
     setNewPieces(prev => [...prev, ...added])
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   async function handleValidate() {
-    if (!selectedAccount) { setError('Veuillez sélectionner un compte de contrepartie.'); return }
-    setSaving(true)
-    setError(null)
-
+    if (lines.length === 0) { setError('Saisissez au moins une contrepartie.'); return }
+    if (!isBalanced) { setError(`Solde restant : ${fmt(remaining)}. Ajoutez une ligne pour équilibrer.`); return }
+    setSaving(true); setError(null)
     try {
       if (fiscalYearId) {
-        const isEncaissement = tx.montant > 0
-        const amount = Math.abs(tx.montant)
-        await accountingApi.createJournalEntryBatch({
-          fiscalYearId,
-          date:      tx.date,
-          journal:   tx.journalCode,
-          reference: tx.ref,
-          lines: isEncaissement ? [
-            { compte: tx.accountTresorerie,   libelle, debit: amount, credit: 0      },
-            { compte: selectedAccount.code,   libelle, debit: 0,      credit: amount },
-          ] : [
-            { compte: selectedAccount.code,   libelle, debit: amount, credit: 0      },
-            { compte: tx.accountTresorerie,   libelle, debit: 0,      credit: amount },
-          ],
-        })
+        const journalLines = isEncaissement
+          ? [
+              { compte: tx.accountTresorerie, libelle, intituleCompte: tx.accountTresorerieLabel, debit: amount, credit: 0 },
+              ...lines.map(l => ({ compte: l.account.code, libelle, intituleCompte: l.account.label, debit: 0, credit: l.montant })),
+            ]
+          : [
+              ...lines.map(l => ({ compte: l.account.code, libelle, intituleCompte: l.account.label, debit: l.montant, credit: 0 })),
+              { compte: tx.accountTresorerie, libelle, intituleCompte: tx.accountTresorerieLabel, debit: 0, credit: amount },
+            ]
+        await accountingApi.createJournalEntryBatch({ fiscalYearId, date: tx.date, journal: tx.journalCode, reference: tx.ref, lines: journalLines })
         invalidateAccounting()
       }
-
-      const contrepartie: Contrepartie = {
-        accountCode:  selectedAccount.code,
-        accountLabel: selectedAccount.label,
-        libelle,
-        addedAt: new Date().toISOString(),
-      }
-      onValidate(tx.id, contrepartie, newPieces)
+      const first = lines[0]
+      onValidate(tx.id, { accountCode: first?.account.code ?? '', accountLabel: first?.account.label ?? '', libelle, addedAt: new Date().toISOString() }, newPieces)
     } catch {
-      setError('Erreur lors de la création de l\'écriture comptable. Vérifiez l\'exercice fiscal ouvert.')
-    } finally {
-      setSaving(false)
-    }
+      setError("Erreur lors de la création de l'écriture comptable. Vérifiez l'exercice fiscal ouvert.")
+    } finally { setSaving(false) }
   }
 
-  const isEncaissement = tx.montant > 0
-  const amount = Math.abs(tx.montant)
-
+  // ── Rendu ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
 
-      {/* Zone défilante */}
       <div className="flex-1 min-h-0 overflow-y-auto">
 
-        {/* Prévisualisation de l'écriture */}
-        <div className="px-4 py-3 border-b border-gray-100">
-          <p className="text-xs font-semibold text-gray-700 mb-2">Écriture à générer</p>
-          <div className="rounded-lg border border-gray-200 overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-2 py-1.5 text-left font-medium text-gray-500">Compte</th>
-                  <th className="px-2 py-1.5 text-left font-medium text-gray-500">Libellé</th>
-                  <th className="px-2 py-1.5 text-right font-medium text-gray-500">Débit</th>
-                  <th className="px-2 py-1.5 text-right font-medium text-gray-500">Crédit</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {isEncaissement ? (
-                  <>
-                    <tr>
-                      <td className="px-2 py-1.5 font-mono text-gray-700">{tx.accountTresorerie}</td>
-                      <td className="px-2 py-1.5 text-gray-600 truncate max-w-[100px]">{tx.accountTresorerieLabel}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold text-green-700">{fmt(amount)}</td>
-                      <td className="px-2 py-1.5 text-right text-gray-400">—</td>
-                    </tr>
-                    <tr className={selectedAccount ? '' : 'opacity-40'}>
-                      <td className="px-2 py-1.5 font-mono text-gray-700">{selectedAccount?.code ?? '??????'}</td>
-                      <td className="px-2 py-1.5 text-gray-600 truncate max-w-[100px]">{selectedAccount?.label ?? 'Compte à sélectionner'}</td>
-                      <td className="px-2 py-1.5 text-right text-gray-400">—</td>
-                      <td className="px-2 py-1.5 text-right font-semibold text-red-600">{fmt(amount)}</td>
-                    </tr>
-                  </>
-                ) : (
-                  <>
-                    <tr className={selectedAccount ? '' : 'opacity-40'}>
-                      <td className="px-2 py-1.5 font-mono text-gray-700">{selectedAccount?.code ?? '??????'}</td>
-                      <td className="px-2 py-1.5 text-gray-600 truncate max-w-[100px]">{selectedAccount?.label ?? 'Compte à sélectionner'}</td>
-                      <td className="px-2 py-1.5 text-right font-semibold text-green-700">{fmt(amount)}</td>
-                      <td className="px-2 py-1.5 text-right text-gray-400">—</td>
-                    </tr>
-                    <tr>
-                      <td className="px-2 py-1.5 font-mono text-gray-700">{tx.accountTresorerie}</td>
-                      <td className="px-2 py-1.5 text-gray-600 truncate max-w-[100px]">{tx.accountTresorerieLabel}</td>
-                      <td className="px-2 py-1.5 text-right text-gray-400">—</td>
-                      <td className="px-2 py-1.5 text-right font-semibold text-red-600">{fmt(amount)}</td>
-                    </tr>
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Sélecteur de compte + libellé */}
-        <div className="px-4 py-3 border-b border-gray-100 space-y-2.5">
-          <div ref={dropdownRef} className="relative">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Compte de contrepartie *</label>
-            <input
-              value={accountQuery}
-              onChange={e => { setAccountQuery(e.target.value); setSelectedAccount(null); setShowDropdown(true) }}
-              onFocus={() => setShowDropdown(true)}
-              placeholder="Code ou intitulé (ex : 411, clients…)"
-              className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-forest-500/30"
-            />
-            {showDropdown && filteredAccounts.length > 0 && (
-              <div className="absolute top-full left-0 right-0 z-50 mt-1 rounded-lg border border-gray-200 bg-white shadow-lg max-h-40 overflow-y-auto">
-                {filteredAccounts.map(account => (
-                  <button
-                    key={account.code}
-                    onMouseDown={() => handleSelectAccount(account)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0"
-                  >
-                    <span className="font-mono text-gray-500 shrink-0">{account.code}</span>
-                    <span className="text-gray-700 truncate">{account.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
+        {/* ── En-tête : montant + solde restant ── */}
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Libellé de l'écriture</label>
-            <input
-              value={libelle}
-              onChange={e => setLibelle(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-forest-500/30"
-            />
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Transaction</p>
+            <p className={`text-sm font-bold tabular-nums ${tx.montant >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+              {tx.montant >= 0 ? '+' : '−'}{fmt(amount)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide">Reste à ventiler</p>
+            <p className={`text-sm font-bold tabular-nums ${isBalanced ? 'text-green-600' : 'text-amber-600'}`}>
+              {isBalanced ? '✓ Équilibré' : fmt(remaining)}
+            </p>
           </div>
         </div>
 
-        {/* Pièces justificatives (ajout) */}
+        {/* Libellé global */}
+        <div className="px-4 pt-3 pb-2">
+          <label className="block text-xs font-medium text-gray-600 mb-1">Libellé de l'écriture</label>
+          <input value={libelle} onChange={e => setLibelle(e.target.value)}
+            className="w-full rounded-lg border border-gray-200 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-forest-500/30" />
+        </div>
+
+        {/* ── Lignes confirmées ── */}
+        <div className="px-4 pb-2">
+          {lines.length > 0 && (
+            <div className="rounded-xl border border-gray-200 overflow-hidden mb-3">
+              {lines.map((l, idx) => (
+                <div key={l.id} className="flex items-center gap-3 px-3 py-2 border-b border-gray-100 last:border-0 bg-white hover:bg-gray-50/50">
+                  <span className="text-[10px] text-gray-400 w-4 shrink-0">{idx + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono text-xs font-semibold text-gray-800">{l.account.code}</p>
+                    <p className="text-[10px] text-gray-500 truncate">{l.account.label}</p>
+                  </div>
+                  <span className="font-mono text-xs font-semibold text-gray-700 tabular-nums shrink-0">{fmt(l.montant)}</span>
+                  <button
+                    onClick={() => removeLine(l.id)}
+                    className="shrink-0 text-gray-300 hover:text-red-400 text-xs leading-none ml-1"
+                    title="Supprimer cette ligne"
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Formulaire saisie ligne suivante ── */}
+          {!isBalanced && (
+            <div className="rounded-xl border-2 border-dashed border-gray-200 p-3 space-y-2 bg-gray-50/40">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                {lines.length === 0 ? 'Contrepartie' : `Ligne ${lines.length + 1}`}
+                {lines.length > 0 && (
+                  <span className="ml-2 normal-case font-normal text-amber-600">— Reste {fmt(remaining)}</span>
+                )}
+              </p>
+
+              {/* Compte */}
+              <CompteCombobox
+                value={curQuery}
+                disableCreate
+                onChange={v => {
+                  setCurQuery(v)
+                  setCurAccount(prev => (prev?.code === v ? prev : null))
+                  setShowCreate(false)
+                  setCreateLabel('')
+                  setFormError('')
+                }}
+                onSelect={c => {
+                  const account: AccountOption = { code: c.code, label: c.label }
+                  if (/^40/.test(c.code) && c.isCustom)
+                    addFournisseur({ nom: c.label, categorie: 'Autre', email: '', telephone: '', adresse: '', agence: 'Siège', notes: '', compte: c.code })
+                  if (/^41/.test(c.code) && c.isCustom)
+                    addClient({ nom: c.label, type: 'entreprise', email: '', telephone: '', adresse: '', agence: 'Siège', notes: '', compte: c.code })
+                  setCurAccount(account)
+                  setCurQuery(c.code)
+                  setShowCreate(false)
+                  setFormError('')
+                }}
+                placeholder="Code ou intitulé du compte…"
+                className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+              />
+
+              {/* Bouton "Créer ce compte" — visible quand aucune correspondance */}
+              {canCreateCpt && (
+                <button
+                  type="button"
+                  onClick={() => { setShowCreate(true); setCreateLabel('') }}
+                  className="w-full text-left px-3 py-2 rounded-lg border border-dashed border-[#1b4332]/40 bg-green-50/30 text-xs text-[#1b4332] hover:bg-green-50 transition-colors flex items-center gap-2"
+                >
+                  <span className="flex h-4 w-4 items-center justify-center rounded border border-[#1b4332]/40 text-sm leading-none shrink-0">+</span>
+                  Créer le compte <span className="font-mono font-semibold">{normalizedCurQuery}</span>
+                </button>
+              )}
+
+              {/* Formulaire de création de compte inline */}
+              {showCreate && (
+                <div className="rounded-lg border border-[#1b4332]/25 bg-green-50/40 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-[#1b4332]">
+                      Nouveau compte · <span className="font-mono">{normalizedCurQuery}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setShowCreate(false); setCreateLabel('') }}
+                      className="text-gray-400 hover:text-gray-600 text-xs"
+                    >✕</button>
+                  </div>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={createLabel}
+                    onChange={e => { setCreateLabel(e.target.value); setCreateLabelError(false) }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter')  { e.preventDefault(); handleCreateCompte() }
+                      if (e.key === 'Escape') { setShowCreate(false); setCreateLabel('') }
+                    }}
+                    placeholder="Intitulé du compte (ex : Achats de marchandises)"
+                    className={`w-full rounded-lg border px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30 ${
+                      createLabelError ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-white'
+                    }`}
+                  />
+                  {createLabelError && (
+                    <p className="text-[10px] text-red-500">L'intitulé est obligatoire.</p>
+                  )}
+                  {createCompteMutation.isError && (
+                    <p className="text-[10px] text-red-500">{formError || 'Erreur lors de la création.'}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setShowCreate(false); setCreateLabel('') }}
+                      className="flex-1 rounded-lg border border-gray-200 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateCompte}
+                      disabled={createCompteMutation.isPending}
+                      className="flex-1 rounded-lg bg-[#1b4332] py-1.5 text-xs font-semibold text-white hover:bg-[#2d6a4f] disabled:opacity-50 transition-colors"
+                    >
+                      {createCompteMutation.isPending ? 'Création…' : 'Créer'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Compte sélectionné / créé */}
+              {curAccount && (
+                <div className="flex items-center gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-1.5">
+                  <span className="font-mono text-xs font-semibold text-blue-800">{curAccount.code}</span>
+                  <span className="text-xs text-blue-600 truncate flex-1">{curAccount.label}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setCurAccount(null); setCurQuery('') }}
+                    className="text-blue-300 hover:text-blue-500 text-xs shrink-0"
+                  >✕</button>
+                </div>
+              )}
+
+              {/* Montant + bouton Ajouter */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={curMontant}
+                  onChange={e => { setCurMontant(parseFloat(e.target.value) || 0); setFormError('') }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddLine() } }}
+                  className="flex-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddLine}
+                  disabled={!curAccount || curMontant <= 0}
+                  className="shrink-0 rounded-lg bg-[#1b4332] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2d6a4f] disabled:opacity-40 transition-colors"
+                >
+                  + Ajouter
+                </button>
+              </div>
+
+              {formError && !createCompteMutation.isError && (
+                <p className="text-[10px] text-red-500">{formError}</p>
+              )}
+            </div>
+          )}
+
+          {/* Bandeau équilibré */}
+          {isBalanced && lines.length > 0 && (
+            <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-2">
+              <span className="text-green-600 text-sm">✓</span>
+              <div>
+                <p className="text-xs font-semibold text-green-700">Contrepartie équilibrée</p>
+                <p className="text-[10px] text-green-600">{lines.length} ligne{lines.length > 1 ? 's' : ''} · {fmt(amount)}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Pièces justificatives */}
         <div className="px-4 py-3">
           <p className="text-xs font-semibold text-gray-700 mb-2">Joindre des pièces</p>
           {newPieces.length > 0 && (
@@ -416,10 +508,8 @@ function TraitementValidate({ tx, fiscalYearId, onValidate }: TraitementValidate
             </div>
           )}
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileAdd} accept=".pdf,.jpg,.jpeg,.png,.xlsx,.docx" />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full rounded-lg border-2 border-dashed border-gray-200 px-3 py-2 text-xs text-gray-400 hover:border-gray-300 hover:text-gray-500 hover:bg-gray-50 transition-colors text-center"
-          >
+          <button onClick={() => fileInputRef.current?.click()}
+            className="w-full rounded-lg border-2 border-dashed border-gray-200 px-3 py-2 text-xs text-gray-400 hover:border-gray-300 hover:text-gray-500 hover:bg-gray-50 transition-colors text-center">
             📎 Glisser-déposer ou cliquer (PDF, image, Excel…)
           </button>
         </div>
@@ -433,17 +523,12 @@ function TraitementValidate({ tx, fiscalYearId, onValidate }: TraitementValidate
           </div>
         )}
         {error && <div className="mb-2 text-xs text-red-600">{error}</div>}
-        <button
-          onClick={handleValidate}
-          disabled={saving || !selectedAccount}
-          className="w-full rounded-lg bg-forest-900 px-4 py-2 text-xs font-semibold text-white hover:bg-forest-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-        >
-          {saving
-            ? <><span className="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent" /> Enregistrement…</>
-            : '✓ Valider et reverser au journal'
-          }
+        <button onClick={handleValidate} disabled={saving || !isBalanced || lines.length === 0}
+          className="w-full rounded-lg bg-forest-900 px-4 py-2 text-xs font-semibold text-white hover:bg-forest-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+          {saving ? <><span className="h-3 w-3 animate-spin rounded-full border border-white border-t-transparent" /> Enregistrement…</> : '✓ Valider et reverser au journal'}
         </button>
       </div>
+
     </div>
   )
 }

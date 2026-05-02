@@ -74,14 +74,14 @@ export function checkModule(module: Module, action: Action = 'read') {
       const mandat = await prisma.mandat
         .findUnique({
           where: { cabinetId_companyId: { cabinetId: user.cabinetId!, companyId } },
-          select: { isActive: true, modules: true },
+          select: { actif: true, modules: true },
         })
         .catch((e: unknown) => {
           logger.error('Mandat lookup failed', { e })
           return null
         })
 
-      if (!mandat?.isActive) {
+      if (!mandat?.actif) {
         res.status(403).json({
           success: false,
           error: 'No active mandate for this company',

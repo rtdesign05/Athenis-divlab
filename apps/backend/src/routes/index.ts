@@ -19,6 +19,9 @@ import { settingsRouter } from '../modules/settings/settings.routes.js'
 import { fiscalRouter } from '../modules/fiscal/fiscal.routes.js'
 import { stocksRouter } from '../modules/stocks/stocks.routes.js'
 import { adminRouter } from '../modules/admin/admin.routes.js'
+import { personalRouter } from '../modules/personal/personal.routes.js'
+import { invitationRouter } from '../modules/invitation/invitation.routes.js'
+import { mailRouter } from '../modules/mail/mail.routes.js'
 
 const router = Router()
 
@@ -46,5 +49,8 @@ router.use('/settings', settingsRouter)
 router.use('/fiscal', fiscalRouter)
 router.use('/stocks', stocksRouter)
 router.use('/admin', adminRouter)
+router.use('/personal', personalRouter)
+router.use('/invitations', invitationRouter)
+router.use('/mail', mailRouter)
 
 export { router }

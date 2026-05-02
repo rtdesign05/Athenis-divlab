@@ -20,6 +20,8 @@ router.post('/register', authLimiter, validateRequest({ body: RegisterDto }), ct
 router.post('/login', authLimiter, validateRequest({ body: LoginDto }), ctrl.login)
 router.post('/login/2fa', authLimiter, validateRequest({ body: TotpVerifyDto }), ctrl.loginVerifyTotp)
 router.post('/refresh', ctrl.refresh)
+router.get('/verify-email', authLimiter, ctrl.verifyEmail)
+router.post('/resend-verification', authLimiter, ctrl.resendVerification)
 
 // Protected routes
 router.post('/logout', authenticate, ctrl.logout)

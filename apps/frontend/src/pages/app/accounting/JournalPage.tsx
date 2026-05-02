@@ -1,11 +1,11 @@
-import { useState, Fragment, useRef, useEffect, useMemo } from 'react'
-import { createPortal } from 'react-dom'
+import { useState, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
 import { useFiscalYearGuard } from '@/hooks/useFiscalYear'
 import { accountingApi } from '@/services/accountingApi'
-import type { CompteItem, ChartAccountType, AccountingZone } from '@/services/accountingApi'
 import { useCurrency } from '@/hooks/useCurrency'
+import { CompteCombobox, normalizeCompteCode } from '@/components/accounting/CompteCombobox'
+import type { CompteOption } from '@/components/accounting/CompteCombobox'
 
 type JournalFilter = 'ALL' | 'VTE' | 'ACH' | 'BQ' | 'CAI' | 'OD'
 
@@ -59,6 +59,7 @@ interface EntryLine {
   libelle: string
   debit: string
   credit: string
+  intituleCompte?: string
 }
 
 interface EntryForm {
@@ -85,240 +86,6 @@ function makeEmptyForm(initialJournal?: string): EntryForm {
   }
 }
 
-// ── Helpers for compte creation ───────────────────────────────────────────────
-
-function guessTypeFromNumero(numero: string): ChartAccountType {
-  const c = parseInt(numero[0] ?? '0', 10)
-  if (c === 6) return 'CHARGE'
-  if (c === 7) return 'PRODUIT'
-  if (c === 1) return 'PASSIF'
-  return 'ACTIF'
-}
-
-// ── Create compte mini-modal ──────────────────────────────────────────────────
-
-function CreateCompteModal({ numero, onCreated, onClose }: {
-  numero: string
-  onCreated: (c: CompteItem) => void
-  onClose: () => void
-}) {
-  const queryClient = useQueryClient()
-  const classeGuess = parseInt(numero[0] ?? '1', 10) || 1
-  const [form, setForm] = useState({
-    intitule: '',
-    classe: String(classeGuess),
-    type: guessTypeFromNumero(numero) as ChartAccountType,
-  })
-  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm(f => ({ ...f, [k]: e.target.value }))
-
-  const mutation = useMutation({
-    mutationFn: () => accountingApi.addCompte({
-      numero:    numero.trim(),
-      intitule:  form.intitule.trim(),
-      classe:    parseInt(form.classe, 10),
-      type:      form.type,
-    }),
-    onSuccess: (created) => {
-      queryClient.invalidateQueries({ queryKey: ['comptes'] })
-      onCreated(created)
-    },
-  })
-
-  function submit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.intitule.trim()) return
-    mutation.mutate()
-  }
-
-  const INPUT = 'w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-900/30'
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Créer un nouveau compte</h3>
-            <p className="text-xs text-gray-400 mt-0.5">N° <span className="font-mono font-semibold text-gray-700">{numero}</span></p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
-        </div>
-        <form onSubmit={submit} className="p-5 space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Intitulé *</label>
-            <input value={form.intitule} onChange={set('intitule')} required autoFocus
-              placeholder="ex. Clients — ventes de marchandises"
-              className={INPUT} />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Classe</label>
-              <input value={form.classe} onChange={set('classe')} type="number" min="1" max="9"
-                className={INPUT} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
-              <select value={form.type} onChange={set('type')} className={INPUT}>
-                <option value="ACTIF">Actif</option>
-                <option value="PASSIF">Passif</option>
-                <option value="CHARGE">Charge</option>
-                <option value="PRODUIT">Produit</option>
-              </select>
-            </div>
-          </div>
-          {mutation.isError && (
-            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
-              {(mutation.error as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Erreur lors de la création.'}
-            </p>
-          )}
-          <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onClose}
-              className="flex-1 rounded-lg border border-gray-200 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
-              Annuler
-            </button>
-            <button type="submit" disabled={mutation.isPending}
-              className="flex-1 rounded-lg bg-forest-900 py-2 text-sm font-medium text-white hover:bg-forest-700 disabled:opacity-50">
-              {mutation.isPending ? 'Création…' : 'Créer le compte'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-// ── Compte autocomplete input (portal-based to escape overflow clipping) ──────
-
-function CompteAutocomplete({ value, onChange, onSelectCompte, comptes, inputClassName }: {
-  value: string
-  onChange: (v: string) => void
-  onSelectCompte: (c: CompteItem) => void
-  comptes: CompteItem[]
-  inputClassName: string
-}) {
-  const [open, setOpen]             = useState(false)
-  const [showCreate, setShowCreate] = useState(false)
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const query       = value.trim()
-  const suggestions = query.length > 0
-    ? comptes.filter(c => c.numero.startsWith(query)).slice(0, 12)
-    : []
-  const exactMatch     = comptes.some(c => c.numero === query)
-  const canCreate      = query.length > 0 && !exactMatch
-  const dropdownVisible = open && (suggestions.length > 0 || canCreate)
-
-  function openWith(v: string) {
-    if (inputRef.current) setAnchorRect(inputRef.current.getBoundingClientRect())
-    if (v.trim().length > 0) setOpen(true)
-    else setOpen(false)
-  }
-
-  // Keep rect in sync when the user scrolls inside the modal
-  useEffect(() => {
-    if (!open) return
-    const sync = () => {
-      if (inputRef.current) setAnchorRect(inputRef.current.getBoundingClientRect())
-    }
-    window.addEventListener('scroll', sync, true)
-    window.addEventListener('resize', sync)
-    return () => {
-      window.removeEventListener('scroll', sync, true)
-      window.removeEventListener('resize', sync)
-    }
-  }, [open])
-
-  // Close on outside click (excluding the portal node itself)
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (inputRef.current?.contains(t)) return
-      const portal = document.getElementById('_compte-portal')
-      if (portal?.contains(t)) return
-      setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  const typeColors: Record<string, string> = {
-    ACTIF:   'bg-blue-100 text-blue-700',
-    PASSIF:  'bg-purple-100 text-purple-700',
-    CHARGE:  'bg-red-100 text-red-700',
-    PRODUIT: 'bg-green-100 text-green-700',
-  }
-
-  return (
-    <>
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        placeholder="ex. 411000"
-        className={inputClassName}
-        autoComplete="off"
-        onChange={e => { onChange(e.target.value); openWith(e.target.value) }}
-        onFocus={e  => { openWith(e.target.value) }}
-        onKeyDown={e => { if (e.key === 'Escape') setOpen(false) }}
-      />
-
-      {dropdownVisible && anchorRect && createPortal(
-        <div
-          id="_compte-portal"
-          style={{
-            position: 'fixed',
-            top:      anchorRect.bottom + 4,
-            left:     anchorRect.left,
-            width:    Math.max(anchorRect.width, 340),
-            zIndex:   9999,
-          }}
-          className="rounded-lg border border-gray-200 bg-white shadow-2xl overflow-hidden"
-        >
-          {suggestions.length > 0 && (
-            <div className="max-h-56 overflow-y-auto divide-y divide-gray-50">
-              {suggestions.map(c => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onMouseDown={e => { e.preventDefault(); onSelectCompte(c); setOpen(false) }}
-                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors flex items-center gap-2"
-                >
-                  <span className="font-mono text-xs font-semibold text-gray-900 w-20 shrink-0">{c.numero}</span>
-                  <span className="text-xs text-gray-600 truncate flex-1">{c.intitule}</span>
-                  <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${typeColors[c.type] ?? 'bg-gray-100 text-gray-600'}`}>
-                    {c.type}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          {canCreate && (
-            <button
-              type="button"
-              onMouseDown={e => { e.preventDefault(); setShowCreate(true); setOpen(false) }}
-              className="w-full text-left px-3 py-2.5 text-xs font-medium text-forest-900 hover:bg-green-50 transition-colors flex items-center gap-2 border-t border-gray-100"
-            >
-              <span className="flex h-4 w-4 items-center justify-center rounded border border-forest-900/40 text-sm leading-none shrink-0">+</span>
-              Créer le compte <span className="font-mono font-semibold ml-1">{query}</span>
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
-
-      {showCreate && (
-        <CreateCompteModal
-          numero={query}
-          onCreated={c => { onSelectCompte(c); setShowCreate(false) }}
-          onClose={() => setShowCreate(false)}
-        />
-      )}
-    </>
-  )
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface NewEntryModalProps {
@@ -338,38 +105,6 @@ interface NewEntryModalProps {
 function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, editData }: NewEntryModalProps) {
   const isEditMode = !!editPieceId
   const queryClient = useQueryClient()
-
-  // Load plan comptable for autocomplete — merge static plan (always populated)
-  // with user-created custom comptes (may be empty)
-  const { data: planData } = useQuery({
-    queryKey: ['plan'],
-    queryFn:  accountingApi.plan,
-    staleTime: 10 * 60_000,
-  })
-  const { data: comptesData } = useQuery({
-    queryKey: ['comptes'],
-    queryFn:  accountingApi.comptes,
-    staleTime: 5 * 60_000,
-  })
-  const comptes = useMemo<CompteItem[]>(() => {
-    const zone = (planData?.zone ?? 'FRANCE') as AccountingZone
-    const fromPlan: CompteItem[] = (planData?.entries ?? []).map(e => ({
-      id:             e.numero,
-      numero:         e.numero,
-      intitule:       e.intitule,
-      classe:         e.classe,
-      type:           e.type,
-      zone,
-      isSystem:       true,
-      soldeDebiteur:  0,
-      soldeCrediteur: 0,
-      soldeNet:       0,
-    }))
-    const custom   = comptesData ?? []
-    const customNums = new Set(custom.map(c => c.numero))
-    return [...fromPlan.filter(e => !customNums.has(e.numero)), ...custom]
-      .sort((a, b) => a.numero.localeCompare(b.numero))
-  }, [planData, comptesData])
 
   const [form, setForm] = useState<EntryForm>(() => {
     if (editData) {
@@ -399,7 +134,7 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
   const mutation = useMutation({
     mutationFn: (payload: {
       date: string; journal: string; reference?: string
-      lines: { compte: string; libelle: string; debit: number; credit: number }[]
+      lines: { compte: string; libelle: string; intituleCompte?: string; debit: number; credit: number }[]
     }) => isEditMode && editPieceId
       ? accountingApi.updateJournalPiece(editPieceId, payload)
       : accountingApi.createJournalEntryBatch({ fiscalYearId, ...payload }),
@@ -426,12 +161,12 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
     setError(null)
   }
 
-  function selectCompte(lineId: string, c: CompteItem) {
+  function selectCompte(lineId: string, c: CompteOption) {
     setForm(f => ({
       ...f,
       lines: f.lines.map(l =>
         l.id === lineId
-          ? { ...l, compte: c.numero, libelle: l.libelle.trim() === '' ? c.intitule : l.libelle }
+          ? { ...l, compte: c.code, libelle: l.libelle.trim() === '' ? c.label : l.libelle, intituleCompte: c.label }
           : l
       ),
     }))
@@ -471,10 +206,11 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
       journal: resolvedJournal,
       ...(form.reference.trim() ? { reference: form.reference.trim() } : {}),
       lines: form.lines.map(l => ({
-        compte:  l.compte.trim(),
-        libelle: l.libelle.trim(),
-        debit:   parseFloat(l.debit)  || 0,
-        credit:  parseFloat(l.credit) || 0,
+        compte:         normalizeCompteCode(l.compte.trim()),  // ← normalisation avant envoi
+        libelle:        l.libelle.trim(),
+        ...(l.intituleCompte ? { intituleCompte: l.intituleCompte } : {}),
+        debit:          parseFloat(l.debit)  || 0,
+        credit:         parseFloat(l.credit) || 0,
       })),
     })
   }
@@ -568,12 +304,12 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
                 {form.lines.map((line) => (
                   <tr key={line.id} className="group">
                     <td className="py-1.5 pr-2">
-                      <CompteAutocomplete
+                      <CompteCombobox
                         value={line.compte}
                         onChange={v => setLine(line.id, 'compte', v)}
-                        onSelectCompte={c => selectCompte(line.id, c)}
-                        comptes={comptes}
-                        inputClassName={INPUT_MONO}
+                        onSelect={c => selectCompte(line.id, c)}
+                        className={INPUT_MONO}
+                        placeholder="ex. 411000"
                       />
                     </td>
                     <td className="py-1.5 pr-2">

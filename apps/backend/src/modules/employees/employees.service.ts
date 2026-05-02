@@ -37,11 +37,9 @@ export async function createEmployee(companyId: string, data: CreateEmployeeInpu
     data: {
       companyId,
       nom:          data.firstName,
-      prenom:       data.lastName,
-      email:        data.email,
-      contrat:      'CDI',
-      poste:        'Non défini',
-      salaireNet:   new Prisma.Decimal(data.grossSalary),
+      prenom:       data.lastName ?? '',
+      email:        data.email ?? '',
+      contrat:      'FULL_TIME',
       salaireBrut:  new Prisma.Decimal(data.grossSalary),
       dateEmbauche: data.startDate,
     },
@@ -63,8 +61,7 @@ export async function updateEmployee(companyId: string, id: string, data: Update
       ...(data.lastName    !== undefined ? { prenom:       data.lastName }                                    : {}),
       ...(data.email       !== undefined ? { email:        data.email }                                       : {}),
       ...(data.startDate   !== undefined ? { dateEmbauche: data.startDate }                                   : {}),
-      ...(data.grossSalary != null       ? { salaireNet:   new Prisma.Decimal(data.grossSalary),
-                                             salaireBrut:  new Prisma.Decimal(data.grossSalary) }             : {}),
+      ...(data.grossSalary != null       ? { salaireBrut:  new Prisma.Decimal(data.grossSalary) }             : {}),
     },
   })
 }

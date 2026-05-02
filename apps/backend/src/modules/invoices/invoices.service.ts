@@ -9,7 +9,7 @@ import type {
 
 const CLIENT_SELECT = { id: true, nom: true, email: true }
 
-async function nextInvoiceReference(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
+export async function nextInvoiceReference(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
   const year = new Date().getFullYear()
   const db = tx ?? prisma
   if (tx) {
@@ -53,15 +53,16 @@ export async function getInvoice(companyId: string, id: string) {
   return invoice
 }
 
-export async function createInvoice(companyId: string, data: CreateInvoiceInput, createdBy: string) {
+export async function createInvoice(companyId: string, data: CreateInvoiceInput, _createdBy: string) {
   return prisma.$transaction(async (tx) => {
     const client = await tx.client.findUnique({ where: { id: data.clientId } })
     if (!client || client.companyId !== companyId)
       throw new AppError('Client not found', 404, 'NOT_FOUND')
 
     const amountHT  = new Prisma.Decimal(data.subtotal ?? 0)
-    const vatRate   = new Prisma.Decimal(data.taxRate ?? 0).div(100)
-    const amountTTC = amountHT.mul(vatRate.add(1)).toDecimalPlaces(2)
+    const vatRatePct = new Prisma.Decimal(data.taxRate ?? 20)
+    const taxAmount = amountHT.mul(vatRatePct).div(100).toDecimalPlaces(2)
+    const amountTTC = amountHT.add(taxAmount).toDecimalPlaces(2)
     const reference = await nextInvoiceReference(companyId, tx)
 
     return tx.invoice.create({
@@ -70,13 +71,13 @@ export async function createInvoice(companyId: string, data: CreateInvoiceInput,
         clientId:    data.clientId,
         reference,
         issuedAt:    data.issueDate ?? new Date(),
-        dueAt:       data.dueDate ?? null,
+        dueAt:       data.dueDate ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         amountHT,
-        vatRate:     vatRate,
+        vatRate:     vatRatePct,
+        taxAmount,
         amountTTC,
         description: data.notes ?? null,
         status:      'DRAFT',
-        createdBy,
       },
       include: { client: { select: CLIENT_SELECT } },
     })
@@ -89,9 +90,9 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
     throw new AppError('Cannot edit a paid or cancelled invoice', 409, 'INVOICE_LOCKED')
 
   const amountHT  = data.subtotal != null ? new Prisma.Decimal(data.subtotal) : existing.amountHT
-  const vatRatePct = data.taxRate ?? Number(existing.vatRate) * 100
-  const vatRate   = new Prisma.Decimal(vatRatePct).div(100)
-  const amountTTC = amountHT.mul(vatRate.add(1)).toDecimalPlaces(2)
+  const vatRatePct = new Prisma.Decimal(data.taxRate ?? Number(existing.vatRate))
+  const taxAmount = amountHT.mul(vatRatePct).div(100).toDecimalPlaces(2)
+  const amountTTC = amountHT.add(taxAmount).toDecimalPlaces(2)
 
   return prisma.invoice.update({
     where: { id },
@@ -100,13 +101,13 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
       ...(data.issueDate ? { issuedAt: data.issueDate }            : {}),
       ...(data.dueDate   ? { dueAt: data.dueDate }                 : {}),
       ...(data.notes !== undefined ? { description: data.notes }   : {}),
-      amountHT, vatRate, amountTTC,
+      amountHT, vatRate: vatRatePct, taxAmount, amountTTC,
     },
     include: { client: { select: CLIENT_SELECT } },
   })
 }
 
-const VALID_INVOICE_STATUSES = ['DRAFT', 'PENDING', 'PAID', 'OVERDUE', 'CANCELLED'] as const
+const VALID_INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'] as const
 type InvoiceStatusType = (typeof VALID_INVOICE_STATUSES)[number]
 
 export async function updateInvoiceStatus(companyId: string, id: string, status: string) {
@@ -169,7 +170,7 @@ export async function dashboardStats(companyId: string) {
       select: { issuedAt: true, paidAt: true },
     }),
     prisma.invoice.aggregate({
-      where: { companyId, status: { in: ['PENDING', 'OVERDUE'] } },
+      where: { companyId, status: { in: ['SENT', 'OVERDUE'] } },
       _sum: { amountTTC: true },
       _count: true,
     }),
@@ -214,7 +215,7 @@ export async function getReminders(companyId: string) {
   const invoices = await prisma.invoice.findMany({
     where: {
       companyId,
-      status: { in: ['PENDING', 'OVERDUE'] },
+      status: { in: ['SENT', 'OVERDUE'] },
     },
     include: { client: { select: CLIENT_SELECT } },
     orderBy: { dueAt: 'asc' },
@@ -242,7 +243,7 @@ export async function cashFlowForecast(companyId: string) {
     prisma.invoice.findMany({
       where: {
         companyId,
-        status: { in: ['PENDING', 'OVERDUE'] },
+        status: { in: ['SENT', 'OVERDUE'] },
         dueAt: { lte: end90 },
       },
       select: { dueAt: true, amountTTC: true },

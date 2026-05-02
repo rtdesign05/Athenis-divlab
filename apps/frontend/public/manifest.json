@@ -69,13 +69,13 @@
     },
     {
       "name": "Comptabilité",
-      "url": "/app/accounting/dashboard",
+      "url": "/app/accounting",
       "description": "Module comptabilité",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Stocks",
-      "url": "/app/gestion/stocks",
+      "url": "/app/gestion/ventes/stock",
       "description": "Gestion des stocks",
       "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }

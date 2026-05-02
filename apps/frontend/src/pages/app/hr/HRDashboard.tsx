@@ -1,17 +1,15 @@
-import { useMemo } from 'react'
-import { useEmployees, useLeaveStats, useEmployeeStats } from '@/hooks/useHr'
-import { useCurrency } from '@/hooks/useCurrency'
-import { toSafeAmount } from '@/shared/utils/currency'
-import type { EmploymentType } from '@/services/hrApi'
+import { useHR } from '@/contexts/HRContext'
 
-const TYPE_LABEL: Record<EmploymentType, string> = {
+const fmt = (n: number) => new Intl.NumberFormat('fr-CM').format(n) + ' FCFA'
+
+const TYPE_LABEL: Record<string, string> = {
   FULL_TIME:  'Temps plein',
   PART_TIME:  'Temps partiel',
   CONTRACT:   'Contractuel',
   INTERN:     'Stagiaire',
 }
 
-const TYPE_COLOR: Record<EmploymentType, string> = {
+const TYPE_COLOR: Record<string, string> = {
   FULL_TIME:  'bg-forest-600',
   PART_TIME:  'bg-blue-500',
   CONTRACT:   'bg-purple-500',
@@ -19,32 +17,33 @@ const TYPE_COLOR: Record<EmploymentType, string> = {
 }
 
 export function HRDashboard() {
-  const employeesQ  = useEmployees()
-  const leaveStatsQ = useLeaveStats()
-  const statsQ      = useEmployeeStats()
-  const { fmt }     = useCurrency()
+  const { employees, leaves } = useHR()
 
-  // Priorité aux stats API (active.count) — plus fiable que filtrer !endDate sur la liste
-  const actifs = statsQ.data?.active.count
-    ?? (employeesQ.data?.items ?? []).filter(e => !e.endDate).length
-  const masse  = statsQ.data
-    ? toSafeAmount(statsQ.data.active.totalMonthly)
-    : (employeesQ.data?.masseSalarialeMonth ?? 0)
-  const leaves = leaveStatsQ.data
+  const actifs = employees.filter(e => !e.endDate).length
+  const masseSalariale = employees.reduce((s, e) => s + e.grossSalary, 0)
+  const congesEnAttente = leaves.filter(l => l.status === 'PENDING').length
 
-  // Répartition réelle par type de contrat depuis l'API
-  const contrats = useMemo(() => {
-    const byType = statsQ.data?.byType ?? []
-    if (byType.length === 0) return [] as { label: string; count: number; color: string }[]
-    return byType.map(b => ({
-      label: TYPE_LABEL[b.employmentType] ?? b.employmentType,
-      count: b._count,
-      color: TYPE_COLOR[b.employmentType] ?? 'bg-gray-400',
-    }))
-  }, [statsQ.data])
+  // Jours approuvés ce mois (mai 2026)
+  const now = new Date()
+  const joursApprouvesMois = leaves
+    .filter(l => l.status === 'APPROVED')
+    .filter(l => {
+      const start = new Date(l.startDate)
+      return start.getFullYear() === now.getFullYear() && start.getMonth() === now.getMonth()
+    })
+    .reduce((s, l) => s + l.days, 0)
 
+  // Répartition par type de contrat
+  const typeMap: Record<string, number> = {}
+  employees.forEach(e => {
+    typeMap[e.employmentType] = (typeMap[e.employmentType] ?? 0) + 1
+  })
+  const contrats = Object.entries(typeMap).map(([type, count]) => ({
+    label: TYPE_LABEL[type] ?? type,
+    count,
+    color: TYPE_COLOR[type] ?? 'bg-gray-400',
+  }))
   const totalContrats = contrats.reduce((s, c) => s + c.count, 0)
-  const loading = statsQ.isLoading || leaveStatsQ.isLoading
 
   return (
     <div className="h-full flex flex-col gap-3">
@@ -58,19 +57,19 @@ export function HRDashboard() {
       <div className="shrink-0 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="rounded-xl border border-gray-200 bg-white p-3">
           <p className="text-xs font-medium text-gray-500">Effectif actif</p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">{loading ? '—' : actifs}</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">{actifs}</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-3">
           <p className="text-xs font-medium text-gray-500">Masse salariale / mois</p>
-          <p className="mt-1 text-xl font-bold text-gray-900">{loading ? '—' : fmt(masse)}</p>
+          <p className="mt-1 text-xl font-bold text-gray-900">{fmt(masseSalariale)}</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-3">
           <p className="text-xs font-medium text-gray-500">Congés en attente</p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">{leaveStatsQ.isLoading ? '—' : (leaves?.pending ?? 0)}</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">{congesEnAttente}</p>
         </div>
         <div className="rounded-xl border border-gray-200 bg-white p-3">
           <p className="text-xs font-medium text-gray-500">Jours approuvés ce mois</p>
-          <p className="mt-1 text-2xl font-bold text-gray-900">{leaveStatsQ.isLoading ? '—' : (leaves?.totalBusinessDays ?? 0)}</p>
+          <p className="mt-1 text-2xl font-bold text-gray-900">{joursApprouvesMois}</p>
         </div>
       </div>
 
@@ -79,9 +78,7 @@ export function HRDashboard() {
         <div>
           <h2 className="mb-3 text-sm font-semibold text-gray-900">Répartition par type de contrat</h2>
 
-          {statsQ.isLoading ? (
-            <div className="h-3 w-full rounded-full bg-gray-100 animate-pulse" />
-          ) : contrats.length > 0 ? (
+          {contrats.length > 0 ? (
             <>
               <div className="flex h-3 w-full overflow-hidden rounded-full gap-0.5">
                 {contrats.map(c => (
@@ -109,18 +106,18 @@ export function HRDashboard() {
 
         <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-100">
           <div className="text-center">
-            <p className="text-2xl font-bold text-gray-900">{totalContrats || actifs}</p>
+            <p className="text-2xl font-bold text-gray-900">{employees.length}</p>
             <p className="text-xs text-gray-500">Total effectif</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-forest-700">
-              {contrats.find(c => c.label === 'Temps plein')?.count ?? 0}
+              {typeMap['FULL_TIME'] ?? 0}
             </p>
             <p className="text-xs text-gray-500">Temps plein</p>
           </div>
           <div className="text-center">
             <p className="text-2xl font-bold text-amber-600">
-              {contrats.filter(c => c.label !== 'Temps plein').reduce((s, c) => s + c.count, 0)}
+              {employees.length - (typeMap['FULL_TIME'] ?? 0)}
             </p>
             <p className="text-xs text-gray-500">Autres contrats</p>
           </div>
