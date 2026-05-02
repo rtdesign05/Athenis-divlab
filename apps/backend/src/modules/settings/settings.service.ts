@@ -512,12 +512,40 @@ const DEFAULT_SECURITY_POLICY = {
   lockoutDurationMinutes: 30,
 }
 
-export async function getSecurityPolicy(_companyId: string) {
-  return DEFAULT_SECURITY_POLICY
+export async function getSecurityPolicy(companyId: string) {
+  const company = await prisma.company.findUnique({
+    where:  { id: companyId },
+    select: { securityPolicy: true },
+  })
+  if (!company) throw new AppError('Entreprise introuvable', 404, 'NOT_FOUND')
+
+  // Merge stored values over defaults so missing keys always have a safe value
+  const stored = (company.securityPolicy ?? {}) as Record<string, unknown>
+  return { ...DEFAULT_SECURITY_POLICY, ...stored }
 }
 
-export async function updateSecurityPolicy(_companyId: string, _policy: object) {
-  return DEFAULT_SECURITY_POLICY
+export async function updateSecurityPolicy(companyId: string, policy: Record<string, unknown>) {
+  // Only persist known keys — ignore unknown fields
+  const allowed = new Set(Object.keys(DEFAULT_SECURITY_POLICY))
+  const sanitised = Object.fromEntries(
+    Object.entries(policy).filter(([k]) => allowed.has(k)),
+  )
+
+  const company = await prisma.company.findUnique({
+    where:  { id: companyId },
+    select: { securityPolicy: true },
+  })
+  if (!company) throw new AppError('Entreprise introuvable', 404, 'NOT_FOUND')
+
+  const current = (company.securityPolicy ?? {}) as Record<string, unknown>
+  const merged  = { ...DEFAULT_SECURITY_POLICY, ...current, ...sanitised }
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data:  { securityPolicy: merged },
+  })
+
+  return merged
 }
 
 // ── Audit Logs ────────────────────────────────────────────────────────────────

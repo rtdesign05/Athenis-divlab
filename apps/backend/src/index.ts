@@ -7,6 +7,18 @@ import { prisma } from './lib/prisma.js'
 import { logger } from './lib/logger.js'
 
 async function main() {
+  // ── Startup warnings ────────────────────────────────────────────────────────
+  if (!env.smtpHost) {
+    const msg = env.nodeEnv === 'production'
+      ? 'SMTP_HOST is not configured — transactional emails will NOT be delivered. Set SMTP_HOST, SMTP_USER, SMTP_PASS in your environment.'
+      : 'SMTP not configured — emails will be logged to console only (development mode).'
+    logger.warn(msg)
+  }
+
+  if (env.nodeEnv === 'production' && env.frontendUrl === 'http://localhost:5173') {
+    logger.warn('FRONTEND_URL is set to localhost — CORS will block all browser requests. Set FRONTEND_URL to your production domain.')
+  }
+
   const app = createApp()
 
   app.listen(env.port, () => {

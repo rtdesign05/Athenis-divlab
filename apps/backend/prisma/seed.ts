@@ -26,8 +26,15 @@ async function main() {
   console.log('🌱  Athenis seed v2 — démarrage\n')
 
   // ── 🔒 Garde anti-écrasement ──────────────────────────────────────────────
-  // Si des utilisateurs existent déjà, on ne touche à rien.
-  // Cela protège les données de production contre un seed accidentel.
+  // 1) Bloque toujours en production — le seed de démo ne doit jamais tourner
+  //    sur une base réelle, peu importe ce qu'elle contient.
+  if (process.env['NODE_ENV'] === 'production') {
+    console.error('❌  Seed refusé : NODE_ENV=production.')
+    console.error('   Le seed de démo ne doit jamais être exécuté sur une base de production.')
+    process.exit(1)
+  }
+
+  // 2) Si des utilisateurs existent déjà, on ne touche à rien.
   const existingUserCount = await prisma.user.count()
   if (existingUserCount > 0) {
     console.log(`⚠️  La base contient déjà ${existingUserCount} utilisateur(s) — seed ignoré.`)
