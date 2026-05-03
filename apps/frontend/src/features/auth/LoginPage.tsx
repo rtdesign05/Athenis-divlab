@@ -191,8 +191,8 @@ export function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      await loginVerifyTotp(tempToken, otp)
-      navigate('/', { replace: true })
+      const loggedUser = await loginVerifyTotp(tempToken, otp)
+      navigate(loggedUser ? homeForUser(loggedUser) : homeForType('COMPANY'), { replace: true })
     } catch {
       setError('Code incorrect ou expiré')
       setShake(true)

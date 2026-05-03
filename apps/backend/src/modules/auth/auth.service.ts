@@ -793,8 +793,9 @@ export async function changePassword(userId: string, dto: ChangePasswordDto, ip:
   })
   if (!await bcrypt.compare(dto.currentPassword, user.passwordHash)) throw new AppError('Mot de passe actuel incorrect', 401, 'INVALID_CREDENTIALS')
 
+  const newPasswordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS)
   await prisma.$transaction([
-    prisma.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS) } }),
+    prisma.user.update({ where: { id: userId }, data: { passwordHash: newPasswordHash } }),
     prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } }),
   ])
   await audit('PASSWORD_CHANGED', userId, user.companyId ?? null, ip, ua)

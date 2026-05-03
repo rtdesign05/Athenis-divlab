@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
@@ -36,6 +36,13 @@ export function UsersPage() {
   const [page, setPage]     = useState(1)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'users', page, debouncedSearch],
@@ -45,8 +52,8 @@ export function UsersPage() {
 
   function handleSearch(v: string) {
     setSearch(v)
-    clearTimeout((window as unknown as { _st?: ReturnType<typeof setTimeout> })._st)
-    ;(window as unknown as { _st?: ReturnType<typeof setTimeout> })._st = setTimeout(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
       setDebouncedSearch(v)
       setPage(1)
     }, 300)

@@ -21,7 +21,7 @@ export interface AuthContextValue {
     email: string,
     password: string,
   ) => Promise<{ requires2fa: boolean; tempToken: string | null; user: import('@athenis/shared-types').JwtPayload | null }>
-  loginVerifyTotp: (tempToken: string, code: string) => Promise<void>
+  loginVerifyTotp: (tempToken: string, code: string) => Promise<JwtPayload | null>
   register: (data: RegisterRequest) => Promise<{ requiresEmailVerification: boolean }>
   logout: () => Promise<void>
   setToken: (token: string) => void
@@ -83,9 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const loginVerifyTotp = useCallback(
-    async (tempToken: string, code: string) => {
+    async (tempToken: string, code: string): Promise<JwtPayload | null> => {
       const res = await authApi.loginTotp(tempToken, code)
-      if (res.data.data.accessToken) setToken(res.data.data.accessToken)
+      const { accessToken } = res.data.data
+      if (accessToken) setToken(accessToken)
+      return accessToken ? decodeJwt(accessToken) : null
     },
     [setToken],
   )

@@ -12,7 +12,7 @@ invitationRouter.get('/cabinet', async (req, res, next) => {
   try {
     const token = String(req.query.token ?? '')
     if (!token) {
-      res.status(400).json({ success: false, message: 'Token manquant', code: 'MISSING_TOKEN' })
+      res.status(400).json({ success: false, error: 'Token manquant', code: 'MISSING_TOKEN' })
       return
     }
     const data = await svc.getInvitationByToken(token)
@@ -26,7 +26,7 @@ invitationRouter.post('/cabinet/accept', authenticate, requireAccountType('COMPA
   try {
     const token = String(req.query.token ?? req.body.token ?? '')
     if (!token) {
-      res.status(400).json({ success: false, message: 'Token manquant', code: 'MISSING_TOKEN' })
+      res.status(400).json({ success: false, error: 'Token manquant', code: 'MISSING_TOKEN' })
       return
     }
     const data = await svc.acceptInvitation(token, req.user!.companyId!)
@@ -38,7 +38,7 @@ invitationRouter.post('/cabinet/reject', authenticate, requireAccountType('COMPA
   try {
     const token = String(req.query.token ?? req.body.token ?? '')
     if (!token) {
-      res.status(400).json({ success: false, message: 'Token manquant', code: 'MISSING_TOKEN' })
+      res.status(400).json({ success: false, error: 'Token manquant', code: 'MISSING_TOKEN' })
       return
     }
     const data = await svc.rejectInvitation(token, req.user!.companyId!)
