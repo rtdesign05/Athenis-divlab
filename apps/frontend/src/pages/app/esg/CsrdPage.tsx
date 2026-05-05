@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useCsrdReport, useEsgYears } from '@/hooks/useEsg'
 import type { MaterialiteItem } from '@/services/esgApi'
 
@@ -59,6 +59,13 @@ export function CsrdPage() {
 
   const yearOptions = years.data?.length ? years.data : [year]
 
+  useEffect(() => {
+    if (years.data?.length) {
+      const sorted = [...years.data].sort((a, b) => b - a)
+      setYear(prev => years.data!.includes(prev) ? prev : (sorted[0] ?? prev))
+    }
+  }, [years.data])
+
   const handleExport = () => {
     if (!report.data) return
     const lines = [
@@ -114,12 +121,13 @@ export function CsrdPage() {
         </div>
       </div>
 
-      {report.isError ? (
-        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-400">
-          Aucune donnée pour {year} — saisissez vos indicateurs d'abord.
-        </div>
-      ) : report.isLoading ? (
+      {report.isLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-gray-400">Génération du rapport…</div>
+      ) : (report.isError || report.data === null) ? (
+        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-400">
+          <p className="font-medium">Aucune donnée ESG pour {year}</p>
+          <p className="text-xs mt-1">Saisissez vos indicateurs dans <a href="/app/esg/scope" className="text-forest-700 hover:underline font-medium">Saisie données</a> pour générer le rapport CSRD.</p>
+        </div>
       ) : report.data && (
         <>
           {/* Conformité banner */}

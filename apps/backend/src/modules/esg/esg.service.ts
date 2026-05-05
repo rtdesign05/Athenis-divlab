@@ -168,7 +168,7 @@ export async function getEsgScore(companyId: string, year: number) {
   const record = await prisma.eSGData.findUnique({
     where: { companyId_year: { companyId, year } },
   })
-  if (!record) throw new AppError(`No ESG data for year ${year}`, 404, 'NOT_FOUND')
+  if (!record) return null
 
   const n = (v: Prisma.Decimal | null | undefined): number | null =>
     v != null ? Number(v) : null
@@ -224,6 +224,7 @@ export async function getEsgScore(companyId: string, year: number) {
 // ── Benchmark ─────────────────────────────────────────────────────────────────
 export async function getBenchmark(companyId: string, year: number) {
   const score = await getEsgScore(companyId, year)
+  if (!score) return null
 
   return {
     year,
@@ -244,6 +245,7 @@ export async function getBenchmark(companyId: string, year: number) {
 // ── CSRD Report ───────────────────────────────────────────────────────────────
 export async function getCsrdReport(companyId: string, year: number) {
   const score = await getEsgScore(companyId, year)
+  if (!score) return null
   const ind   = score.indicators
 
   const materialite = [

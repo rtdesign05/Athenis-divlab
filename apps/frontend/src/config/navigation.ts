@@ -71,8 +71,11 @@ export const APP_NAV_SECTIONS: NavSection[] = [
       { label: 'Environnemental', path: '/app/esg/environnement',  icon: '🌱' },
       { label: 'Social',          path: '/app/esg/social',         icon: '🤝' },
       { label: 'Gouvernance',     path: '/app/esg/gouvernance',    icon: '🏛️' },
+      { label: 'Saisie données',  path: '/app/esg/scope',          icon: '✏️' },
+      { label: 'Benchmark',       path: '/app/esg/benchmark',      icon: '📊' },
+      { label: 'Plan d\'action',  path: '/app/esg/actions',        icon: '🎯' },
       { label: 'Risques',         path: '/app/esg/risques',        icon: '⚠️' },
-      { label: 'Rapport',         path: '/app/esg/rapport',        icon: '🌍' },
+      { label: 'Rapport CSRD',    path: '/app/esg/rapport',        icon: '📋' },
     ],
   },
   {
@@ -193,7 +196,8 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
   '/app/esg/rapport': [
     { label: 'Aperçu',               to: '/app/esg/rapport',                     end: true },
     { label: 'Indicateurs CSRD',     to: '/app/esg/rapport/csrd' },
-    { label: 'Génération',           to: '/app/esg/rapport/generation' },
+    { label: 'Génération CSRD',      to: '/app/esg/rapport/generation' },
+    { label: 'DPEF',                 to: '/app/esg/rapport/dpef' },
   ],
 
   // ── Fiscalité ─────────────────────────────────────────────────────────────

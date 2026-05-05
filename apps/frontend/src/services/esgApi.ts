@@ -117,9 +117,9 @@ const d = <T>(r: { data: { data: T } }) => r.data.data
 
 export const esgApi = {
   years:     ()           => api.get<{ data: number[] }>('/esg/years').then(d),
-  score:     (year: number) => api.get<{ data: EsgScoreResult }>('/esg/score', { params: { year } }).then(d),
-  benchmark: (year: number) => api.get<{ data: BenchmarkResult }>('/esg/benchmark', { params: { year } }).then(d),
-  csrd:      (year: number) => api.get<{ data: CsrdReport }>('/esg/csrd-report', { params: { year } }).then(d),
+  score:     (year: number) => api.get<{ data: EsgScoreResult | null }>('/esg/score', { params: { year } }).then(d),
+  benchmark: (year: number) => api.get<{ data: BenchmarkResult | null }>('/esg/benchmark', { params: { year } }).then(d),
+  csrd:      (year: number) => api.get<{ data: CsrdReport | null }>('/esg/csrd-report', { params: { year } }).then(d),
   upsert:    (dto: UpsertEsgDto) => api.put<{ data: unknown }>('/esg/data', dto).then(d),
 
   actions: {

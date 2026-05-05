@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useEsgScore, useEsgYears, useActionStats } from '@/hooks/useEsg'
 
 function ScoreGauge({ score, label, color }: { score: number; label: string; color: string }) {
@@ -38,6 +38,14 @@ export function EsgDashboard() {
   const currentYear  = new Date().getFullYear()
   const yearOptions  = years.data?.length ? years.data : [currentYear]
 
+  // Auto-select the most recent year with data when years load
+  useEffect(() => {
+    if (years.data?.length) {
+      const sorted = [...years.data].sort((a, b) => b - a)
+      setYear(prev => years.data!.includes(prev) ? prev : (sorted[0] ?? prev))
+    }
+  }, [years.data])
+
   return (
     <div className="h-full flex flex-col gap-3">
 
@@ -52,14 +60,14 @@ export function EsgDashboard() {
         </select>
       </div>
 
-      {score.isError ? (
-        <div className="flex-1 min-h-0 rounded-xl border border-dashed border-gray-300 bg-white flex flex-col items-center justify-center text-gray-400">
-          <p className="text-base font-medium mb-1">Aucune donnée pour {year}</p>
-          <p className="text-xs">Saisissez vos indicateurs dans <strong>Saisie Scopes</strong>.</p>
-        </div>
-      ) : score.isLoading ? (
+      {score.isLoading ? (
         <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white flex items-center justify-center text-sm text-gray-400">
           Calcul du score…
+        </div>
+      ) : (score.isError || score.data === null) ? (
+        <div className="flex-1 min-h-0 rounded-xl border border-dashed border-gray-300 bg-white flex flex-col items-center justify-center text-gray-400">
+          <p className="text-base font-medium mb-1">Aucune donnée ESG pour {year}</p>
+          <p className="text-xs">Saisissez vos indicateurs dans <strong>Saisie données</strong> pour voir votre score.</p>
         </div>
       ) : score.data && (
         <div className="flex-1 min-h-0 grid grid-cols-2 gap-3">

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { useEsgBenchmark, useEsgYears } from '@/hooks/useEsg'
 
 function Bar({ value, bench, lowerBetter }: { value: number; bench: number; lowerBetter: boolean }) {
@@ -57,6 +57,13 @@ export function BenchmarkPage() {
 
   const yearOptions = years.data?.length ? years.data : [year]
 
+  useEffect(() => {
+    if (years.data?.length) {
+      const sorted = [...years.data].sort((a, b) => b - a)
+      setYear(prev => years.data!.includes(prev) ? prev : (sorted[0] ?? prev))
+    }
+  }, [years.data])
+
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -70,12 +77,13 @@ export function BenchmarkPage() {
         </select>
       </div>
 
-      {bench.isError ? (
-        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-400">
-          Aucune donnée pour {year} — saisissez vos indicateurs d'abord.
-        </div>
-      ) : bench.isLoading ? (
+      {bench.isLoading ? (
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-gray-400">Chargement…</div>
+      ) : (bench.isError || bench.data === null) ? (
+        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center text-gray-400">
+          <p className="font-medium">Aucune donnée ESG pour {year}</p>
+          <p className="text-xs mt-1">Saisissez vos indicateurs dans <a href="/app/esg/scope" className="text-forest-700 hover:underline font-medium">Saisie données</a> pour voir le benchmark.</p>
+        </div>
       ) : bench.data && (
         <>
           {/* Score comparison */}

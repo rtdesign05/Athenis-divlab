@@ -39,14 +39,15 @@ export const UpsertEsgDto = z.object({
 
 export const CreateActionDto = z.object({
   title:       z.string().min(1),
-  description: z.string().optional(),
+  description: z.string().nullish(),
   pilier:      z.enum(['E', 'S', 'G']),
   priority:    z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).default('MEDIUM'),
+  status:      z.enum(['TODO', 'IN_PROGRESS', 'DONE', 'CANCELLED']).default('TODO'),
   targetYear:  z.number().int(),
-  deadline:    z.coerce.date().optional(),
-  owner:       z.string().optional(),
-  kpiTarget:   z.string().optional(),
-  co2Saving:   z.number().nonnegative().optional(),
+  deadline:    z.union([z.null(), z.coerce.date()]).optional(),
+  owner:       z.string().nullish(),
+  kpiTarget:   z.string().nullish(),
+  co2Saving:   z.number().nonnegative().nullish(),
 })
 
 export const UpdateActionDto = z.object({

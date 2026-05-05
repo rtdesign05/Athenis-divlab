@@ -89,6 +89,15 @@ export function usePdf() {
     await generate(React.createElement(EsgRapportPdf, params) as PdfElement, `RapportESG_${params.referentiel ?? 'CSRD'}_${params.year}.pdf`)
   }
 
+  const downloadDpef = async (params: {
+    year: number
+    data?: import('@/services/esgApi').EsgScoreResult
+    employees?: { endDate?: string | null; [key: string]: unknown }[]
+  }) => {
+    const { DpefPdf } = await import('@/features/esg/pdf/DpefPdf')
+    await generate(React.createElement(DpefPdf, params) as PdfElement, `DPEF_${params.year}.pdf`)
+  }
+
   // ── Legal ─────────────────────────────────────────────────────────────────────
   const downloadContrat = async (contrat: LegalContract) => {
     const { ContratPdf } = await import('@/features/legal/pdf/ContratPdf')
@@ -105,7 +114,7 @@ export function usePdf() {
     // Accounting
     downloadBilan, downloadResultat, downloadBalance, downloadGrandLivre, downloadEtatsFinanciers,
     // ESG
-    downloadEsgRapport,
+    downloadEsgRapport, downloadDpef,
     // Legal
     downloadContrat,
   }

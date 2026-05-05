@@ -23,17 +23,25 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
   try {
     const payload = jwt.verify(token, env.jwtSecret) as JwtPayload
 
-    // Verify user is still active in DB — catches revocations between token refresh cycles
-    // Only for company/cabinet users (personal users have no companyMember row)
+    // Verify user is still active + re-read company modules from DB
+    // This ensures module changes (e.g. plan upgrades) take effect immediately
     if (payload.sub) {
       try {
         const user = await prisma.user.findUnique({
           where: { id: payload.sub },
-          select: { isActive: true },
+          select: {
+            isActive: true,
+            companyId: true,
+            company: { select: { modules: true } },
+          },
         })
         if (!user || !user.isActive) {
           res.status(403).json({ success: false, error: 'Compte désactivé', code: 'ACCOUNT_INACTIVE' })
           return
+        }
+        // Refresh modules from DB so plan/module changes are reflected immediately
+        if (user.company?.modules) {
+          payload.modules = user.company.modules as typeof payload.modules
         }
       } catch {
         // DB unavailable — fail closed to prevent disabled accounts from accessing the API

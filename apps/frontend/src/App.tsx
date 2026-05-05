@@ -53,10 +53,7 @@ const router = createBrowserRouter([
       { path: 'legal/contracts',    element: <Navigate to="/app/legal/contrats"    replace /> },
       { path: 'legal/gdpr',         element: <Navigate to="/app/legal/rgpd"        replace /> },
       { path: 'legal/alerts',       element: <Navigate to="/app/legal/conformite"  replace /> },
-      { path: 'esg/scope',     element: <Navigate to="/app/esg/environnement" replace /> },
       { path: 'esg/csrd',      element: <Navigate to="/app/esg/rapport"       replace /> },
-      { path: 'esg/benchmark', element: <Navigate to="/app/esg/risques"       replace /> },
-      { path: 'esg/actions',   element: <Navigate to="/app/esg/rapport"       replace /> },
 
       // ── MODULE: Gestion ──────────────────────────────────────────────────────
       {
@@ -110,7 +107,11 @@ const router = createBrowserRouter([
           { path: 'transactions',     lazy: lz(() => import('@/pages/app/accounting/TransactionsPage'),    'TransactionsPage') },
           { path: 'bilan',       lazy: lz(() => import('@/pages/app/accounting/BilanPage'),           'BilanPage') },
           { path: 'resultat',    lazy: lz(() => import('@/pages/app/accounting/ResultatPage'),         'ResultatPage') },
-          { path: 'journal',     lazy: lz(() => import('@/pages/app/accounting/JournalPage'),          'JournalPage') },
+          { path: 'journal', children: [
+            { index: true, lazy: lz(() => import('@/pages/app/accounting/JournalPage'), 'JournalPage') },
+            { path: 'lettrage',  lazy: lz(() => import('@/pages/app/accounting/JournalLettragehPage'), 'JournalLettragehPage') },
+            { path: 'extournes', lazy: lz(() => import('@/pages/app/accounting/JournalExtournesPage'), 'JournalExtournesPage') },
+          ]},
           { path: 'grand-livre', lazy: lz(() => import('@/pages/app/accounting/GrandLivrePage'),       'GrandLivrePage') },
           { path: 'balance',     lazy: lz(() => import('@/pages/app/accounting/BalancePage'),           'BalancePage') },
           { path: 'comptes',    lazy: lz(() => import('@/pages/app/accounting/ComptesPage'),          'ComptesPage') },
@@ -175,8 +176,16 @@ const router = createBrowserRouter([
         lazy: lz(() => import('@/layouts/modules/LegalLayout'), 'LegalLayout'),
         children: [
           { index: true,        lazy: lz(() => import('@/pages/app/legal/LegalDashboard'),  'LegalDashboard') },
-          { path: 'contrats',   lazy: lz(() => import('@/pages/app/legal/ContractsPage'),   'ContractsPage') },
-          { path: 'rgpd',       lazy: lz(() => import('@/pages/app/legal/GdprPage'),        'GdprPage') },
+          { path: 'contrats', children: [
+            { index: true, lazy: lz(() => import('@/pages/app/legal/ContractsPage'), 'ContractsPage') },
+            { path: 'expires', lazy: lz(() => import('@/pages/app/legal/ContratsExpiresPage'), 'ContratsExpiresPage') },
+            { path: 'modeles', lazy: lz(() => import('@/pages/app/legal/ContratsModelesPage'), 'ContratsModelesPage') },
+          ]},
+          { path: 'rgpd', children: [
+            { index: true, lazy: lz(() => import('@/pages/app/legal/GdprPage'), 'GdprPage') },
+            { path: 'consentements', lazy: lz(() => import('@/pages/app/legal/RgpdConsentementsPage'), 'RgpdConsentementsPage') },
+            { path: 'demandes',      lazy: lz(() => import('@/pages/app/legal/RgpdDemandesPage'),      'RgpdDemandesPage') },
+          ]},
           { path: 'conformite', lazy: lz(() => import('@/pages/app/legal/ConformitePage'),  'ConformitePage') },
           { path: 'documents',  lazy: lz(() => import('@/pages/app/legal/DocumentsPage'),   'DocumentsPage') },
         ],
@@ -193,6 +202,16 @@ const router = createBrowserRouter([
           { path: 'gouvernance',   lazy: lz(() => import('@/pages/app/esg/GouvernancePage'),   'GouvernancePage') },
           { path: 'risques',       lazy: lz(() => import('@/pages/app/esg/RisquesPage'),       'RisquesPage') },
           { path: 'rapport',       lazy: lz(() => import('@/pages/app/esg/RapportPage'),       'RapportPage') },
+          { path: 'scope',         lazy: lz(() => import('@/pages/app/esg/ScopePage'),         'ScopePage') },
+          { path: 'benchmark',     lazy: lz(() => import('@/pages/app/esg/BenchmarkPage'),     'BenchmarkPage') },
+          { path: 'actions',       lazy: lz(() => import('@/pages/app/esg/ActionPlanPage'),    'ActionPlanPage') },
+          { path: 'rapport/csrd',           lazy: lz(() => import('@/pages/app/esg/RapportCsrdPage'),          'RapportCsrdPage') },
+          { path: 'rapport/generation',     lazy: lz(() => import('@/pages/app/esg/RapportGenerationPage'),    'RapportGenerationPage') },
+          { path: 'rapport/dpef',           lazy: lz(() => import('@/pages/app/esg/RapportDpefPage'),          'RapportDpefPage') },
+          { path: 'environnement/energie',  lazy: lz(() => import('@/pages/app/esg/EnvironnementEnergiePage'), 'EnvironnementEnergiePage') },
+          { path: 'environnement/dechets',  lazy: lz(() => import('@/pages/app/esg/EnvironnementDechetsPage'), 'EnvironnementDechetsPage') },
+          { path: 'social/diversite',       lazy: lz(() => import('@/pages/app/esg/SocialDiversitePage'),      'SocialDiversitePage') },
+          { path: 'social/formation',       lazy: lz(() => import('@/pages/app/esg/SocialFormationPage'),      'SocialFormationPage') },
         ],
       },
 
@@ -202,15 +221,28 @@ const router = createBrowserRouter([
         lazy: lz(() => import('@/layouts/modules/FiscalLayout'), 'FiscalLayout'),
         children: [
           { index: true,       lazy: lz(() => import('@/pages/app/fiscal/FiscalDashboard'), 'FiscalDashboard') },
-          { path: 'tva',       lazy: lz(() => import('@/pages/app/fiscal/TVAFiscalPage'),   'TVAFiscalPage') },
-          { path: 'dsf',       lazy: lz(() => import('@/pages/app/fiscal/DSFPage'),         'DSFPage') },
-          { path: 'is',        lazy: lz(() => import('@/pages/app/fiscal/ISPage'),          'ISPage') },
+          { path: 'tva', children: [
+            { index: true, lazy: lz(() => import('@/pages/app/fiscal/TVAFiscalPage'), 'TVAFiscalPage') },
+            { path: 'historique', lazy: lz(() => import('@/pages/app/fiscal/TVAHistoriquePage'), 'TVAHistoriquePage') },
+          ]},
+          { path: 'dsf', children: [
+            { index: true, lazy: lz(() => import('@/pages/app/fiscal/DSFPage'), 'DSFPage') },
+            { path: 'historique', lazy: lz(() => import('@/pages/app/fiscal/DSFHistoriquePage'), 'DSFHistoriquePage') },
+          ]},
+          { path: 'is', children: [
+            { index: true, lazy: lz(() => import('@/pages/app/fiscal/ISPage'), 'ISPage') },
+            { path: 'acomptes',   lazy: lz(() => import('@/pages/app/fiscal/ISAcomptesPage'),   'ISAcomptesPage') },
+            { path: 'historique', lazy: lz(() => import('@/pages/app/fiscal/ISHistoriquePage'), 'ISHistoriquePage') },
+          ]},
           { path: 'patente',   lazy: lz(() => import('@/pages/app/fiscal/PatentePage'),     'PatentePage') },
           { path: 'ras',       lazy: lz(() => import('@/pages/app/fiscal/RASPage'),         'RASPage') },
           { path: 'cnps',      lazy: lz(() => import('@/pages/app/fiscal/CNPSPage'),        'CNPSPage') },
           { path: 'igs',       lazy: lz(() => import('@/pages/app/fiscal/IGSPage'),         'IGSPage') },
           { path: 'calendrier',lazy: lz(() => import('@/pages/app/fiscal/CalendrierPage'),  'CalendrierPage') },
-          { path: 'liasse',    lazy: lz(() => import('@/pages/app/fiscal/LiassePage'),      'LiassePage') },
+          { path: 'liasse', children: [
+            { index: true, lazy: lz(() => import('@/pages/app/fiscal/LiassePage'), 'LiassePage') },
+            { path: 'annexes', lazy: lz(() => import('@/pages/app/fiscal/LiasseAnnexesPage'), 'LiasseAnnexesPage') },
+          ]},
         ],
       },
 

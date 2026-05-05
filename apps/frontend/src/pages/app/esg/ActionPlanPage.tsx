@@ -197,7 +197,7 @@ function ActionRow({ action }: { action: EsgAction }) {
               Annuler
             </button>
           )}
-          <button onClick={() => { if (confirm('Supprimer ?')) remove.mutate(action.id) }}
+          <button onClick={() => { if (window.confirm('Supprimer cette action ?')) remove.mutate(action.id) }}
             className="rounded px-2 py-1 text-xs text-red-500 hover:bg-red-50">
             Suppr.
           </button>

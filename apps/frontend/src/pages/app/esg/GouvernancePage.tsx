@@ -1,9 +1,18 @@
-import { useState } from 'react'
-import { useEsgScore } from '@/hooks/useEsg'
+﻿import { useState, useEffect } from 'react'
+import { useEsgScore, useEsgYears } from '@/hooks/useEsg'
 
 export function GouvernancePage() {
+  const years = useEsgYears()
   const [year, setYear] = useState(new Date().getFullYear())
-  const { data, isLoading } = useEsgScore(year)
+  const { data, isLoading, isError } = useEsgScore(year)
+  const yearOptions = years.data?.length ? years.data : [2023, 2024, 2025, 2026]
+
+  useEffect(() => {
+    if (years.data?.length) {
+      const sorted = [...years.data].sort((a, b) => b - a)
+      setYear(prev => years.data!.includes(prev) ? prev : (sorted[0] ?? prev))
+    }
+  }, [years.data])
 
   const ind = data?.indicators
 
@@ -50,10 +59,17 @@ export function GouvernancePage() {
             onChange={(e) => setYear(Number(e.target.value))}
             className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700"
           >
-            {[2023, 2024, 2025, 2026].map((y) => <option key={y} value={y}>{y}</option>)}
+            {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
       </div>
+
+      {(isError || (!isLoading && data === null)) && (
+        <div className="rounded-xl border border-dashed border-gray-300 bg-white p-6 text-center text-gray-400">
+          <p className="font-medium">Aucune donnée ESG pour {year}</p>
+          <p className="text-xs mt-1">Saisissez vos indicateurs dans <a href="/app/esg/scope" className="text-forest-700 hover:underline font-medium">Saisie données</a>.</p>
+        </div>
+      )}
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
