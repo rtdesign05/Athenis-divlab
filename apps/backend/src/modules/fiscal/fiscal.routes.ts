@@ -294,3 +294,57 @@ fiscalRouter.get(
     } catch (e) { next(e) }
   },
 )
+
+// ── Company Info ──────────────────────────────────────────────────────────────
+
+fiscalRouter.get(
+  '/company-info',
+  checkModule('fiscalite', 'read'),
+  async (req, res, next) => {
+    try {
+      const data = await svc.getCompanyInfo(getCompanyId(req)!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── IS History ────────────────────────────────────────────────────────────────
+
+fiscalRouter.get(
+  '/is/history',
+  checkModule('fiscalite', 'read'),
+  async (req, res, next) => {
+    try {
+      const data = await svc.getISHistory(getCompanyId(req)!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── DSF History ───────────────────────────────────────────────────────────────
+
+fiscalRouter.get(
+  '/dsf/history',
+  checkModule('fiscalite', 'read'),
+  async (req, res, next) => {
+    try {
+      const data = await svc.getDSFHistory(getCompanyId(req)!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── RAS Suggestions depuis les achats ─────────────────────────────────────────
+
+fiscalRouter.get(
+  '/ras/suggestions',
+  checkModule('fiscalite', 'read'),
+  validateRequest({ query: MonthQuery }),
+  async (req, res, next) => {
+    try {
+      const { year, month } = req.query as { year: string; month: string }
+      const data = await svc.getRASFromExpenses(getCompanyId(req)!, Number(year), Number(month))
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)

@@ -126,3 +126,36 @@ export function useUpdateTaxConfig() {
     },
   })
 }
+
+export function useCompanyInfo() {
+  return useQuery({
+    queryKey: ['fiscal', 'company-info'] as const,
+    queryFn:  fiscalApi.companyInfo,
+    staleTime: 30 * 60_000,
+  })
+}
+
+export function useISHistory() {
+  return useQuery({
+    queryKey: ['fiscal', 'is-history'] as const,
+    queryFn:  fiscalApi.isHistory,
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useDSFHistory() {
+  return useQuery({
+    queryKey: ['fiscal', 'dsf-history'] as const,
+    queryFn:  fiscalApi.dsfHistory,
+    staleTime: 10 * 60_000,
+  })
+}
+
+export function useRasSuggestions(year: number, month: number) {
+  return useQuery({
+    queryKey: ['fiscal', 'ras-suggestions', year, month] as const,
+    queryFn:  () => fiscalApi.rasSuggestions(year, month),
+    staleTime: 2 * 60_000,
+    enabled: year > 0 && month > 0,
+  })
+}

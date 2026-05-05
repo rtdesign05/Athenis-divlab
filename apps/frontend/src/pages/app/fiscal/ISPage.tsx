@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useIS, useTaxConfig } from '@/hooks/useFiscal'
+import { useIS, useTaxConfig, useCompanyInfo } from '@/hooks/useFiscal'
 import { DgiFormHeader } from '@/components/fiscal/DgiFormHeader'
 import { FormPageViewer } from '@/components/fiscal/FormPageViewer'
 import { usePdfDownload } from '@/hooks/usePdfDownload'
@@ -48,6 +48,7 @@ export function ISPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const { data, isLoading }   = useIS(year)
   const { data: config }      = useTaxConfig()
+  const { data: company }     = useCompanyInfo()
   const { downloadIs }        = usePdfDownload()
 
   const [caMonthly, setCaMonthly] = useState(0)
@@ -62,7 +63,8 @@ export function ISPage() {
     setPrefilled(true)
   }
 
-  const TAUX_ACOMPTE = data?.tauxAcompte ?? 0.022
+  // API returns tauxAcompte as a percentage (e.g. 2.2 = 2.2%), convert to decimal for math
+  const TAUX_ACOMPTE = (data?.tauxAcompte ?? 2.2) / 100
   const acompteBrut  = Math.round(caMonthly * TAUX_ACOMPTE)
   const acompteNet   = Math.max(0, acompteBrut - rasImput)
   const totalAPayer  = acompteNet + penalite
@@ -112,11 +114,11 @@ export function ISPage() {
         </thead>
         <tbody>
           {[
-            ['Raison sociale / Nom',        'UBM Consulting SARL'],
+            ['Raison sociale / Nom',        company?.nom ?? (config?.niu ? 'Entreprise' : '—')],
             ['N° Identifiant Unique (NIU)', config?.niu ?? '—'],
             ['RCCM',                        config?.rccm ?? '—'],
-            ["Code d'activité",             config?.codeActivite ?? '7020Z'],
-            ["Régime d'imposition",         'Réel Normal'],
+            ["Code d'activité",             config?.codeActivite ?? '—'],
+            ["Régime d'imposition",         config?.taxRegime === 'REEL_NORMAL' ? 'Réel Normal' : config?.taxRegime === 'REEL_SIMPLIFIE' ? 'Réel Simplifié' : config?.taxRegime === 'IGS' ? 'IGS' : config?.taxRegime ?? '—'],
             ['PERIODE DE DECLARATION',      `${monthLabel.toUpperCase()} ${year}`],
           ].map(([label = '', value = ''], i) => (
             <tr key={label} style={{ background: i % 2 === 0 ? '#fff' : DGI_ROW_ALT }}>
@@ -316,7 +318,7 @@ export function ISPage() {
         periode:       periodLabel,
         monthLabel,
         year,
-        raisonSociale: 'UBM Consulting SARL',
+        raisonSociale: company?.nom ?? 'Entreprise',
         tauxAcompte:   TAUX_ACOMPTE,
         caMonthly,
         acompteBrut,

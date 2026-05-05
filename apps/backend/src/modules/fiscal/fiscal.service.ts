@@ -542,10 +542,11 @@ function buildCMCalendrier(year: number) {
     events.push({ date: `15/${String(nm).padStart(2,'0')}/${ny}`, dueDate: d15, label: `TVA ${monthName(m)} ${year}`, type: 'TVA', month: m })
     events.push({ date: `15/${String(nm).padStart(2,'0')}/${ny}`, dueDate: d15, label: `Acompte IS ${monthName(m)} ${year} (2.2% CA)`, type: 'IS_ACOMPTE', month: m })
     events.push({ date: `15/${String(nm).padStart(2,'0')}/${ny}`, dueDate: d15, label: `RAS ${monthName(m)} ${year}`, type: 'RAS', month: m })
-    const lastDay = new Date(ny, nm - 1, 0)
-    events.push({ date: `${lastDay.getDate()}/${String(nm).padStart(2,'0')}/${ny}`, dueDate: lastDay, label: `CNPS ${monthName(m)} ${year}`, type: 'CNPS', month: m })
+    const lastDay = new Date(ny, nm, 0)
+    events.push({ date: `${String(lastDay.getDate()).padStart(2,'0')}/${String(nm).padStart(2,'0')}/${ny}`, dueDate: lastDay, label: `CNPS ${monthName(m)} ${year}`, type: 'CNPS', month: m })
   }
-  events.push({ date: `28/02/${year}`, dueDate: new Date(year, 1, 28), label: `Patente ${year}`, type: 'PATENTE' })
+  const patenteDue = new Date(year, 2, 0) // last day of February (handles leap years)
+  events.push({ date: `${String(patenteDue.getDate()).padStart(2,'0')}/02/${year}`, dueDate: patenteDue, label: `Patente ${year}`, type: 'PATENTE' })
   events.push({ date: `15/03/${year}`, dueDate: new Date(year, 2, 15), label: `DSF ${year - 1} — dépôt + solde IS`, type: 'DSF' })
   return events.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
 }
@@ -568,6 +569,149 @@ export async function getLiasse(companyId: string, year: number) {
   const done = documents.filter(d => d.available).length
   const total = documents.length
   return { year, documents, done, total, progress: Math.round((done / total) * 100) }
+}
+
+// ── Company name helper ───────────────────────────────────────────────────────
+
+export async function getCompanyInfo(companyId: string) {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { nom: true, pays: true, siret: true, adresse: true, ville: true, telephone: true, email: true },
+  })
+  const taxConfig = await prisma.taxConfig.findUnique({ where: { companyId } })
+  return {
+    nom: company?.nom ?? '',
+    pays: company?.pays ?? 'CM',
+    niu: taxConfig?.niu ?? '',
+    rccm: taxConfig?.rccm ?? company?.siret ?? '',
+    centerImpots: taxConfig?.centerImpots ?? '',
+    codeActivite: '',
+    adresse: company?.adresse ?? '',
+    ville: company?.ville ?? '',
+    telephone: company?.telephone ?? '',
+    email: company?.email ?? '',
+  }
+}
+
+// ── IS History ────────────────────────────────────────────────────────────────
+
+export async function getISHistory(companyId: string) {
+  // Get IS declarations from tax_declarations table
+  const isDecls = await prisma.taxDeclaration.findMany({
+    where: { companyId, type: { in: ['IS', 'IS_ACOMPTE'] } },
+    orderBy: [{ year: 'desc' }, { month: 'asc' }],
+  })
+
+  // Group by year
+  const byYear = new Map<number, typeof isDecls>()
+  for (const d of isDecls) {
+    const yr = d.year
+    if (!byYear.has(yr)) byYear.set(yr, [])
+    byYear.get(yr)!.push(d)
+  }
+
+  // Build summary per year, last 5 years
+  const currentYear = new Date().getFullYear()
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - i)
+
+  return years.map(year => {
+    const decls = byYear.get(year) ?? []
+    const mainDecl = decls.find(d => d.type === 'IS')
+    const acomptes = decls.filter(d => d.type === 'IS_ACOMPTE')
+    const totalAcomptes = acomptes.reduce((s, d) => s + Number(d.taxAmount), 0)
+    return {
+      year,
+      resultatFiscal: mainDecl ? Number(mainDecl.baseAmount) : null,
+      isPayer: mainDecl ? Number(mainDecl.taxAmount) : null,
+      acomptesVerses: Math.round(totalAcomptes),
+      solde: mainDecl ? Number(mainDecl.taxAmount) - totalAcomptes : null,
+      status: mainDecl?.status ?? null,
+      declaredAt: mainDecl?.declaredAt ?? null,
+    }
+  })
+}
+
+// ── DSF History ───────────────────────────────────────────────────────────────
+
+export async function getDSFHistory(companyId: string) {
+  const dsfDecls = await prisma.taxDeclaration.findMany({
+    where: { companyId, type: 'DSF' },
+    orderBy: { year: 'desc' },
+  })
+  const currentYear = new Date().getFullYear()
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - 1 - i) // DSF for N-1
+  return years.map(year => {
+    const decl = dsfDecls.find(d => d.year === year + 1) // DSF year N+1 covers fiscal year N
+    return {
+      anneeExercice: year,
+      anneeDépôt: year + 1,
+      dateDepot: decl?.declaredAt ?? null,
+      status: decl?.status ?? null,
+      echéance: new Date(year + 1, 2, 15), // 15 mars de l'année suivante
+    }
+  })
+}
+
+// ── RAS from Expenses (suggestions auto) ─────────────────────────────────────
+
+export async function getRASFromExpenses(companyId: string, year: number, month: number) {
+  const start = new Date(year, month - 1, 1)
+  const end   = new Date(year, month, 0, 23, 59, 59)
+
+  // Expenses in the period that may require RAS
+  const expenses = await prisma.expense.findMany({
+    where: { companyId, date: { gte: start, lte: end } },
+    orderBy: { date: 'asc' },
+  })
+
+  // Auto-categorize expenses by RAS type
+  const suggestions: Array<{ beneficiaire: string; type: string; base: number; taux: number; retenue: number; source: string }> = []
+
+  const RAS_CATEGORIES: Record<string, { type: string; taux: number }> = {
+    'loyer':         { type: 'LOYERS',        taux: CM_TAX.rasLoyersRate * 100 },
+    'location':      { type: 'LOYERS',        taux: CM_TAX.rasLoyersRate * 100 },
+    'honoraires':    { type: 'HONORAIRES',    taux: CM_TAX.rasHonorairesRate * 100 },
+    'avocat':        { type: 'HONORAIRES',    taux: CM_TAX.rasHonorairesRate * 100 },
+    'expert':        { type: 'HONORAIRES',    taux: CM_TAX.rasHonorairesRate * 100 },
+    'consultant':    { type: 'SERVICES',      taux: CM_TAX.rasServicesRate * 100 },
+    'prestation':    { type: 'SERVICES',      taux: CM_TAX.rasServicesRate * 100 },
+    'service':       { type: 'SERVICES',      taux: CM_TAX.rasServicesRate * 100 },
+    'dividende':     { type: 'DIVIDENDES',    taux: CM_TAX.rasDividendesRate * 100 },
+  }
+
+  for (const exp of expenses) {
+    const desc = (exp.description ?? '').toLowerCase()
+    let matched = false
+    for (const [kw, cfg] of Object.entries(RAS_CATEGORIES)) {
+      if (desc.includes(kw)) {
+        const base = Number(exp.amount)
+        suggestions.push({
+          beneficiaire: exp.description ?? 'Fournisseur',
+          type: cfg.type,
+          base,
+          taux: cfg.taux,
+          retenue: Math.round(base * cfg.taux / 100),
+          source: 'expense',
+        })
+        matched = true
+        break
+      }
+    }
+    // If category is consulting/prestataires, auto-suggest
+    if (!matched && exp.category === 'CONSULTING') {
+      const base = Number(exp.amount)
+      suggestions.push({
+        beneficiaire: exp.description ?? 'Prestataire',
+        type: 'SERVICES',
+        base,
+        taux: CM_TAX.rasServicesRate * 100,
+        retenue: Math.round(base * CM_TAX.rasServicesRate),
+        source: 'expense',
+      })
+    }
+  }
+
+  return { month, year, suggestions, total: suggestions.reduce((s, r) => s + r.retenue, 0) }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

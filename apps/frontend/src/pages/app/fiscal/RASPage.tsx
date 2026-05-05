@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useRAS, useTaxConfig } from '@/hooks/useFiscal'
+import { useRAS, useTaxConfig, useRasSuggestions } from '@/hooks/useFiscal'
 import { DgiFormHeader } from '@/components/fiscal/DgiFormHeader'
 import { FormPageViewer } from '@/components/fiscal/FormPageViewer'
 
@@ -42,6 +42,7 @@ export function RASPage() {
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const { data, isLoading } = useRAS(year)
   const { data: config }    = useTaxConfig()
+  const { data: suggestions, isLoading: loadingSugg, refetch: fetchSugg } = useRasSuggestions(year, selectedMonth)
 
   const [rows, setRows] = useState<RASRow[]>([
     { id: '1', beneficiaire: '', type: 'SERVICES', base: 0, taux: 5.5, retenue: 0 },
@@ -84,6 +85,31 @@ export function RASPage() {
       ))}
     </div>
   )
+
+  const importButton = (
+    <button
+      onClick={async () => {
+        const result = await fetchSugg()
+        const sugg = result.data?.suggestions ?? []
+        if (sugg.length === 0) { alert('Aucune dépense avec RAS détectée ce mois'); return }
+        const newRows = sugg.map((s: { beneficiaire: string; type: string; base: number; taux: number; retenue: number }) => ({
+          id: Date.now().toString() + Math.random(),
+          beneficiaire: s.beneficiaire,
+          type: s.type,
+          base: s.base,
+          taux: s.taux,
+          retenue: s.retenue,
+        }))
+        setRows(r => [...r, ...newRows])
+      }}
+      disabled={loadingSugg}
+      className="flex items-center gap-2 rounded-lg border border-[#006633] bg-[#E8F5E9] px-3 py-1.5 text-xs font-medium text-[#006633] hover:bg-[#C8E6C9] transition-colors disabled:opacity-50"
+    >
+      {loadingSugg ? 'Chargement…' : 'Importer depuis les achats'}
+    </button>
+  )
+
+  void suggestions
 
   const page1 = (
     <div style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -275,7 +301,7 @@ export function RASPage() {
       pages={[{ pageNumber: 1, title: 'Bordereau & Historique', component: page1 }]}
       currentPage={1}
       onPageChange={() => {}}
-      extraControls={monthSelector}
+      extraControls={<div className="flex flex-wrap items-center gap-3">{monthSelector}{importButton}</div>}
     />
   )
 }

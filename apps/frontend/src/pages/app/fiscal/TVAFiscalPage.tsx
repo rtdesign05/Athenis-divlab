@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useTVADeclaration, useDeclareTVA, useTaxConfig } from '@/hooks/useFiscal'
+import { useTVADeclaration, useDeclareTVA, useTaxConfig, useCompanyInfo } from '@/hooks/useFiscal'
 import { DgiFormHeader } from '@/components/fiscal/DgiFormHeader'
 import { FormPageViewer } from '@/components/fiscal/FormPageViewer'
 import { CM_TAX } from '@/lib/taxConstants'
@@ -67,9 +67,10 @@ export function TVAFiscalPage() {
   const [month, setMonth]   = useState(now.getMonth() === 0 ? 12 : now.getMonth())
   const [currentPage, setCurrentPage] = useState(1)
 
-  const { data, isLoading }  = useTVADeclaration(year, month)
-  const { data: config }     = useTaxConfig()
-  const declareTVA           = useDeclareTVA()
+  const { data, isLoading }    = useTVADeclaration(year, month)
+  const { data: config }       = useTaxConfig()
+  const { data: companyInfo }  = useCompanyInfo()
+  const declareTVA             = useDeclareTVA()
   const { downloadTva }      = usePdfDownload()
 
   const [collRows, setCollRows]   = useState<CollRow[]>(DEFAULT_COLL_ROWS)
@@ -117,7 +118,7 @@ export function TVAFiscalPage() {
     ...(config?.centerImpots ? { centerImpots: config.centerImpots } : {}),
     ...(config?.rccm         ? { rccm: config.rccm }                 : {}),
     ...(config?.codeActivite ? { codeActivite: config.codeActivite } : {}),
-    raisonSociale: 'UBM Consulting SARL',
+    raisonSociale: companyInfo?.nom ?? '',
     collecteeRows: collRows.map((r, i) => ({
       ref: i + 1, label: r.label, baseHT: r.baseHT,
       tva: r.exempt ? 0 : Math.round(r.baseHT * r.taux / 100),
@@ -158,12 +159,12 @@ export function TVAFiscalPage() {
         </thead>
         <tbody>
           {[
-            ['Raison sociale / Nom',        'UBM Consulting SARL'],
+            ['Raison sociale / Nom',        companyInfo?.nom ?? '—'],
             ['N° Identifiant Unique (NIU)', config?.niu ?? '—'],
             ['RCCM',                        config?.rccm ?? '—'],
-            ['Adresse',                     'Rue Joss, Akwa, Douala'],
-            ["Code d'activité",             config?.codeActivite ?? '7020Z'],
-            ["Régime d'imposition",         'Réel Normal'],
+            ['Adresse',                     [companyInfo?.adresse, companyInfo?.ville].filter(Boolean).join(', ') || '—'],
+            ["Code d'activité",             config?.codeActivite ?? '—'],
+            ["Régime d'imposition",         config?.taxRegime === 'REEL_NORMAL' ? 'Réel Normal' : config?.taxRegime === 'REEL_SIMPLIFIE' ? 'Réel Simplifié' : config?.taxRegime === 'IGS' ? 'IGS' : config?.taxRegime ?? '—'],
             ['PERIODE DE DECLARATION',      periodLabel.toUpperCase()],
           ].map(([label, value], i) => (
             <tr key={label} style={{ background: i % 2 === 0 ? '#fff' : DGI_ROW_ALT }}>

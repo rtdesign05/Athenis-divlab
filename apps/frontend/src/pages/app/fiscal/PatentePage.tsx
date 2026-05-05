@@ -49,7 +49,7 @@ export function PatentePage() {
       <DgiFormHeader
         formRef="P/CM-DGI"
         title={`PATENTE ${year} — CONTRIBUTION DES PATENTES (CGI Art. 576 à 601)`}
-        subtitle={`Exercice ${year} — Échéance 28/02/${year} | Régime : Réel Normal`}
+        subtitle={`Exercice ${year} — Échéance 28/02/${year} | Régime : ${config?.taxRegime === 'REEL_NORMAL' ? 'Réel Normal' : config?.taxRegime === 'REEL_SIMPLIFIE' ? 'Réel Simplifié' : config?.taxRegime ?? 'Réel Normal'}`}
         {...(config?.centerImpots ? { centerImpots: config.centerImpots } : {})}
         {...(config?.niu ? { niu: config.niu } : {})}
       />

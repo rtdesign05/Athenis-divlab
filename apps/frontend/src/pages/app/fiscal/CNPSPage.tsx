@@ -130,14 +130,14 @@ export function CNPSPage() {
         <tbody>
           <tr>
             <td style={cellBase}>Cotisation CNPS (retraite + maladie + AT)</td>
-            <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: CNPS_BLUE }}>{data.tauxPatronal}%</td>
-            <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: CNPS_BLUE }}>{data.tauxSalarial}%</td>
+            <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: CNPS_BLUE }}>{Number(data.tauxPatronal).toFixed(1)}%</td>
+            <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: CNPS_BLUE }}>{Number(data.tauxSalarial).toFixed(1)}%</td>
             <td style={{ ...cellBase, fontSize: 8, color: '#555' }}>Salaire brut plafonné</td>
           </tr>
           <tr style={{ background: CNPS_ALT }}>
             <td style={cellBase}>FDFP (Formation professionnelle)</td>
-            <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: CNPS_BLUE }}>{data.tauxFdfpPatronal}%</td>
-            <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: CNPS_BLUE }}>{data.tauxFdfpSalarial}%</td>
+            <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: CNPS_BLUE }}>{Number(data.tauxFdfpPatronal).toFixed(1)}%</td>
+            <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold', color: CNPS_BLUE }}>{Number(data.tauxFdfpSalarial).toFixed(1)}%</td>
             <td style={{ ...cellBase, fontSize: 8, color: '#555' }}>Masse salariale brute totale</td>
           </tr>
         </tbody>
@@ -198,13 +198,13 @@ export function CNPSPage() {
             <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace', fontWeight: 'bold' }}>{fmt(data.totals.masseSalariale)}</td>
           </tr>
           <tr style={{ background: CNPS_ALT }}>
-            <td style={cellBase}>Cotisations CNPS ({data.tauxPatronal}% / {data.tauxSalarial}%)</td>
+            <td style={cellBase}>Cotisations CNPS ({Number(data.tauxPatronal).toFixed(1)}% / {Number(data.tauxSalarial).toFixed(1)}%)</td>
             <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace' }}>{fmt(data.totals.cnpsPatronal)}</td>
             <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace' }}>{fmt(data.totals.cnpsSalarial)}</td>
             <td style={{ ...subtotalCell, textAlign: 'right', fontFamily: 'monospace' }}>{fmt(data.totals.cnpsPatronal + data.totals.cnpsSalarial)}</td>
           </tr>
           <tr>
-            <td style={cellBase}>FDFP ({data.tauxFdfpPatronal}% / {data.tauxFdfpSalarial}%)</td>
+            <td style={cellBase}>FDFP ({Number(data.tauxFdfpPatronal).toFixed(1)}% / {Number(data.tauxFdfpSalarial).toFixed(1)}%)</td>
             <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace' }}>{fmt(data.totals.fdfpPatronal)}</td>
             <td style={{ ...cellBase, textAlign: 'right', fontFamily: 'monospace' }}>{fmt(data.totals.fdfpSalarial)}</td>
             <td style={{ ...subtotalCell, textAlign: 'right', fontFamily: 'monospace' }}>{fmt(data.totals.fdfpPatronal + data.totals.fdfpSalarial)}</td>

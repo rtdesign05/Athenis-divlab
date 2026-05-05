@@ -203,6 +203,40 @@ export interface LiasseData {
   year: number; documents: LiasseDoc[]; done: number; total: number; progress: number
 }
 
+export interface CompanyInfo {
+  nom: string; pays: string; niu: string; rccm: string
+  centerImpots: string; codeActivite: string
+  adresse: string; ville: string; telephone: string; email: string
+}
+
+export interface ISHistoryRow {
+  year: number
+  resultatFiscal: number | null
+  isPayer: number | null
+  acomptesVerses: number
+  solde: number | null
+  status: TaxDeclStatus | null
+  declaredAt: string | null
+}
+
+export interface DSFHistoryRow {
+  anneeExercice: number
+  anneeDépôt: number
+  dateDepot: string | null
+  status: TaxDeclStatus | null
+  echéance: string
+}
+
+export interface RASSuggestion {
+  beneficiaire: string; type: string; base: number; taux: number; retenue: number; source: string
+}
+
+export interface RASSuggestionsData {
+  month: number; year: number
+  suggestions: RASSuggestion[]
+  total: number
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
 
 export const fiscalApi = {
@@ -259,4 +293,16 @@ export const fiscalApi = {
 
   visibleModules: () =>
     api.get<{ data: VisibleModules }>('/fiscal/visible-modules').then(d),
+
+  companyInfo: () =>
+    api.get<{ data: CompanyInfo }>('/fiscal/company-info').then(d),
+
+  isHistory: () =>
+    api.get<{ data: ISHistoryRow[] }>('/fiscal/is/history').then(d),
+
+  dsfHistory: () =>
+    api.get<{ data: DSFHistoryRow[] }>('/fiscal/dsf/history').then(d),
+
+  rasSuggestions: (year: number, month: number) =>
+    api.get<{ data: RASSuggestionsData }>(`/fiscal/ras/suggestions?year=${year}&month=${month}`).then(d),
 }
