@@ -799,10 +799,25 @@ model ESGData {
   company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   year        Int
-  energyKwh   Decimal? @db.Decimal(12, 2) @map("energy_kwh")
-  wasteKg     Decimal? @db.Decimal(10, 2) @map("waste_kg")
-  genderPayGap Decimal? @db.Decimal(5, 2) @map("gender_pay_gap")
-  trainingHours Decimal? @db.Decimal(8, 2) @map("training_hours")
+
+  // ── Environnement ─────────────────────────────────────────────────────────
+  energyKwh          Decimal? @db.Decimal(12, 2) @map("energy_kwh")
+  wasteKg            Decimal? @db.Decimal(10, 2) @map("waste_kg")
+  renewableRatio     Decimal? @db.Decimal(5, 2)  @map("renewable_ratio")
+  scope1Tco2e        Decimal? @db.Decimal(10, 4) @map("scope1_tco2e")
+  scope2Tco2e        Decimal? @db.Decimal(10, 4) @map("scope2_tco2e")
+  scope3Tco2e        Decimal? @db.Decimal(10, 4) @map("scope3_tco2e")
+
+  // ── Social ────────────────────────────────────────────────────────────────
+  genderPayGap       Decimal? @db.Decimal(5, 2)  @map("gender_pay_gap")
+  trainingHours      Decimal? @db.Decimal(8, 2)  @map("training_hours")
+  absenteeismRate    Decimal? @db.Decimal(5, 2)  @map("absenteeism_rate")
+  workplaceAccidents Int?                         @map("workplace_accidents")
+
+  // ── Gouvernance ───────────────────────────────────────────────────────────
+  boardFemaleRatio   Decimal? @db.Decimal(5, 2)  @map("board_female_ratio")
+  hasEthicsCode      Boolean  @default(false)     @map("has_ethics_code")
+  hasAnticorruption  Boolean  @default(false)     @map("has_anticorruption")
 
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
