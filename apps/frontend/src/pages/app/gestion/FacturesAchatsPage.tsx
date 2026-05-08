@@ -1,9 +1,10 @@
-import { useMemo, useState, useRef } from 'react'
+import { useMemo, useState, useRef, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type FactureAchatStatut, type FactureAchat } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { printDocument } from '@/lib/printDocument'
+import { generateQRDataUrl, buildFactureAchatQR } from '@/lib/qrCode'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -431,6 +432,19 @@ interface FAViewProps {
 
 function FAView({ fa, companyName, address, fmtCurrency, onClose, onChangeStatut }: FAViewProps) {
   const printRef = useRef<HTMLDivElement>(null)
+  const [qrDataUrl, setQrDataUrl] = useState<string>('')
+  useEffect(() => {
+    generateQRDataUrl(buildFactureAchatQR({
+      id:         fa.id,
+      fournisseur: fa.fournisseur,
+      date:       fa.date,
+      echeance:   fa.echeance,
+      montantHT:  fa.montantHT,
+      tva:        fa.tva,
+      montantTTC: fa.montantTTC,
+      statut:     fa.statut,
+    })).then(setQrDataUrl).catch(() => setQrDataUrl(''))
+  }, [fa.id, fa.statut])
 
   const lignes  = fa.lignes ?? []
   const totalHT = lignes.length > 0
@@ -585,11 +599,18 @@ function FAView({ fa, companyName, address, fmtCurrency, onClose, onChangeStatut
               </div>
             )}
 
-            {/* Pied de page */}
-            <div className="border-t border-gray-100 pt-4 text-center">
-              <p className="text-[11px] text-gray-400">
-                © {new Date().getFullYear()} {companyName} — Document généré par Athenis
+            {/* Pied de page + QR Code */}
+            <div className="mt-8 pt-4 border-t border-gray-100 flex items-end justify-between gap-4">
+              <p className="text-xs text-gray-400">
+                © {new Date().getFullYear()} {companyName} — {address} — Document généré par Athenis
               </p>
+              {qrDataUrl && (
+                <div className="flex flex-col items-center shrink-0">
+                  <img src={qrDataUrl} alt="QR Code" className="w-20 h-20 border border-gray-200 rounded p-0.5" />
+                  <p className="mt-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Vérification</p>
+                  <p className="text-[10px] text-gray-400 font-mono">{fa.id}</p>
+                </div>
+              )}
             </div>
           </div>
         </div>

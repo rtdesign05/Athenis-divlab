@@ -12,6 +12,7 @@ import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { SendEmailModal } from '@/components/gestion/SendEmailModal'
 import { encodePaymentToken } from '@/pages/pay/PaymentPage'
 import { printDocument } from '@/lib/printDocument'
+import { generateQRDataUrl, buildFactureVenteQR } from '@/lib/qrCode'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -189,7 +190,12 @@ function InvoiceView({
   const [emailOpen,   setEmailOpen]   = useState(false)
   const [payLinkOpen, setPayLinkOpen] = useState(false)
   const [copied,      setCopied]      = useState(false)
+  const [qrDataUrl,   setQrDataUrl]   = useState<string>('')
   const docRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    generateQRDataUrl(buildFactureVenteQR(facture)).then(setQrDataUrl).catch(() => setQrDataUrl(''))
+  }, [facture.id, facture.statut])
 
   const companyName    = company?.name    ?? 'Société Athenis'
   const companyAddress = company?.address ?? '12 Rue Bonanjo'
@@ -504,9 +510,18 @@ function InvoiceView({
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="mt-6 pt-4 border-t border-gray-100 text-center text-xs text-gray-400">
-            {companyName} — {companyAddress}, {companyCity} — Document généré par Athenis
+          {/* QR Code + Footer */}
+          <div className="mt-8 pt-4 border-t border-gray-100 flex items-end justify-between gap-4">
+            <p className="text-xs text-gray-400">
+              {companyName} — {companyAddress}, {companyCity} — Document généré par Athenis
+            </p>
+            {qrDataUrl && (
+              <div className="flex flex-col items-center shrink-0">
+                <img src={qrDataUrl} alt="QR Code" className="w-20 h-20 border border-gray-200 rounded p-0.5" />
+                <p className="mt-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Vérification</p>
+                <p className="text-[10px] text-gray-400 font-mono">{facture.id}</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

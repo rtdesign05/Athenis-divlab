@@ -3,6 +3,7 @@ import type { DocumentProps } from '@react-pdf/renderer'
 import { saveAs } from 'file-saver'
 import React, { type JSXElementConstructor, type ReactElement } from 'react'
 import type { Invoice, Quote } from '@/services/billingApi'
+import { generateQRDataUrl, buildInvoiceQR, buildDevisQR } from '@/lib/qrCode'
 import type { Payslip } from '@/services/hrApi'
 import type { Bilan, CompteResultat, BalanceData, GrandLivreData, FinancialStatements } from '@/services/accountingApi'
 import type { LegalContract } from '@/services/legalApi'
@@ -40,13 +41,19 @@ export function usePdf() {
 
   // ── Billing ───────────────────────────────────────────────────────────────────
   const downloadInvoice = async (invoice: Invoice) => {
-    const { InvoicePdf } = await import('@/features/billing/pdf/InvoicePdf')
-    await generate(React.createElement(InvoicePdf, { invoice }) as PdfElement, `Facture_${slug(invoice.number)}_${invoice.issueDate}.pdf`)
+    const [{ InvoicePdf }, qrDataUrl] = await Promise.all([
+      import('@/features/billing/pdf/InvoicePdf'),
+      generateQRDataUrl(buildInvoiceQR(invoice)),
+    ])
+    await generate(React.createElement(InvoicePdf, { invoice, qrDataUrl }) as PdfElement, `Facture_${slug(invoice.number)}_${invoice.issueDate}.pdf`)
   }
 
   const downloadDevis = async (quote: Quote) => {
-    const { DevisPdf } = await import('@/features/billing/pdf/DevisPdf')
-    await generate(React.createElement(DevisPdf, { quote }) as PdfElement, `Devis_${slug(quote.number)}_${quote.issueDate}.pdf`)
+    const [{ DevisPdf }, qrDataUrl] = await Promise.all([
+      import('@/features/billing/pdf/DevisPdf'),
+      generateQRDataUrl(buildDevisQR(quote)),
+    ])
+    await generate(React.createElement(DevisPdf, { quote, qrDataUrl }) as PdfElement, `Devis_${slug(quote.number)}_${quote.issueDate}.pdf`)
   }
 
   // ── HR ────────────────────────────────────────────────────────────────────────

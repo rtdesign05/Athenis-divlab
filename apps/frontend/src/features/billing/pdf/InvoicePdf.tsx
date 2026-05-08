@@ -1,4 +1,4 @@
-import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import type { Invoice } from '@/services/billingApi'
 
 const S = StyleSheet.create({
@@ -19,6 +19,12 @@ const S = StyleSheet.create({
   totalRow:     { flexDirection: 'row', backgroundColor: '#006633', padding: '5 6' },
   totalTxt:     { color: 'white', fontFamily: 'Helvetica-Bold', fontSize: 9 },
   note:         { marginTop: 14, padding: '6 8', backgroundColor: '#f9fafb', borderWidth: 0.5, borderColor: '#ccc', fontSize: 7.5, color: '#555' },
+  // QR code
+  qrSection:    { marginTop: 16, flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'flex-start' },
+  qrBox:        { alignItems: 'center', borderWidth: 0.5, borderColor: '#e5e7eb', padding: '6 6', backgroundColor: '#f9fafb' },
+  qrImage:      { width: 80, height: 80 },
+  qrLabel:      { fontSize: 6, color: '#999', marginTop: 3, textAlign: 'center', fontFamily: 'Helvetica-Bold' },
+  qrSubLabel:   { fontSize: 5.5, color: '#bbb', textAlign: 'center', marginTop: 1 },
   footer:       { position: 'absolute', bottom: 20, left: 30, right: 30, fontSize: 7, color: '#aaa', textAlign: 'center' },
 })
 
@@ -29,7 +35,12 @@ const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', SENT: 'Envoyée', PAID: 'Payée', OVERDUE: 'En retard', CANCELLED: 'Annulée',
 }
 
-export function InvoicePdf({ invoice }: { invoice: Invoice }) {
+interface InvoicePdfProps {
+  invoice: Invoice
+  qrDataUrl?: string
+}
+
+export function InvoicePdf({ invoice, qrDataUrl }: InvoicePdfProps) {
   const issued = new Date(invoice.issueDate).toLocaleDateString('fr-FR')
   const due    = new Date(invoice.dueDate).toLocaleDateString('fr-FR')
 
@@ -86,6 +97,17 @@ export function InvoicePdf({ invoice }: { invoice: Invoice }) {
           <View style={S.note}>
             <Text style={{ fontFamily: 'Helvetica-Bold', marginBottom: 2 }}>Notes</Text>
             <Text>{invoice.notes}</Text>
+          </View>
+        ) : null}
+
+        {/* ── QR Code ── */}
+        {qrDataUrl ? (
+          <View style={S.qrSection}>
+            <View style={S.qrBox}>
+              <Image src={qrDataUrl} style={S.qrImage} />
+              <Text style={S.qrLabel}>Vérification du document</Text>
+              <Text style={S.qrSubLabel}>{invoice.number}</Text>
+            </View>
           </View>
         ) : null}
 

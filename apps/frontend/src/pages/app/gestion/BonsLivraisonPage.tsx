@@ -4,6 +4,7 @@ import { useGestion, type BLStatut, type BonLivraison, type LigneLivraison } fro
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { SendEmailModal } from '@/components/gestion/SendEmailModal'
 import { printDocument } from '@/lib/printDocument'
+import { generateQRDataUrl, buildBLQR } from '@/lib/qrCode'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -85,7 +86,12 @@ function BLView({ bl, allBL, currentIndex, onClose, onNavigate, onStatut }: BLVi
   const { company }  = useCompanySettings()
   const { clients }  = useGestion()
   const [emailOpen, setEmailOpen] = useState(false)
+  const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const docRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    generateQRDataUrl(buildBLQR(bl)).then(setQrDataUrl).catch(() => setQrDataUrl(''))
+  }, [bl.id, bl.statut])
 
   const companyName    = company?.name         ?? 'Société Athenis'
   const companyAddress = company?.address      ?? '12 Rue Bonanjo'
@@ -280,24 +286,36 @@ function BLView({ bl, allBL, currentIndex, onClose, onNavigate, onStatut }: BLVi
             </div>
           )}
 
-          {/* Signatures */}
-          <div className="grid grid-cols-2 gap-10 mt-12 pt-6 border-t border-gray-100">
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-6">Émis par (expéditeur)</p>
-              <p className="text-sm text-gray-700 mb-1">{companyName}</p>
-              <p className="text-xs text-gray-400 mb-8">Date : {fmtDate(bl.dateCreation)}</p>
-              <div className="border-t border-gray-300 pt-1">
-                <p className="text-[10px] text-gray-400">Signature &amp; cachet</p>
+          {/* Signatures + QR */}
+          <div className="mt-12 pt-6 border-t border-gray-100">
+            <div className="grid grid-cols-3 gap-6">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-6">Émis par (expéditeur)</p>
+                <p className="text-sm text-gray-700 mb-1">{companyName}</p>
+                <p className="text-xs text-gray-400 mb-8">Date : {fmtDate(bl.dateCreation)}</p>
+                <div className="border-t border-gray-300 pt-1">
+                  <p className="text-[10px] text-gray-400">Signature &amp; cachet</p>
+                </div>
               </div>
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-6">Reçu par (destinataire)</p>
-              <p className="text-sm text-gray-700 mb-1">{bl.client}</p>
-              <p className="text-xs text-gray-400 mb-8">
-                Date : {bl.dateLivraison ? fmtDate(bl.dateLivraison) : '_______________'}
-              </p>
-              <div className="border-t border-gray-300 pt-1">
-                <p className="text-[10px] text-gray-400">Signature &amp; cachet</p>
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-6">Reçu par (destinataire)</p>
+                <p className="text-sm text-gray-700 mb-1">{bl.client}</p>
+                <p className="text-xs text-gray-400 mb-8">
+                  Date : {bl.dateLivraison ? fmtDate(bl.dateLivraison) : '_______________'}
+                </p>
+                <div className="border-t border-gray-300 pt-1">
+                  <p className="text-[10px] text-gray-400">Signature &amp; cachet</p>
+                </div>
+              </div>
+              {/* QR Code */}
+              <div className="flex flex-col items-center justify-center">
+                {qrDataUrl && (
+                  <>
+                    <img src={qrDataUrl} alt="QR Code" className="w-24 h-24 border border-gray-200 rounded p-1" />
+                    <p className="mt-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Vérification</p>
+                    <p className="text-[10px] text-gray-400 font-mono">{bl.id}</p>
+                  </>
+                )}
               </div>
             </div>
           </div>

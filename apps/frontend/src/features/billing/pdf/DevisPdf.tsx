@@ -1,4 +1,4 @@
-import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import type { Quote } from '@/services/billingApi'
 
 const S = StyleSheet.create({
@@ -19,6 +19,13 @@ const S = StyleSheet.create({
   totalRow:     { flexDirection: 'row', backgroundColor: '#b45309', padding: '5 6' },
   totalTxt:     { color: 'white', fontFamily: 'Helvetica-Bold', fontSize: 9 },
   note:         { marginTop: 14, padding: '6 8', backgroundColor: '#fffbeb', borderWidth: 0.5, borderColor: '#d97706', fontSize: 7.5, color: '#555' },
+  validity:     { marginTop: 8, padding: '4 6', backgroundColor: '#fffbeb', borderWidth: 0.5, borderColor: '#d97706' },
+  // QR code
+  qrSection:    { marginTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+  qrBox:        { alignItems: 'center', borderWidth: 0.5, borderColor: '#e5e7eb', padding: '6 6', backgroundColor: '#fffbeb' },
+  qrImage:      { width: 80, height: 80 },
+  qrLabel:      { fontSize: 6, color: '#92400e', marginTop: 3, textAlign: 'center', fontFamily: 'Helvetica-Bold' },
+  qrSubLabel:   { fontSize: 5.5, color: '#d97706', textAlign: 'center', marginTop: 1 },
   footer:       { position: 'absolute', bottom: 20, left: 30, right: 30, fontSize: 7, color: '#aaa', textAlign: 'center' },
 })
 
@@ -29,7 +36,12 @@ const statusLabel: Record<string, string> = {
   DRAFT: 'Brouillon', SENT: 'Envoyé', ACCEPTED: 'Accepté', REJECTED: 'Refusé', CONVERTED: 'Converti',
 }
 
-export function DevisPdf({ quote }: { quote: Quote }) {
+interface DevisPdfProps {
+  quote: Quote
+  qrDataUrl?: string
+}
+
+export function DevisPdf({ quote, qrDataUrl }: DevisPdfProps) {
   const issued = new Date(quote.issueDate).toLocaleDateString('fr-FR')
   const valid  = new Date(quote.validUntil).toLocaleDateString('fr-FR')
 
@@ -89,10 +101,22 @@ export function DevisPdf({ quote }: { quote: Quote }) {
           </View>
         ) : null}
 
-        <View style={{ marginTop: 8, padding: '4 6', backgroundColor: '#fffbeb', borderWidth: 0.5, borderColor: '#d97706' }}>
-          <Text style={{ fontSize: 7.5, color: '#92400e' }}>
-            Ce devis est valable jusqu'au {valid}. Signature et cachet du client requis pour acceptation.
-          </Text>
+        {/* ── Ligne de bas : validité + QR ── */}
+        <View style={S.qrSection}>
+          <View style={{ flex: 1, marginRight: qrDataUrl ? 12 : 0 }}>
+            <View style={S.validity}>
+              <Text style={{ fontSize: 7.5, color: '#92400e' }}>
+                Ce devis est valable jusqu'au {valid}. Signature et cachet du client requis pour acceptation.
+              </Text>
+            </View>
+          </View>
+          {qrDataUrl ? (
+            <View style={S.qrBox}>
+              <Image src={qrDataUrl} style={S.qrImage} />
+              <Text style={S.qrLabel}>Scanner pour vérifier</Text>
+              <Text style={S.qrSubLabel}>{quote.number}</Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={S.footer}>
