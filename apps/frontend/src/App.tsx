@@ -37,6 +37,12 @@ const router = createBrowserRouter([
 
       { index: true, lazy: lz(() => import('@/pages/app/Dashboard'), 'AppDashboard') },
 
+      // ── Cahier des charges (temp download page) ─────────────────────────────
+      { path: 'cahier-charges', lazy: lz(() => import('@/pages/app/CahierChargesDownloadPage'), 'CahierChargesDownloadPage') },
+      { path: 'analyse-concurrentielle', lazy: lz(() => import('@/pages/app/AnalyseConcurrentielleDownloadPage'), 'AnalyseConcurrentielleDownloadPage') },
+      { path: 'cahier-charges-v2', lazy: lz(() => import('@/pages/cahier/CahierChargesV2Page'), 'default') },
+      { path: 'investor-deck', lazy: lz(() => import('@/pages/cahier/InvestorDeckPage'), 'default') },
+
       // ── Redirects from legacy paths ──────────────────────────────────────────
       { path: 'dashboard',  element: <Navigate to="/app/gestion/ventes"     replace /> },
       { path: 'invoices',   element: <Navigate to="/app/gestion/ventes"     replace /> },

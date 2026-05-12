@@ -14,30 +14,18 @@ export async function getDashboard(userId: string) {
   const now          = new Date()
   const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
+  // Ensure the personal profile exists (no-op for returning users)
+  await prisma.personalProfile.upsert({ where: { userId }, create: { userId }, update: {} }).catch(() => null)
+
   const [
-    profile,
-    revenusAgg,
-    depensesAgg,
     revenusMoisAgg,
     depensesMoisAgg,
-    objectifsCount,
-    objectifsAtteints,
     comptesAgg,
+    comptesList,
+    objectifsList,
+    recentRevenus,
+    recentDepenses,
   ] = await Promise.all([
-    // Upsert profile to ensure it exists
-    prisma.personalProfile.upsert({
-      where:  { userId },
-      create: { userId },
-      update: {},
-    }),
-    prisma.personalRevenue.aggregate({
-      where: { userId },
-      _sum:  { amount: true },
-    }),
-    prisma.personalExpense.aggregate({
-      where: { userId },
-      _sum:  { amount: true },
-    }),
     prisma.personalRevenue.aggregate({
       where: { userId, date: { gte: firstOfMonth } },
       _sum:  { amount: true },
@@ -46,33 +34,84 @@ export async function getDashboard(userId: string) {
       where: { userId, date: { gte: firstOfMonth } },
       _sum:  { amount: true },
     }),
-    prisma.personalObjectif.count({ where: { userId } }),
-    prisma.personalObjectif.count({ where: { userId, achieved: true } }),
     prisma.personalCompte.aggregate({
       where: { userId },
       _sum:  { balance: true },
     }),
+    prisma.personalCompte.findMany({
+      where:   { userId },
+      orderBy: { nom: 'asc' },
+    }),
+    prisma.personalObjectif.findMany({
+      where:   { userId },
+      orderBy: [{ achieved: 'asc' }, { deadline: 'asc' }],
+    }),
+    prisma.personalRevenue.findMany({
+      where:   { userId },
+      orderBy: { date: 'desc' },
+      take:    5,
+    }),
+    prisma.personalExpense.findMany({
+      where:   { userId },
+      orderBy: { date: 'desc' },
+      take:    5,
+    }),
   ])
 
-  const totalRevenus  = toNum(revenusAgg._sum?.amount)
-  const totalDepenses = toNum(depensesAgg._sum?.amount)
-  const revenusMois   = toNum(revenusMoisAgg._sum?.amount)
-  const depensesMois  = toNum(depensesMoisAgg._sum?.amount)
-  const soldeTotal    = toNum(comptesAgg._sum?.balance)
+  const revenusMois  = toNum(revenusMoisAgg._sum?.amount)
+  const depensesMois = toNum(depensesMoisAgg._sum?.amount)
+  const soldeTotal   = toNum(comptesAgg._sum?.balance)
+
+  const tauxEpargne =
+    revenusMois > 0 ? Math.round(((revenusMois - depensesMois) / revenusMois) * 100) : 0
+
+  // Merge and sort the 5 most recent transactions across revenus + dépenses
+  const transactionsRecentes = [
+    ...recentRevenus.map((r) => ({
+      id:         r.id,
+      libelle:    r.label,
+      montant:    toNum(r.amount),
+      categorie:  r.type,
+      date:       r.date.toISOString(),
+      recurrent:  r.recurrent,
+      createdAt:  r.createdAt.toISOString(),
+      type:       'REVENU' as const,
+    })),
+    ...recentDepenses.map((d) => ({
+      id:         d.id,
+      libelle:    d.label,
+      montant:    toNum(d.amount),
+      categorie:  d.category,
+      date:       d.date.toISOString(),
+      recurrent:  false,
+      createdAt:  d.createdAt.toISOString(),
+      type:       'DEPENSE' as const,
+    })),
+  ]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5)
 
   return {
-    profile,
-    summary: {
-      soldeTotal,
-      totalRevenus,
-      totalDepenses,
-      epargneNette:    totalRevenus - totalDepenses,
-      revenusMois,
-      depensesMois,
-      soldeNetMois:    revenusMois - depensesMois,
-      objectifsCount,
-      objectifsAtteints,
-    },
+    revenusMois,
+    depensesMois,
+    soldeTotalComptes: soldeTotal,
+    tauxEpargne,
+    comptes: comptesList.map((c) => ({
+      id:        c.id,
+      nom:       c.nom,
+      type:      c.type,
+      solde:     toNum(c.balance),
+      createdAt: c.createdAt.toISOString(),
+    })),
+    objectifs: objectifsList.map((o) => ({
+      id:            o.id,
+      nom:           o.name,
+      montantCible:  toNum(o.targetAmount),
+      montantActuel: toNum(o.currentAmount),
+      dateEcheance:  o.deadline ? o.deadline.toISOString() : null,
+      createdAt:     o.createdAt.toISOString(),
+    })),
+    transactionsRecentes,
   }
 }
 

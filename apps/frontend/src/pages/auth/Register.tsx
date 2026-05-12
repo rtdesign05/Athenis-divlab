@@ -202,6 +202,25 @@ export function Register() {
     }
   }
 
+  // Guard against double-submit: React StrictMode renders twice in dev, and
+  // the finally { setLoading(false) } could re-trigger a render-body call before
+  // navigate() unmounts the component in production.
+  const submitCalledRef = useRef(false)
+
+  useEffect(() => {
+    if (step === 4) {
+      if (!submitCalledRef.current) {
+        submitCalledRef.current = true
+        void submit()
+      }
+    } else {
+      // Reset guard so the user can retry after being sent back to step 2/3
+      submitCalledRef.current = false
+    }
+    // submit is recreated each render; we intentionally only re-run when step changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
   async function submit() {
     setLoading(true); setError('')
     try {
@@ -219,6 +238,7 @@ export function Register() {
           accountType: 'COMPANY',
           companyName: form.companyName,
           taille: form.taille,
+          plan: form.plan,
           country: form.country,
           ...(form.siren   ? { siren:   form.siren   } : {}),
           ...(form.niu     ? { niu:     form.niu     } : {}),
@@ -257,8 +277,6 @@ export function Register() {
       setLoading(false)
     }
   }
-
-  if (step === 4 && !loading && !error) { void submit() }
 
   // Derived
   const isCompany = form.accountType === 'COMPANY'

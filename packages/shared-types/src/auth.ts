@@ -46,7 +46,7 @@ export interface RegisterCompanyRequest {
   niu?: string
   secteur?: string
   taille?: 'TPE' | 'PME' | 'ETI' | 'GE'
-  // Note: plan is intentionally absent — all new companies start on FREE.
+  plan?: Plan
   country?: string
 }
 

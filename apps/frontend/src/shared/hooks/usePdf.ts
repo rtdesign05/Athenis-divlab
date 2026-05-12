@@ -111,6 +111,27 @@ export function usePdf() {
     await generate(React.createElement(ContratPdf, { contrat }) as PdfElement, `Contrat_${slug(contrat.title)}_${contrat.createdAt.slice(0, 10)}.pdf`)
   }
 
+  // ── Cahier des charges ────────────────────────────────────────────────────────
+  const downloadCahierCharges = async () => {
+    const { CahierChargesPdf } = await import('@/features/cahier/CahierChargesPdf')
+    await generate(React.createElement(CahierChargesPdf) as PdfElement, `Athenis_CahierDesCharges_v1.0.pdf`)
+  }
+
+  const downloadAnalyseConcurrentielle = async () => {
+    const { AnalyseConcurrentielleePdf } = await import('@/features/cahier/AnalyseConcurrentielleePdf')
+    await generate(React.createElement(AnalyseConcurrentielleePdf) as PdfElement, `Athenis_AnalyseConcurrentielle_Innovation_v1.0.pdf`)
+  }
+
+  const downloadCahierChargesV2 = async () => {
+    const { CahierChargesV2Pdf } = await import('@/features/cahier/CahierChargesV2Pdf')
+    await generate(React.createElement(CahierChargesV2Pdf) as PdfElement, `Athenis_CahierDesCharges_v2.0_Strategique.pdf`)
+  }
+
+  const downloadInvestorDeck = async () => {
+    const { InvestorDeckPdf } = await import('@/features/cahier/InvestorDeckPdf')
+    await generate(React.createElement(InvestorDeckPdf) as PdfElement, `Athenis_InvestorDeck_2026_Confidentiel.pdf`)
+  }
+
   return {
     // Fiscal
     downloadTva, downloadIs, downloadIgs, downloadDsf,
@@ -124,5 +145,10 @@ export function usePdf() {
     downloadEsgRapport, downloadDpef,
     // Legal
     downloadContrat,
+    // Cahier des charges
+    downloadCahierCharges,
+    downloadAnalyseConcurrentielle,
+    downloadCahierChargesV2,
+    downloadInvestorDeck,
   }
 }

@@ -30,8 +30,7 @@ export const RegisterCompanyDto = z.object({
   niu: z.string().min(1).max(30).trim().optional(),
   secteur: z.string().max(100).trim().optional(),
   taille: z.enum(['TPE', 'PME', 'ETI', 'GE']).default('PME'),
-  // Note: `plan` is intentionally absent — all new companies start on FREE.
-  // Plan upgrades are handled through the billing flow only.
+  plan: z.enum(['FREE', 'STARTER', 'PRO', 'PREMIUM']).default('FREE'),
   country: z.string().length(2).regex(/^[A-Za-z]{2}$/).default('FR').transform((v) => v.toUpperCase()),
 })
 

@@ -260,9 +260,7 @@ export async function register(
     })
     dbUser = user as unknown as DbUser
   } else if (dto.accountType === 'COMPANY') {
-    // All new companies start on FREE — plan cannot be self-assigned at registration.
-    // Upgrades are handled exclusively through the billing flow.
-    const registrationPlan = 'FREE' as const
+    const registrationPlan = (dto.plan ?? 'FREE') as import('@prisma/client').Plan
     const modules = getDefaultModules(registrationPlan)
     const countryCfg = getCountryConfig(dto.country ?? 'FR')
     dbUser = await prisma.$transaction(async (tx) => {

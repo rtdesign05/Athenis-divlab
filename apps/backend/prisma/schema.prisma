@@ -104,7 +104,6 @@ model AtheisCounter {
   id         String      @id @default(cuid())
   type       AccountType @unique
   lastNumber Int         @default(0) @map("last_number")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
 
   @@map("athenis_counters")
 }
