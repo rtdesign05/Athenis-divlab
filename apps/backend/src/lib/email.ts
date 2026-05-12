@@ -113,6 +113,148 @@ export async function sendCabinetInvitationEmail(
   })
 }
 
+// ── Signature électronique ────────────────────────────────────────────────────
+
+export async function sendSignatureRequestEmail(
+  to: string,
+  opts: {
+    signerName:    string
+    contractTitle: string
+    companyName:   string
+    signUrl:       string
+    expiresAt?:    Date
+  },
+): Promise<void> {
+  const expire = opts.expiresAt
+    ? opts.expiresAt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null
+
+  await sendMail({
+    to,
+    subject: `Action requise : signature du document "${opts.contractTitle}" — ${opts.companyName}`,
+    text: [
+      `Bonjour ${opts.signerName},`,
+      '',
+      `${opts.companyName} vous invite à signer le document suivant de façon électronique :`,
+      `« ${opts.contractTitle} »`,
+      '',
+      `Cliquez sur le lien ci-dessous pour parcourir le document et apposer votre signature :`,
+      opts.signUrl,
+      '',
+      expire ? `Ce lien est valable jusqu'au ${expire}.` : '',
+      '',
+      'Aucun compte Athenis n\'est requis pour signer.',
+      '',
+      'Si vous n\'êtes pas concerné par ce document, ignorez cet e-mail.',
+    ].filter(l => l !== undefined).join('\n'),
+    html: `
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+
+        <!-- Header -->
+        <tr><td style="background:#1a3a2a;padding:32px 40px;text-align:center">
+          <span style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-.5px">Athenis</span>
+          <p style="color:#86efac;margin:6px 0 0;font-size:13px">Signature électronique sécurisée</p>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="padding:40px">
+          <p style="margin:0 0 6px;color:#6b7280;font-size:14px">Bonjour <strong style="color:#111827">${opts.signerName}</strong>,</p>
+          <h1 style="margin:0 0 20px;font-size:20px;color:#111827;line-height:1.3">
+            Vous avez un document à signer
+          </h1>
+
+          <!-- Document card -->
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:20px 24px;margin-bottom:28px">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#16a34a">Document</p>
+            <p style="margin:0 0 4px;font-size:17px;font-weight:700;color:#111827">« ${opts.contractTitle} »</p>
+            <p style="margin:0;font-size:13px;color:#374151">Envoyé par <strong>${opts.companyName}</strong></p>
+          </div>
+
+          <p style="margin:0 0 20px;color:#6b7280;font-size:14px;line-height:1.6">
+            Cliquez sur le bouton ci-dessous pour consulter le document et apposer votre signature électronique.
+            ${expire ? `<br>Ce lien est valable jusqu'au <strong>${expire}</strong>.` : ''}
+          </p>
+
+          <!-- CTA -->
+          <div style="text-align:center;margin:32px 0">
+            <a href="${opts.signUrl}"
+               style="display:inline-block;background:#15803d;color:#fff;text-decoration:none;padding:16px 40px;border-radius:10px;font-weight:700;font-size:16px;letter-spacing:.01em">
+              ✍️ Signer le document
+            </a>
+          </div>
+
+          <!-- Security note -->
+          <div style="background:#f9fafb;border-left:3px solid #d1fae5;padding:12px 16px;margin:24px 0;border-radius:0 6px 6px 0">
+            <p style="margin:0;font-size:12px;color:#6b7280;line-height:1.5">
+              🔒 <strong>Signature électronique avancée (AES)</strong> — Ce processus est conforme aux dispositions
+              de l'Acte Uniforme OHADA sur le Droit Commercial Général (2010) et à la Loi n°2010/021 du Cameroun
+              relative au commerce électronique. Votre adresse IP et la date/heure de signature seront enregistrées.
+            </p>
+          </div>
+
+          <p style="margin:16px 0 0;color:#9ca3af;font-size:12px">
+            Aucun compte n'est requis pour signer. Si vous n'êtes pas concerné, ignorez cet e-mail.<br>
+            Lien direct : <a href="${opts.signUrl}" style="color:#15803d;word-break:break-all">${opts.signUrl}</a>
+          </p>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:#f9fafb;padding:20px 40px;text-align:center;border-top:1px solid #e5e7eb">
+          <p style="margin:0;color:#9ca3af;font-size:12px">
+            © ${new Date().getFullYear()} Athenis · Plateforme de gestion d'entreprise · Signature électronique sécurisée
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`,
+  })
+}
+
+export async function sendSignatureCompletedEmail(
+  to: string,
+  opts: { companyName: string; contractTitle: string; certificateUrl: string },
+): Promise<void> {
+  await sendMail({
+    to,
+    subject: `✅ Document signé : "${opts.contractTitle}" — ${opts.companyName}`,
+    text: `Bonjour,\n\nTous les signataires ont complété la signature du document "${opts.contractTitle}".\n\nTéléchargez le certificat de réalisation ici :\n${opts.certificateUrl}\n\nCordialement,\nAthenis`,
+    html: `
+<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+        <tr><td style="background:#15803d;padding:32px 40px;text-align:center">
+          <span style="color:#fff;font-size:22px;font-weight:700">Athenis</span>
+          <p style="color:#bbf7d0;margin:6px 0 0;font-size:13px">✅ Document entièrement signé</p>
+        </td></tr>
+        <tr><td style="padding:40px">
+          <h1 style="margin:0 0 16px;font-size:20px;color:#111827">Signature complète !</h1>
+          <p style="color:#6b7280;font-size:14px;line-height:1.6">
+            Le document <strong>« ${opts.contractTitle} »</strong> a été signé par tous les signataires.
+          </p>
+          <div style="text-align:center;margin:32px 0">
+            <a href="${opts.certificateUrl}"
+               style="display:inline-block;background:#15803d;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600">
+              📄 Télécharger le certificat
+            </a>
+          </div>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`,
+  })
+}
+
 export async function sendVerificationEmail(to: string, token: string): Promise<void> {
   const url = `${env.frontendUrl}/auth/verify-email?token=${token}`
 

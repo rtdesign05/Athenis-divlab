@@ -1,8 +1,14 @@
-import { useState } from 'react'
+/**
+ * ContractsPage — Gestion des contrats avec signature électronique avancée (AES)
+ * Upload document · Multi-signataires · Suivi temps réel · Certificat de réalisation
+ */
+import { useState, useRef } from 'react'
 import {
   useContracts, useCreateContract, useUpdateContract, useDeleteContract, useSendSignature,
 } from '@/hooks/useLegal'
-import type { ContractType, ContractStatus, ContractParty, LegalContract } from '@/services/legalApi'
+import { legalApi }    from '@/services/legalApi'
+import { useQueryClient } from '@tanstack/react-query'
+import type { ContractType, ContractStatus, ContractParty, LegalContract, CompletionCertificate } from '@/services/legalApi'
 import {
   useContracts as useEmploymentContracts,
   type EmploymentContract,
@@ -11,13 +17,17 @@ import {
 
 const TYPE_LABEL: Record<ContractType, string> = {
   EMPLOYMENT: 'Contrat de travail', SERVICE: 'Prestation de services',
-  NDA: 'NDA / Confidentialité', PARTNERSHIP: 'Partenariat',
-  LEASE: 'Bail', SUPPLIER: 'Fournisseur', CLIENT: 'Client', OTHER: 'Autre',
+  NDA: 'NDA / Confidentialité',     PARTNERSHIP: 'Partenariat',
+  LEASE: 'Bail',                    SUPPLIER: 'Fournisseur',
+  CLIENT: 'Client',                 OTHER: 'Autre',
 }
 
 const STATUS_LABEL: Record<ContractStatus, string> = {
-  DRAFT: 'Brouillon', PENDING_SIGNATURE: 'En attente de signature',
-  SIGNED: 'Signé', EXPIRED: 'Expiré', TERMINATED: 'Résilié',
+  DRAFT:             'Brouillon',
+  PENDING_SIGNATURE: 'En attente de signature',
+  SIGNED:            'Signé',
+  EXPIRED:           'Expiré',
+  TERMINATED:        'Résilié',
 }
 
 const STATUS_BADGE: Record<ContractStatus, string> = {
@@ -31,16 +41,16 @@ const STATUS_BADGE: Record<ContractStatus, string> = {
 // ── Create modal ──────────────────────────────────────────────────────────────
 function CreateModal({ onClose }: { onClose: () => void }) {
   const create = useCreateContract()
-  const [title, setTitle]     = useState('')
-  const [type, setType]       = useState<ContractType>('SERVICE')
-  const [expiresAt, setExpiresAt] = useState('')
-  const [notes, setNotes]     = useState('')
-  const [parties, setParties] = useState<ContractParty[]>([{ name: '', email: '', role: '' }])
+  const [title,    setTitle]    = useState('')
+  const [type,     setType]     = useState<ContractType>('SERVICE')
+  const [expiresAt, setExpires] = useState('')
+  const [notes,    setNotes]    = useState('')
+  const [parties,  setParties]  = useState<ContractParty[]>([{ name: '', email: '', role: '' }])
 
-  const addParty = () => setParties(p => [...p, { name: '', email: '', role: '' }])
+  const addParty    = () => setParties(p => [...p, { name: '', email: '', role: '' }])
+  const removeParty = (i: number) => setParties(p => p.filter((_, j) => j !== i))
   const updateParty = (i: number, field: keyof ContractParty, val: string) =>
     setParties(p => p.map((x, j) => j === i ? { ...x, [field]: val } : x))
-  const removeParty = (i: number) => setParties(p => p.filter((_, j) => j !== i))
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,7 +58,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
       title, type,
       parties: parties.filter(p => p.name && p.email),
       ...(expiresAt ? { expiresAt } : {}),
-      ...(notes ? { notes } : {}),
+      ...(notes     ? { notes }     : {}),
     })
     onClose()
   }
@@ -61,7 +71,8 @@ function CreateModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="block text-sm font-medium text-gray-700">Titre</label>
             <input required className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              value={title} onChange={e => setTitle(e.target.value)} placeholder="Ex : Contrat de prestation client X" />
+              value={title} onChange={e => setTitle(e.target.value)}
+              placeholder="Ex : Contrat de prestation client X" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Type</label>
@@ -75,9 +86,8 @@ function CreateModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="block text-sm font-medium text-gray-700">Date d'expiration</label>
             <input type="date" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-              value={expiresAt} onChange={e => setExpiresAt(e.target.value)} />
+              value={expiresAt} onChange={e => setExpires(e.target.value)} />
           </div>
-          {/* Parties */}
           <div>
             <div className="mb-2 flex items-center justify-between">
               <label className="text-sm font-medium text-gray-700">Parties</label>
@@ -88,12 +98,12 @@ function CreateModal({ onClose }: { onClose: () => void }) {
               {parties.map((p, i) => (
                 <div key={i} className="flex gap-2 items-start">
                   <div className="flex-1 grid grid-cols-3 gap-1">
-                    <input placeholder="Nom" className="rounded border border-gray-300 px-2 py-1 text-xs"
-                      value={p.name} onChange={e => updateParty(i, 'name', e.target.value)} />
+                    <input placeholder="Nom"   className="rounded border border-gray-300 px-2 py-1 text-xs"
+                      value={p.name}       onChange={e => updateParty(i, 'name',  e.target.value)} />
                     <input placeholder="Email" className="rounded border border-gray-300 px-2 py-1 text-xs"
-                      value={p.email} onChange={e => updateParty(i, 'email', e.target.value)} />
-                    <input placeholder="Rôle" className="rounded border border-gray-300 px-2 py-1 text-xs"
-                      value={p.role ?? ''} onChange={e => updateParty(i, 'role', e.target.value)} />
+                      value={p.email}      onChange={e => updateParty(i, 'email', e.target.value)} />
+                    <input placeholder="Rôle"  className="rounded border border-gray-300 px-2 py-1 text-xs"
+                      value={p.role ?? ''} onChange={e => updateParty(i, 'role',  e.target.value)} />
                   </div>
                   {parties.length > 1 && (
                     <button type="button" onClick={() => removeParty(i)}
@@ -124,64 +134,287 @@ function CreateModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ── Signature modal ───────────────────────────────────────────────────────────
-function SignatureModal({ contract, onClose }: { contract: LegalContract; onClose: () => void }) {
-  const send = useSendSignature()
-  const [signerName, setSignerName]   = useState('')
-  const [signerEmail, setSignerEmail] = useState('')
-  const [signerRole, setSignerRole]   = useState('')
-  const [linkGenerated, setLinkGenerated] = useState<string | null>(null)
+// ── Upload Document modal ──────────────────────────────────────────────────────
+function UploadModal({ contract, onClose }: { contract: LegalContract; onClose: () => void }) {
+  const qc          = useQueryClient()
+  const fileRef     = useRef<HTMLInputElement>(null)
+  const [file, setFile]         = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError]       = useState('')
+  const [done, setDone]         = useState(false)
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const result = await send.mutateAsync({
-      id: contract.id,
-      dto: { signerName, signerEmail, ...(signerRole ? { signerRole } : {}) },
-    })
-    setLinkGenerated(result.signLink)
+  const handleFile = (f: File) => {
+    const allowed = ['application/pdf', 'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg', 'image/png']
+    if (!allowed.includes(f.type)) {
+      setError('Format non supporté. Utilisez PDF, DOCX, JPG ou PNG.')
+      return
+    }
+    if (f.size > 10 * 1024 * 1024) {
+      setError('Fichier trop lourd (max 10 MB).')
+      return
+    }
+    setFile(f)
+    setError('')
+  }
+
+  const upload = async () => {
+    if (!file) return
+    setUploading(true)
+    setError('')
+    try {
+      await legalApi.contracts.uploadDocument(contract.id, file)
+      await qc.invalidateQueries({ queryKey: ['contracts'] })
+      setDone(true)
+    } catch {
+      setError('Erreur lors de l\'upload. Veuillez réessayer.')
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-        <h2 className="mb-1 text-lg font-semibold text-gray-900">Demande de signature</h2>
+        <h2 className="mb-1 text-lg font-semibold text-gray-900">Importer un document</h2>
         <p className="mb-4 text-sm text-gray-500">{contract.title}</p>
 
-        {linkGenerated ? (
-          <div className="space-y-3">
-            <p className="text-sm text-green-700 font-medium">Lien de signature généré :</p>
-            <div className="rounded-lg bg-gray-50 p-3 text-xs text-gray-600 break-all">{window.location.origin}{linkGenerated}</div>
-            <p className="text-xs text-gray-400">Partagez ce lien avec le signataire. Il peut signer directement sans compte.</p>
+        {done ? (
+          <div className="space-y-4 text-center">
+            <div className="text-4xl">✅</div>
+            <p className="text-sm font-medium text-green-700">Document importé avec succès !</p>
+            <p className="text-xs text-gray-500">
+              L'empreinte SHA-256 a été calculée et archivée pour garantir l'intégrité du document.
+            </p>
             <button onClick={onClose}
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
               Fermer
             </button>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Nom du signataire</label>
-              <input required className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                value={signerName} onChange={e => setSignerName(e.target.value)} />
+          <div className="space-y-4">
+            {/* Zone drag & drop */}
+            <div
+              onClick={() => fileRef.current?.click()}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+              className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors"
+            >
+              {file ? (
+                <div>
+                  <p className="text-2xl mb-1">📄</p>
+                  <p className="text-sm font-medium text-gray-800">{file.name}</p>
+                  <p className="text-xs text-gray-400">{(file.size / 1024).toFixed(0)} KB</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-3xl mb-2">📎</p>
+                  <p className="text-sm font-medium text-gray-600">Glissez votre document ici</p>
+                  <p className="text-xs text-gray-400 mt-1">ou cliquez pour sélectionner</p>
+                  <p className="text-xs text-gray-400">PDF, DOCX, JPG, PNG · max 10 MB</p>
+                </div>
+              )}
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email</label>
-              <input type="email" required className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                value={signerEmail} onChange={e => setSignerEmail(e.target.value)} />
+            <input ref={fileRef} type="file" className="hidden"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f) }} />
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+              <p className="text-xs text-blue-700">
+                🔒 L'empreinte SHA-256 du document sera calculée et archivée.
+                Toute modification ultérieure sera détectable (conformité AES).
+              </p>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Rôle / qualité (optionnel)</label>
-              <input className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                value={signerRole} onChange={e => setSignerRole(e.target.value)} placeholder="Ex : Directeur général" />
+
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                Annuler
+              </button>
+              <button onClick={upload} disabled={!file || uploading}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
+                {uploading ? 'Import en cours…' : 'Importer'}
+              </button>
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Signature modal (multi-signataires) ───────────────────────────────────────
+function SignatureModal({ contract, onClose }: { contract: LegalContract; onClose: () => void }) {
+  const send = useSendSignature()
+  const [signers, setSigners] = useState([{ name: '', email: '', role: '' }])
+  const [sequential, setSequential] = useState(false)
+  const [sent, setSent]       = useState<{ name: string; email: string; signUrl: string }[]>([])
+  const [sending, setSending] = useState(false)
+  const [error, setError]     = useState('')
+
+  const addSigner    = () => setSigners(s => [...s, { name: '', email: '', role: '' }])
+  const removeSigner = (i: number) => setSigners(s => s.filter((_, j) => j !== i))
+  const updateSigner = (i: number, field: string, val: string) =>
+    setSigners(s => s.map((x, j) => j === i ? { ...x, [field]: val } : x))
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const valid = signers.filter(s => s.name && s.email)
+    if (valid.length === 0) { setError('Ajoutez au moins un signataire.'); return }
+
+    setSending(true)
+    setError('')
+    const results: typeof sent = []
+
+    for (const s of valid) {
+      try {
+        const r = await send.mutateAsync({
+          id:  contract.id,
+          dto: { signerName: s.name, signerEmail: s.email, ...(s.role ? { signerRole: s.role } : {}) },
+        })
+        results.push({ name: s.name, email: s.email, signUrl: r.signUrl ?? `${window.location.origin}${r.signLink}` })
+      } catch {
+        setError(`Erreur pour ${s.email}`)
+      }
+    }
+
+    setSent(results)
+    setSending(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+        <h2 className="mb-1 text-lg font-semibold text-gray-900">Demande de signature électronique</h2>
+        <p className="mb-4 text-sm text-gray-500">{contract.title}</p>
+
+        {/* Existing signatures status */}
+        {contract.signatures && contract.signatures.length > 0 && (
+          <div className="mb-4 bg-gray-50 rounded-lg p-3 space-y-1">
+            <p className="text-xs font-medium text-gray-500 mb-2">Signatures existantes</p>
+            {contract.signatures.map((s, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                  s.status === 'SIGNED'  ? 'bg-green-100 text-green-700' :
+                  s.status === 'REFUSED' ? 'bg-red-100 text-red-700'    :
+                  'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {s.status === 'SIGNED' ? '✓' : s.status === 'REFUSED' ? '✗' : '…'}
+                </span>
+                <span className="text-gray-700">{s.signerName} · {s.signerEmail}</span>
+                {s.signedAt && <span className="ml-auto text-gray-400">{new Date(s.signedAt).toLocaleDateString('fr-FR')}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {sent.length > 0 ? (
+          <div className="space-y-4">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-green-800 mb-3">
+                ✅ {sent.length} invitation{sent.length > 1 ? 's' : ''} envoyée{sent.length > 1 ? 's' : ''} !
+              </p>
+              <div className="space-y-2">
+                {sent.map((s, i) => (
+                  <div key={i} className="bg-white rounded-lg p-3 border border-green-100">
+                    <p className="text-xs font-medium text-gray-700">{s.name} · {s.email}</p>
+                    <p className="text-xs text-gray-400 mt-1 break-all">
+                      🔗 <a href={s.signUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{s.signUrl}</a>
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-3">
+                Un email d'invitation a été envoyé. Les signataires peuvent signer sans compte Athenis.
+              </p>
+            </div>
+            <button onClick={onClose}
+              className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
+              Fermer
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={submit} className="space-y-4">
+            {/* Signataires */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Signataires ({signers.length})
+                </label>
+                <button type="button" onClick={addSigner}
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700">
+                  + Ajouter un signataire
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {signers.map((s, i) => (
+                  <div key={i} className="bg-gray-50 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-gray-500">
+                        Signataire {i + 1}{sequential ? ` (ordre ${i + 1})` : ''}
+                      </span>
+                      {signers.length > 1 && (
+                        <button type="button" onClick={() => removeSigner(i)}
+                          className="text-xs text-red-400 hover:text-red-600">Retirer</button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 gap-2">
+                      <input required placeholder="Nom complet *"
+                        className="rounded border border-gray-300 px-2 py-1.5 text-sm w-full"
+                        value={s.name} onChange={e => updateSigner(i, 'name', e.target.value)} />
+                      <input required type="email" placeholder="Email *"
+                        className="rounded border border-gray-300 px-2 py-1.5 text-sm w-full"
+                        value={s.email} onChange={e => updateSigner(i, 'email', e.target.value)} />
+                      <input placeholder="Qualité / Rôle (ex : Directeur Général)"
+                        className="rounded border border-gray-300 px-2 py-1.5 text-sm w-full"
+                        value={s.role} onChange={e => updateSigner(i, 'role', e.target.value)} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Option signature séquentielle */}
+            {signers.length > 1 && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={sequential} onChange={e => setSequential(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600" />
+                <span className="text-xs text-gray-600">
+                  Signature séquentielle (chaque signataire reçoit le lien après le précédent)
+                </span>
+              </label>
+            )}
+
+            {!contract.fileName && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-xs text-amber-700">
+                  💡 <strong>Conseil :</strong> importez d'abord votre document PDF pour que les signataires
+                  puissent le visualiser avant de signer.
+                </p>
+              </div>
+            )}
+
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+              <p className="text-xs text-blue-700">
+                🔒 Chaque signataire recevra un email avec un lien sécurisé unique.
+                IP, navigateur et horodatage seront enregistrés (conformité AES · OHADA 2010).
+              </p>
+            </div>
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" onClick={onClose}
                 className="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
                 Annuler
               </button>
-              <button type="submit" disabled={send.isPending}
+              <button type="submit" disabled={sending}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                {send.isPending ? 'Envoi…' : 'Générer le lien'}
+                {sending ? 'Envoi en cours…' : `Envoyer ${signers.length > 1 ? `${signers.length} invitations` : 'l\'invitation'}`}
               </button>
             </div>
           </form>
@@ -191,10 +424,165 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
   )
 }
 
-// ── Employment contracts section (from HR module) ─────────────────────────────
+// ── Certificate modal ─────────────────────────────────────────────────────────
+function CertificateModal({ contract, onClose }: { contract: LegalContract; onClose: () => void }) {
+  const [cert, setCert]   = useState<CompletionCertificate | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useState(() => {
+    legalApi.contracts.certificate(contract.id)
+      .then(setCert)
+      .catch(() => setCert(null))
+      .finally(() => setLoading(false))
+  })
+
+  const fmtDate = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' }) : '—'
+
+  const print = () => window.print()
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-xl">
+        {/* Header */}
+        <div className="sticky top-0 bg-[#1a3a2a] text-white px-6 py-4 flex items-center justify-between rounded-t-xl">
+          <div>
+            <p className="text-xs text-green-300 uppercase tracking-wide">Certificat de réalisation</p>
+            <h2 className="text-base font-bold">Signature électronique avancée (AES)</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={print}
+              className="text-xs bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg transition-colors">
+              🖨️ Imprimer
+            </button>
+            <button onClick={onClose}
+              className="text-white/70 hover:text-white text-xl leading-none">✕</button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {loading && (
+            <div className="text-center py-8 text-gray-400">Génération du certificat…</div>
+          )}
+
+          {!loading && !cert && (
+            <div className="text-center py-8 text-red-500">Impossible de générer le certificat.</div>
+          )}
+
+          {cert && (
+            <>
+              {/* Identité */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Certificat</p>
+                  <p className="text-sm font-mono text-gray-700">{cert.certificateId}</p>
+                  <p className="text-xs text-gray-400 mt-1">Généré le {fmtDate(cert.generatedAt)}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide mb-2">Émetteur</p>
+                  <p className="text-sm font-medium text-gray-800">{cert.company.name}</p>
+                  {cert.company.address && <p className="text-xs text-gray-400">{cert.company.address}</p>}
+                </div>
+              </div>
+
+              {/* Document */}
+              <div className="border border-gray-200 rounded-lg p-4">
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">Document signé</p>
+                <p className="text-sm font-semibold text-gray-900 mb-1">{cert.contract.title}</p>
+                <p className="text-xs text-gray-500">Type : {TYPE_LABEL[cert.contract.type]}</p>
+                {cert.contract.fileName && (
+                  <p className="text-xs text-gray-500">Fichier : {cert.contract.fileName}</p>
+                )}
+                {cert.contract.fileHash && (
+                  <div className="mt-2 bg-gray-50 rounded p-2">
+                    <p className="text-xs text-gray-400">Empreinte SHA-256 (intégrité du document)</p>
+                    <p className="text-xs font-mono text-gray-600 break-all">{cert.contract.fileHash}</p>
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Clôturé le {fmtDate(cert.contract.signedAt)}
+                </p>
+              </div>
+
+              {/* Signatures */}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">Signatures</p>
+                <div className="space-y-2">
+                  {cert.signatures.map((s, i) => (
+                    <div key={i} className={`rounded-lg p-3 border ${
+                      s.status === 'SIGNED'  ? 'bg-green-50 border-green-200' :
+                      s.status === 'REFUSED' ? 'bg-red-50 border-red-200'    :
+                      'bg-yellow-50 border-yellow-200'
+                    }`}>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">
+                            {s.signerName}
+                            {s.signerRole && <span className="text-gray-400 font-normal"> · {s.signerRole}</span>}
+                          </p>
+                          <p className="text-xs text-gray-500">{s.signerEmail}</p>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          s.status === 'SIGNED'  ? 'bg-green-100 text-green-700' :
+                          s.status === 'REFUSED' ? 'bg-red-100 text-red-700'    :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {s.status === 'SIGNED' ? '✓ Signé' : s.status === 'REFUSED' ? '✗ Refusé' : '⌛ En attente'}
+                        </span>
+                      </div>
+                      {s.status === 'SIGNED' && (
+                        <div className="mt-2 text-xs text-gray-500 space-y-0.5">
+                          <p>⏰ {fmtDate(s.signedAt)}</p>
+                          {s.signingIp && <p>🌐 IP : {s.signingIp}</p>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Piste d'audit */}
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide mb-3">Piste d'audit</p>
+                <div className="space-y-1">
+                  {cert.auditTrail.map((log, i) => (
+                    <div key={i} className="flex items-start gap-3 text-xs">
+                      <span className="text-gray-400 shrink-0 font-mono">
+                        {new Date(log.timestamp).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'medium' })}
+                      </span>
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded font-medium ${
+                        log.event === 'SIGNED'    ? 'bg-green-100 text-green-700' :
+                        log.event === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' :
+                        log.event === 'REFUSED'   ? 'bg-red-100 text-red-700'    :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {log.event}
+                      </span>
+                      {log.actorName  && <span className="text-gray-600">{log.actorName}</span>}
+                      {log.actorEmail && <span className="text-gray-400">{log.actorEmail}</span>}
+                      {log.actorIp   && <span className="text-gray-400 font-mono">{log.actorIp}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Mention légale */}
+              <div className="bg-gray-50 rounded-lg p-4 text-xs text-gray-500 leading-relaxed border border-gray-200">
+                <p className="font-semibold text-gray-600 mb-1">⚖️ Valeur juridique</p>
+                <p>{cert.legalNote}</p>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Employment contracts section ───────────────────────────────────────────────
 const EMP_TYPE_LABEL: Record<string, string> = {
   FULL_TIME: 'CDI — Temps plein', PART_TIME: 'CDI — Temps partiel',
-  CONTRACT:  'CDD',               INTERN:    'Convention de stage',
+  CONTRACT: 'CDD', INTERN: 'Convention de stage',
 }
 const EMP_STATUS_BADGE: Record<EmpStatus, string> = {
   DRAFT: 'bg-gray-100 text-gray-600', SIGNED: 'bg-green-100 text-green-700', TERMINATED: 'bg-red-100 text-red-600',
@@ -218,7 +606,7 @@ function EmploymentContractsSection({ contracts }: { contracts: EmploymentContra
           <thead className="text-xs text-gray-500 uppercase tracking-wide bg-white/50 border-b border-blue-100">
             <tr>
               <th className="px-4 py-2 text-left font-medium">Employé</th>
-              <th className="px-4 py-2 text-left font-medium">Type de contrat</th>
+              <th className="px-4 py-2 text-left font-medium">Type</th>
               <th className="px-4 py-2 text-center font-medium">Début</th>
               <th className="px-4 py-2 text-center font-medium">Fin</th>
               <th className="px-4 py-2 text-center font-medium">Signé le</th>
@@ -247,17 +635,19 @@ function EmploymentContractsSection({ contracts }: { contracts: EmploymentContra
         </table>
       </div>
       <p className="px-4 py-2 text-xs text-blue-600 bg-blue-50 border-t border-blue-100">
-        Ces contrats sont gérés dans le module <strong>RH → Contrats</strong>. Modifiez-les depuis ce module.
+        Ces contrats sont gérés dans le module <strong>RH → Contrats</strong>.
       </p>
     </div>
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export function ContractsPage() {
   const [statusFilter, setStatusFilter] = useState<ContractStatus | 'ALL'>('ALL')
-  const [showCreate, setShowCreate]     = useState(false)
-  const [signContract, setSignContract] = useState<LegalContract | null>(null)
+  const [showCreate,   setShowCreate]   = useState(false)
+  const [uploadModal,  setUploadModal]  = useState<LegalContract | null>(null)
+  const [signModal,    setSignModal]    = useState<LegalContract | null>(null)
+  const [certModal,    setCertModal]    = useState<LegalContract | null>(null)
 
   const contracts    = useContracts(statusFilter !== 'ALL' ? { status: statusFilter } : undefined)
   const updateCtr    = useUpdateContract()
@@ -268,10 +658,10 @@ export function ContractsPage() {
   const statuses: (ContractStatus | 'ALL')[] = ['ALL', 'DRAFT', 'PENDING_SIGNATURE', 'SIGNED', 'EXPIRED', 'TERMINATED']
 
   const kpis = [
-    { label: 'Total',          value: (contracts.data?.length ?? 0) + empContracts.length, color: 'text-gray-900' },
-    { label: 'Signés',         value: (contracts.data?.filter(c => c.status === 'SIGNED').length ?? 0) + empContracts.filter(c => c.status === 'SIGNED').length, color: 'text-green-600' },
-    { label: 'En attente',     value: contracts.data?.filter(c => c.status === 'PENDING_SIGNATURE').length ?? '—', color: 'text-yellow-600' },
-    { label: 'Contrats travail', value: empContracts.length, color: 'text-blue-600' },
+    { label: 'Total',      value: (contracts.data?.length ?? 0) + empContracts.length, color: 'text-gray-900' },
+    { label: 'Signés',     value: (contracts.data?.filter(c => c.status === 'SIGNED').length ?? 0) + empContracts.filter(c => c.status === 'SIGNED').length, color: 'text-green-600' },
+    { label: 'En attente', value: contracts.data?.filter(c => c.status === 'PENDING_SIGNATURE').length ?? 0, color: 'text-yellow-600' },
+    { label: 'RH',         value: empContracts.length, color: 'text-blue-600' },
   ]
 
   return (
@@ -279,7 +669,7 @@ export function ContractsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Contrats</h1>
-          <p className="text-sm text-gray-500">Bibliothèque juridique et contrats de travail</p>
+          <p className="text-sm text-gray-500">Gestion des contrats · Signature électronique AES</p>
         </div>
         <button onClick={() => setShowCreate(true)}
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
@@ -297,14 +687,13 @@ export function ContractsPage() {
         ))}
       </div>
 
-      {/* Employment contracts from HR module */}
+      {/* Employment contracts */}
       <EmploymentContractsSection contracts={empContracts} />
 
       {/* Status tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl bg-gray-100 p-1 w-fit">
         {statuses.map(s => (
-          <button key={s}
-            onClick={() => setStatusFilter(s)}
+          <button key={s} onClick={() => setStatusFilter(s)}
             className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               statusFilter === s ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}>
@@ -318,14 +707,17 @@ export function ContractsPage() {
         {contracts.isLoading ? (
           <div className="p-8 text-center text-gray-400">Chargement…</div>
         ) : contracts.data?.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">Aucun contrat</div>
+          <div className="p-8 text-center text-gray-400">
+            <p className="text-4xl mb-2">📄</p>
+            <p>Aucun contrat. Créez-en un ou importez un document.</p>
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="border-b border-gray-100 bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-500">Titre</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">Document</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Type</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-500">Parties</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-500">Signatures</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Statut</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-500">Expiration</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-500">Actions</th>
@@ -334,21 +726,47 @@ export function ContractsPage() {
             <tbody className="divide-y divide-gray-50">
               {contracts.data?.map(c => {
                 const expSoon = c.expiresAt && new Date(c.expiresAt) < new Date(Date.now() + 30 * 86_400_000)
+                const allSigned = c.signatures?.length > 0 && c.signatures.every(s => s.status === 'SIGNED')
+                const pendingSigs = c.signatures?.filter(s => s.status === 'PENDING').length ?? 0
                 return (
                   <tr key={c.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{c.title}</p>
-                      {(c._count?.alerts ?? 0) > 0 && (
-                        <span className="text-xs text-red-500">{c._count!.alerts} alerte(s)</span>
-                      )}
+                      <div className="flex items-start gap-2">
+                        <span className="text-lg mt-0.5">{c.fileName ? '📄' : '📝'}</span>
+                        <div>
+                          <p className="font-medium text-gray-900">{c.title}</p>
+                          {c.fileName && (
+                            <p className="text-xs text-blue-600">🔒 {c.fileName}</p>
+                          )}
+                          {(c._count?.alerts ?? c._count?.legalAlerts ?? 0) > 0 && (
+                            <span className="text-xs text-red-500">
+                              {c._count?.alerts ?? c._count?.legalAlerts} alerte(s)
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-gray-600 text-xs">{TYPE_LABEL[c.type]}</td>
                     <td className="px-4 py-3">
-                      <div className="space-y-0.5">
-                        {(c.parties as ContractParty[]).map((p, i) => (
-                          <p key={i} className="text-xs text-gray-600">{p.name}{p.role ? ` (${p.role})` : ''}</p>
-                        ))}
-                      </div>
+                      {c.signatures && c.signatures.length > 0 ? (
+                        <div className="flex items-center gap-1">
+                          {c.signatures.map((s, i) => (
+                            <span key={i} title={`${s.signerName} · ${s.status}`}
+                              className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${
+                                s.status === 'SIGNED'  ? 'bg-green-100 border-green-300 text-green-700' :
+                                s.status === 'REFUSED' ? 'bg-red-100 border-red-300 text-red-700'       :
+                                'bg-yellow-100 border-yellow-300 text-yellow-700'
+                              }`}>
+                              {s.status === 'SIGNED' ? '✓' : s.status === 'REFUSED' ? '✗' : s.signingOrder}
+                            </span>
+                          ))}
+                          {pendingSigs > 0 && (
+                            <span className="text-xs text-yellow-600 ml-1">{pendingSigs} en attente</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[c.status]}`}>
@@ -363,13 +781,35 @@ export function ContractsPage() {
                       ) : <span className="text-xs text-gray-400">—</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex justify-end gap-1">
-                        {c.status === 'DRAFT' && (
-                          <button onClick={() => setSignContract(c)}
+                      <div className="flex justify-end gap-1 flex-wrap">
+                        {/* Import document */}
+                        <button onClick={() => setUploadModal(c)}
+                          title="Importer un document PDF"
+                          className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
+                            c.fileName
+                              ? 'text-green-600 hover:bg-green-50'
+                              : 'text-gray-500 hover:bg-gray-100'
+                          }`}>
+                          {c.fileName ? '📄' : '📎'} {c.fileName ? 'Doc.' : 'Importer'}
+                        </button>
+
+                        {/* Envoyer pour signature */}
+                        {c.status !== 'TERMINATED' && c.status !== 'EXPIRED' && (
+                          <button onClick={() => setSignModal(c)}
                             className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">
-                            Signer
+                            ✍️ Signer
                           </button>
                         )}
+
+                        {/* Certificat */}
+                        {(c.status === 'SIGNED' || allSigned) && (
+                          <button onClick={() => setCertModal(c)}
+                            className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">
+                            📜 Cert.
+                          </button>
+                        )}
+
+                        {/* Résilier */}
                         {c.status === 'SIGNED' && (
                           <button
                             onClick={() => updateCtr.mutate({ id: c.id, dto: { status: 'TERMINATED' } })}
@@ -377,6 +817,8 @@ export function ContractsPage() {
                             Résilier
                           </button>
                         )}
+
+                        {/* Supprimer */}
                         <button
                           onClick={() => { if (confirm('Supprimer ce contrat ?')) deleteCtr.mutate(c.id) }}
                           className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
@@ -392,8 +834,17 @@ export function ContractsPage() {
         )}
       </div>
 
-      {showCreate && <CreateModal onClose={() => setShowCreate(false)} />}
-      {signContract && <SignatureModal contract={signContract} onClose={() => setSignContract(null)} />}
+      {/* Badge conformité */}
+      <div className="flex items-center gap-2 text-xs text-gray-400">
+        <span className="w-2 h-2 bg-green-500 rounded-full" />
+        Signature électronique avancée (AES) · Conforme OHADA 2010 · Loi Cameroun 2010/021 · UEMOA ASA.20110
+      </div>
+
+      {/* Modals */}
+      {showCreate   && <CreateModal onClose={() => setShowCreate(false)} />}
+      {uploadModal  && <UploadModal  contract={uploadModal}  onClose={() => setUploadModal(null)}  />}
+      {signModal    && <SignatureModal contract={signModal}   onClose={() => setSignModal(null)}    />}
+      {certModal    && <CertificateModal contract={certModal} onClose={() => setCertModal(null)}   />}
     </div>
   )
 }

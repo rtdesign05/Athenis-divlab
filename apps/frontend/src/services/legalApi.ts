@@ -1,4 +1,5 @@
 import { api } from '@/lib/api'
+import axios from 'axios'
 
 export type ContractType   = 'EMPLOYMENT' | 'SERVICE' | 'NDA' | 'PARTNERSHIP' | 'LEASE' | 'SUPPLIER' | 'CLIENT' | 'OTHER'
 export type ContractStatus = 'DRAFT' | 'PENDING_SIGNATURE' | 'SIGNED' | 'EXPIRED' | 'TERMINATED'
@@ -15,11 +16,51 @@ export interface ContractParty {
 }
 
 export interface ContractSignature {
-  signerName:  string
-  signerEmail: string
-  signerRole:  string | null
-  status:      SignatureStatus
-  signedAt:    string | null
+  id:              string
+  signerName:      string
+  signerEmail:     string
+  signerRole:      string | null
+  status:          SignatureStatus
+  signedAt:        string | null
+  signingOrder:    number
+  emailSentAt:     string | null
+}
+
+export interface ContractAuditLog {
+  event:      string
+  actorName:  string | null
+  actorEmail: string | null
+  actorIp:    string | null
+  metadata:   Record<string, unknown> | null
+  timestamp:  string
+}
+
+export interface CompletionCertificate {
+  certificateId: string
+  generatedAt:   string
+  contract: {
+    id:       string
+    title:    string
+    type:     ContractType
+    status:   ContractStatus
+    fileHash: string | null
+    fileName: string | null
+    parties:  { name: string; email: string; role?: string }[]
+    signedAt: string | null
+    expiresAt: string | null
+  }
+  company:   { name: string; address: string | null }
+  signatures: {
+    signerName:   string
+    signerEmail:  string
+    signerRole:   string | null
+    status:       SignatureStatus
+    signedAt:     string | null
+    signingIp:    string | null
+    signingOrder: number
+  }[]
+  auditTrail: ContractAuditLog[]
+  legalNote:  string
 }
 
 export interface LegalContract {
@@ -30,13 +71,17 @@ export interface LegalContract {
   parties:      ContractParty[]
   content:      string | null
   fileUrl:      string | null
+  fileName:     string | null
+  fileMime:     string | null
+  fileHash:     string | null
   signedAt:     string | null
   expiresAt:    string | null
   terminatedAt: string | null
   notes:        string | null
   createdAt:    string
   signatures:   ContractSignature[]
-  _count?:      { alerts: number }
+  auditLogs?:   ContractAuditLog[]
+  _count?:      { alerts: number; legalAlerts: number }
 }
 
 export interface GdprEntry {
@@ -92,7 +137,20 @@ export const legalApi = {
     }>) => api.patch<{ data: LegalContract }>(`/legal/contracts/${id}`, dto).then(d),
     remove: (id: string) => api.delete(`/legal/contracts/${id}`),
     sendSignature: (id: string, dto: { signerName: string; signerEmail: string; signerRole?: string }) =>
-      api.post<{ data: ContractSignature & { signLink: string } }>(`/legal/contracts/${id}/send-signature`, dto).then(d),
+      api.post<{ data: ContractSignature & { signLink: string; signUrl: string } }>(`/legal/contracts/${id}/send-signature`, dto).then(d),
+
+    /** Upload du document source (PDF recommandé, max 10 MB) */
+    uploadDocument: (id: string, file: File) => {
+      const form = new FormData()
+      form.append('file', file)
+      return api.post<{ data: Omit<LegalContract, 'fileData'> }>(`/legal/contracts/${id}/upload`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(d)
+    },
+
+    /** Certificat de réalisation (après signature complète) */
+    certificate: (id: string) =>
+      api.get<{ data: CompletionCertificate }>(`/legal/contracts/${id}/certificate`).then(d),
   },
 
   // GDPR

@@ -1168,12 +1168,19 @@ model LegalContract {
   parties      Json
   content      String?
   fileUrl      String?              @map("file_url")
+  /// Document source (base64) — stocké pour intégrité AES
+  fileData     String?              @map("file_data") @db.Text
+  /// Empreinte SHA-256 du document original (preuve d'intégrité légale)
+  fileHash     String?              @map("file_hash")
+  fileName     String?              @map("file_name")
+  fileMime     String?              @map("file_mime")
   signedAt     DateTime?            @map("signed_at")
   expiresAt    DateTime?            @map("expires_at")
   terminatedAt DateTime?            @map("terminated_at")
   notes        String?
   signatures   ContractSignature[]
   legalAlerts  LegalAlert[]
+  auditLogs    ContractAuditLog[]
   createdAt    DateTime             @default(now()) @map("created_at")
   updatedAt    DateTime             @updatedAt @map("updated_at")
 
@@ -1184,22 +1191,48 @@ model LegalContract {
 }
 
 model ContractSignature {
-  id           String          @id @default(cuid())
-  contractId   String          @map("contract_id")
-  contract     LegalContract   @relation(fields: [contractId], references: [id], onDelete: Cascade)
-  signerName   String          @map("signer_name")
-  signerEmail  String          @map("signer_email")
-  signerRole   String?         @map("signer_role")
-  status       SignatureStatus @default(PENDING)
-  token        String          @unique
-  signedAt     DateTime?       @map("signed_at")
-  refusedAt    DateTime?       @map("refused_at")
-  refusedNote  String?         @map("refused_note")
-  createdAt    DateTime        @default(now()) @map("created_at")
+  id               String          @id @default(cuid())
+  contractId       String          @map("contract_id")
+  contract         LegalContract   @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  signerName       String          @map("signer_name")
+  signerEmail      String          @map("signer_email")
+  signerRole       String?         @map("signer_role")
+  status           SignatureStatus @default(PENDING)
+  token            String          @unique
+  /// Paraphe dessiné (base64 PNG) — archivé comme preuve de la volonté du signataire
+  signatureData    String?         @map("signature_data") @db.Text
+  /// IP du signataire — identification pour conformité AES
+  signingIp        String?         @map("signing_ip")
+  signingUserAgent String?         @map("signing_user_agent")
+  emailSentAt      DateTime?       @map("email_sent_at")
+  /// Ordre de signature (1 = premier, 2 = second…) pour workflows séquentiels
+  signingOrder     Int             @default(1) @map("signing_order")
+  signedAt         DateTime?       @map("signed_at")
+  refusedAt        DateTime?       @map("refused_at")
+  refusedNote      String?         @map("refused_note")
+  createdAt        DateTime        @default(now()) @map("created_at")
 
   @@index([contractId])
   @@index([token])
   @@map("contract_signatures")
+}
+
+/// Journal d'audit — piste légale obligatoire pour la signature électronique avancée
+model ContractAuditLog {
+  id         String        @id @default(cuid())
+  contractId String        @map("contract_id")
+  contract   LegalContract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  /// CREATED | DOCUMENT_UPLOADED | SIGNATURE_REQUESTED | VIEWED | SIGNED | REFUSED | COMPLETED
+  event      String
+  actorName  String?       @map("actor_name")
+  actorEmail String?       @map("actor_email")
+  actorIp    String?       @map("actor_ip")
+  metadata   Json?
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  @@index([contractId])
+  @@index([createdAt])
+  @@map("contract_audit_logs")
 }
 
 model LegalAlert {
