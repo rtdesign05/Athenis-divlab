@@ -22,6 +22,7 @@ import { adminRouter } from '../modules/admin/admin.routes.js'
 import { personalRouter } from '../modules/personal/personal.routes.js'
 import { invitationRouter } from '../modules/invitation/invitation.routes.js'
 import { mailRouter } from '../modules/mail/mail.routes.js'
+import scanRouter from '../modules/scan/scan.routes.js'
 
 const router = Router()
 
@@ -52,5 +53,6 @@ router.use('/admin', adminRouter)
 router.use('/personal', personalRouter)
 router.use('/invitations', invitationRouter)
 router.use('/mail', mailRouter)
+router.use('/scan', scanRouter)
 
 export { router }

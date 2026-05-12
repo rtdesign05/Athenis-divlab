@@ -5,6 +5,8 @@ import { useGestion, type FactureAchatStatut, type FactureAchat } from '@/contex
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { printDocument } from '@/lib/printDocument'
 import { generateQRDataUrl, buildFactureAchatQR } from '@/lib/qrCode'
+import { ScanAiModal } from '@/features/scan/ScanAiModal'
+import type { ScannedInvoice } from '@/services/scanApi'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -266,6 +268,8 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, onSave, onClose 
     [achats, agenceNom],
   )
 
+  const [showScan, setShowScan] = useState(false)
+
   const [form, setForm] = useState({
     commande:    availableAchats[0]?.id ?? '',
     fournisseur: availableAchats[0]?.fournisseur ?? '',
@@ -277,6 +281,20 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, onSave, onClose 
     statut:      'À valider' as FactureAchatStatut,
     notes:       '',
   })
+
+  /** Pré-remplissage depuis ScanAI */
+  function applyScan(data: ScannedInvoice) {
+    setForm(f => ({
+      ...f,
+      fournisseur: data.vendorName  ?? f.fournisseur,
+      date:        data.invoiceDate ?? f.date,
+      echeance:    data.dueDate     ?? f.echeance,
+      montantHT:   data.subtotal    != null ? Math.round(data.subtotal) : f.montantHT,
+      tva:         data.taxRate     ?? f.tva,
+      notes:       [data.vendorNiu ? `NIU : ${data.vendorNiu}` : '', data.notes ?? '']
+                     .filter(Boolean).join(' · ') || f.notes,
+    }))
+  }
 
   const montantTTC = useMemo(
     () => Math.round(form.montantHT * (1 + form.tva / 100)),
@@ -313,11 +331,28 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, onSave, onClose 
   }
 
   return (
+    <>
+    {showScan && (
+      <ScanAiModal
+        onResult={(data) => { applyScan(data); setShowScan(false) }}
+        onClose={() => setShowScan(false)}
+      />
+    )}
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-900">Nouvelle facture achat</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowScan(true)}
+              title="Scanner une facture avec ScanAI"
+              className="flex items-center gap-1.5 rounded-lg bg-violet-50 border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition-colors"
+            >
+              📷 ScanAI
+            </button>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
+          </div>
         </div>
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
           <div>
@@ -416,6 +451,7 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, onSave, onClose 
         </form>
       </div>
     </div>
+    </>
   )
 }
 
