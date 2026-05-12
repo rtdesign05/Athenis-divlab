@@ -2,7 +2,7 @@
  * ContractsPage — Gestion des contrats avec signature électronique avancée (AES)
  * Upload document · Multi-signataires · Suivi temps réel · Certificat de réalisation
  */
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import {
   useContracts, useCreateContract, useUpdateContract, useDeleteContract, useSendSignature,
 } from '@/hooks/useLegal'
@@ -255,9 +255,16 @@ function InlineSignatureCanvas({ onCapture }: { onCapture: (data: string | null)
   const getPos = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current!
     const rect   = canvas.getBoundingClientRect()
-    const src    = 'touches' in e ? e.touches[0] : e
-    return { x: (src.clientX - rect.left) * (canvas.width / rect.width),
-             y: (src.clientY - rect.top)  * (canvas.height / rect.height) }
+    let clientX: number, clientY: number
+    if ('touches' in e) {
+      clientX = e.touches[0]?.clientX ?? 0
+      clientY = e.touches[0]?.clientY ?? 0
+    } else {
+      clientX = e.clientX
+      clientY = e.clientY
+    }
+    return { x: (clientX - rect.left) * (canvas.width / rect.width),
+             y: (clientY - rect.top)  * (canvas.height / rect.height) }
   }
 
   const start = (e: React.MouseEvent | React.TouchEvent) => {
@@ -324,7 +331,7 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
   const updateSigner = (i: number, field: string, val: string) =>
     setSigners(s => s.map((x, j) => j === i ? { ...x, [field]: val } : x))
 
-  const userFullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Utilisateur'
+  const userFullName = user?.email ?? 'Utilisateur'
   const userEmail    = user?.email ?? ''
 
   const submit = async (e: React.FormEvent) => {
@@ -355,7 +362,7 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
           id: contract.id,
           dto: { signerName: userFullName, signerEmail: userEmail, ...(selfRole ? { signerRole: selfRole } : {}) },
         })
-        const token = r.signLink.split('/sign/')[1]
+        const token = r.signLink.split('/sign/')[1] ?? r.signLink
         await legalApi.sign.submit(token, { action: 'sign', signatureData: selfSigData })
         results.push({ name: userFullName, email: userEmail, internal: true, signUrl: '' })
         qc.invalidateQueries({ queryKey: ['legal', 'contracts'] })

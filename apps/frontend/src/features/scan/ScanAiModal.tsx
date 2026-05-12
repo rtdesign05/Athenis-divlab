@@ -81,9 +81,6 @@ export function ScanAiModal({ onResult, onClose }: ScanAiModalProps) {
 
   /* ── Helpers affichage ─────────────────────────────────────────────────── */
 
-  const val = (v: string | number | null | undefined, suffix = '') =>
-    v != null && v !== '' ? `${v}${suffix}` : <span className="text-gray-300 italic">—</span>
-
   const confColor = (c: number) =>
     c >= 80 ? 'text-green-700 bg-green-50 border-green-200'
     : c >= 50 ? 'text-amber-700 bg-amber-50 border-amber-200'

@@ -201,17 +201,7 @@ const PF = () => (
 const F = ({ t }: { t: string }) => <View style={S.fi}><Text style={S.fb}>›</Text><Text style={S.ft}>{t}</Text></View>
 const F2 = ({ t }: { t: string }) => <View style={S.fi}><Text style={S.fb}>›</Text><Text style={S.ft2}>{t}</Text></View>
 const Chip = ({ l }: { l: string }) => <View style={S.chip}><Text style={S.chipT}>{l}</Text></View>
-const ChipR = ({ l }: { l: string }) => <View style={S.chipRed}><Text style={S.chipRedT}>{l}</Text></View>
-const ChipB = ({ l }: { l: string }) => <View style={S.chipBlue}><Text style={S.chipBlueT}>{l}</Text></View>
 const ChipG = ({ l }: { l: string }) => <View style={S.chipGray}><Text style={S.chipGrayT}>{l}</Text></View>
-
-const Score = ({ n, max = 5 }: { n: number; max?: number }) => (
-  <View style={S.scoreRow}>
-    {Array.from({ length: max }).map((_, i) => (
-      <View key={i} style={i < n ? S.scoreDot : S.scoreDotEmpty} />
-    ))}
-  </View>
-)
 
 const SB = ({ num, title, badge, bg }: { num: string; title: string; badge: string; bg: string }) => (
   <View style={[S.sectionBanner, { backgroundColor: bg }]}>

@@ -155,7 +155,7 @@ const Ftr = () => (
     <Text style={S.footTxt}>contact@athenis.io</Text>
   </View>
 )
-const F = ({ t, w }: { t: string; w?: boolean }) => (
+const F = ({ t, w }: { t: string; w?: boolean; color?: string }) => (
   <View style={S.fi}>
     <Text style={w ? S.bulW : S.bul}>›</Text>
     <Text style={w ? S.ftW : S.ft}>{t}</Text>
