@@ -1,10 +1,23 @@
 /**
- * ScanAI — OCR de factures fournisseurs via Claude Vision (claude-3-5-haiku)
- * Extrait automatiquement : fournisseur, NIU, date, montant HT/TVA/TTC, lignes
+ * ScanAI — OCR factures fournisseurs, multi-provider
+ *
+ * Sélection via la variable d'environnement OCR_PROVIDER :
+ *
+ *   tesseract  (défaut) — 100% gratuit, offline, aucune clé API
+ *                         npm install tesseract.js — précision ~70%
+ *
+ *   ollama               — LLM vision local (llama3.2-vision, llava…)
+ *                         Gratuit, privé, offline — précision ~90%
+ *                         Installer : https://ollama.com
+ *                         Modèle    : ollama pull llama3.2-vision
+ *
+ *   anthropic            — Claude claude-3-5-haiku-20241022 (vision)
+ *                         Meilleure précision, ~0,001$/image
+ *                         Requiert ANTHROPIC_API_KEY dans .env
  */
 import Anthropic from '@anthropic-ai/sdk'
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+import { scanWithTesseract } from './providers/tesseract.provider.js'
+import { scanWithOllama }    from './providers/ollama.provider.js'
 
 export type SupportedMimeType =
   | 'image/jpeg'
@@ -25,99 +38,98 @@ export interface ScannedInvoice {
   vendorAddress:  string | null
   vendorPhone:    string | null
   invoiceNumber:  string | null
-  invoiceDate:    string | null   // YYYY-MM-DD
-  dueDate:        string | null   // YYYY-MM-DD
-  currency:       string | null   // XAF | EUR | USD
+  invoiceDate:    string | null
+  dueDate:        string | null
+  currency:       string | null
   items:          ScannedInvoiceLine[]
-  subtotal:       number | null   // HT
-  taxRate:        number | null   // % ex: 19.25
-  taxAmount:      number | null   // montant TVA
-  total:          number | null   // TTC
+  subtotal:       number | null
+  taxRate:        number | null
+  taxAmount:      number | null
+  total:          number | null
   notes:          string | null
-  confidence:     number          // 0-100 — score de confiance de l'extraction
+  confidence:     number
 }
 
-const SYSTEM_PROMPT = `Tu es un assistant OCR expert en documents comptables africains.
-Tu analyses des images de factures fournisseurs (Cameroun, Côte d'Ivoire, Sénégal, Gabon, Togo).
-Tu extrais les données avec une précision maximale et tu retournes UNIQUEMENT du JSON valide.
-Règles :
-- Devise XAF/FCFA si le pays est OHADA et aucune devise n'est précisée
-- Taux TVA par défaut : Cameroun 19,25% — CI 18% — SN 18% — GA 18% — TG 18%
-- Les dates sont toujours au format YYYY-MM-DD
-- confidence = estimation 0-100 de la qualité de l'extraction (image nette = 90+, floue = 50-)`
+// ── Provider Anthropic (interne) ──────────────────────────────────────────────
 
-const USER_PROMPT = `Analyse cette image de facture fournisseur et extrais toutes les informations visibles.
+const ANTHROPIC_SYSTEM = `Tu es un assistant OCR expert en documents comptables africains (OHADA, SYSCOHADA).
+Tu analyses des factures fournisseurs et retournes UNIQUEMENT du JSON valide.`
 
-Retourne UNIQUEMENT ce JSON (sans markdown, sans texte avant/après) :
+const ANTHROPIC_PROMPT = `Analyse cette facture fournisseur et extrais toutes les informations visibles.
+Retourne UNIQUEMENT ce JSON (sans markdown) :
 {
-  "vendorName": "Nom du fournisseur ou null",
-  "vendorNiu": "NIU / NUI du fournisseur ou null",
-  "vendorAddress": "Adresse complète ou null",
-  "vendorPhone": "Téléphone ou null",
-  "invoiceNumber": "Numéro de facture ou null",
-  "invoiceDate": "YYYY-MM-DD ou null",
-  "dueDate": "YYYY-MM-DD ou null",
-  "currency": "XAF ou EUR ou USD ou null",
-  "items": [
-    { "description": "Désignation", "quantity": 1, "unitPrice": 0, "total": 0 }
-  ],
-  "subtotal": 0,
-  "taxRate": 19.25,
-  "taxAmount": 0,
-  "total": 0,
-  "notes": "Mentions particulières ou null",
-  "confidence": 85
-}`
+  "vendorName":"...","vendorNiu":"...","vendorAddress":"...","vendorPhone":"...",
+  "invoiceNumber":"...","invoiceDate":"YYYY-MM-DD","dueDate":"YYYY-MM-DD",
+  "currency":"XAF",
+  "items":[{"description":"...","quantity":1,"unitPrice":0,"total":0}],
+  "subtotal":0,"taxRate":19.25,"taxAmount":0,"total":0,
+  "notes":"...","confidence":85
+}
+Taux TVA : Cameroun 19,25% | CI/SN/GA/TG 18%. Devise par défaut XAF.`
+
+async function scanWithAnthropic(
+  imageBase64: string,
+  mimeType: SupportedMimeType,
+): Promise<ScannedInvoice> {
+  const client   = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const response = await client.messages.create({
+    model:   'claude-3-5-haiku-20241022',
+    max_tokens: 1500,
+    system:  ANTHROPIC_SYSTEM,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: mimeType, data: imageBase64 } },
+        { type: 'text',  text: ANTHROPIC_PROMPT },
+      ],
+    }],
+  })
+
+  const raw     = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '{}'
+  const cleaned = raw.replace(/^```json?\s*/i,'').replace(/\s*```$/,'').trim()
+  try {
+    const p = JSON.parse(cleaned) as ScannedInvoice
+    p.confidence = typeof p.confidence === 'number' ? p.confidence : 75
+    return p
+  } catch {
+    return emptyResult('Parsing JSON échoué (Anthropic)')
+  }
+}
+
+// ── Sélection du provider ─────────────────────────────────────────────────────
+
+function emptyResult(notes: string): ScannedInvoice {
+  return {
+    vendorName: null, vendorNiu: null, vendorAddress: null, vendorPhone: null,
+    invoiceNumber: null, invoiceDate: null, dueDate: null, currency: 'XAF',
+    items: [], subtotal: null, taxRate: null, taxAmount: null, total: null,
+    notes, confidence: 0,
+  }
+}
 
 export async function scanInvoiceImage(
   imageBase64: string,
   mimeType: SupportedMimeType,
-): Promise<ScannedInvoice> {
-  const response = await client.messages.create({
-    model:      'claude-3-5-haiku-20241022',
-    max_tokens: 1500,
-    system:     SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type:       'base64',
-              media_type: mimeType,
-              data:       imageBase64,
-            },
-          },
-          { type: 'text', text: USER_PROMPT },
-        ],
-      },
-    ],
-  })
+): Promise<ScannedInvoice & { provider: string }> {
+  const provider = (process.env.OCR_PROVIDER ?? 'tesseract').toLowerCase()
 
-  const raw = response.content[0]?.type === 'text' ? response.content[0].text.trim() : '{}'
+  let result: ScannedInvoice
 
-  // Nettoyer les éventuels blocs markdown ```json ... ```
-  const cleaned = raw
-    .replace(/^```json?\s*/i, '')
-    .replace(/\s*```$/, '')
-    .trim()
+  switch (provider) {
+    case 'anthropic':
+      if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY manquante dans .env')
+      result = await scanWithAnthropic(imageBase64, mimeType)
+      break
 
-  let parsed: ScannedInvoice
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch {
-    // Fallback si Claude retourne du texte non-JSON
-    parsed = {
-      vendorName: null, vendorNiu: null, vendorAddress: null, vendorPhone: null,
-      invoiceNumber: null, invoiceDate: null, dueDate: null, currency: 'XAF',
-      items: [], subtotal: null, taxRate: null, taxAmount: null, total: null,
-      notes: 'Extraction échouée — veuillez saisir manuellement', confidence: 0,
-    }
+    case 'ollama':
+      result = await scanWithOllama(imageBase64, mimeType)
+      break
+
+    case 'tesseract':
+    default:
+      result = await scanWithTesseract(imageBase64, mimeType)
+      break
   }
 
-  // S'assurer que confidence est défini
-  parsed.confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 70
-
-  return parsed
+  return { ...result, provider }
 }

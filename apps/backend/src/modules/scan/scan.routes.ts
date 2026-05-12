@@ -15,14 +15,20 @@ const ScanInvoiceDto = z.object({
  * Body: { imageBase64: string, mimeType: SupportedMimeType }
  * Retourne les données extraites de la facture fournisseur
  */
-router.post('/invoice', authenticate, async (req, res) => {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({
-      success: false,
-      error:   'ScanAI non configuré — clé ANTHROPIC_API_KEY manquante dans .env',
-    })
+/**
+ * GET /api/scan/status — informe le frontend sur le provider actif
+ */
+router.get('/status', authenticate, (_req, res) => {
+  const provider = process.env.OCR_PROVIDER ?? 'tesseract'
+  const providers: Record<string, { label: string; description: string; ready: boolean }> = {
+    tesseract:  { label: 'Tesseract.js', description: '100% local · gratuit · aucune clé API',        ready: true },
+    ollama:     { label: 'Ollama Vision', description: `LLM local · ${process.env.OLLAMA_MODEL ?? 'llama3.2-vision'} · gratuit`, ready: true },
+    anthropic:  { label: 'Claude Vision', description: 'Anthropic API · meilleure précision',          ready: !!process.env.ANTHROPIC_API_KEY },
   }
+  return res.json({ success: true, data: { active: provider, providers } })
+})
 
+router.post('/invoice', authenticate, async (req, res) => {
   const parsed = ScanInvoiceDto.safeParse(req.body)
   if (!parsed.success) {
     return res.status(400).json({
