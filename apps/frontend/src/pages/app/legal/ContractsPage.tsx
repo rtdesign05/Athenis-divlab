@@ -2,12 +2,13 @@
  * ContractsPage — Gestion des contrats avec signature électronique avancée (AES)
  * Upload document · Multi-signataires · Suivi temps réel · Certificat de réalisation
  */
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   useContracts, useCreateContract, useUpdateContract, useDeleteContract, useSendSignature,
 } from '@/hooks/useLegal'
 import { legalApi }    from '@/services/legalApi'
 import { useQueryClient } from '@tanstack/react-query'
+import { useAuth }    from '@/features/auth/useAuth'
 import type { ContractType, ContractStatus, ContractParty, LegalContract, CompletionCertificate } from '@/services/legalApi'
 import {
   useContracts as useEmploymentContracts,
@@ -165,7 +166,7 @@ function UploadModal({ contract, onClose }: { contract: LegalContract; onClose: 
     setError('')
     try {
       await legalApi.contracts.uploadDocument(contract.id, file)
-      await qc.invalidateQueries({ queryKey: ['contracts'] })
+      await qc.invalidateQueries({ queryKey: ['legal', 'contracts'] })
       setDone(true)
     } catch {
       setError('Erreur lors de l\'upload. Veuillez réessayer.')
@@ -246,39 +247,119 @@ function UploadModal({ contract, onClose }: { contract: LegalContract; onClose: 
   )
 }
 
-// ── Signature modal (multi-signataires) ───────────────────────────────────────
+// ── Mini canvas de signature (réutilisé dans la modale interne) ───────────────
+function InlineSignatureCanvas({ onCapture }: { onCapture: (data: string | null) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const drawing   = useRef(false)
+
+  const getPos = (e: React.MouseEvent | React.TouchEvent) => {
+    const canvas = canvasRef.current!
+    const rect   = canvas.getBoundingClientRect()
+    const src    = 'touches' in e ? e.touches[0] : e
+    return { x: (src.clientX - rect.left) * (canvas.width / rect.width),
+             y: (src.clientY - rect.top)  * (canvas.height / rect.height) }
+  }
+
+  const start = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault()
+    drawing.current = true
+    const ctx = canvasRef.current!.getContext('2d')!
+    const pos = getPos(e)
+    ctx.beginPath(); ctx.moveTo(pos.x, pos.y)
+  }
+  const move = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!drawing.current) return
+    e.preventDefault()
+    const ctx = canvasRef.current!.getContext('2d')!
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 2; ctx.lineCap = 'round'
+    const pos = getPos(e)
+    ctx.lineTo(pos.x, pos.y); ctx.stroke()
+    onCapture(canvasRef.current!.toDataURL('image/png'))
+  }
+  const stop = () => { drawing.current = false }
+  const clear = () => {
+    const canvas = canvasRef.current!
+    canvas.getContext('2d')!.clearRect(0, 0, canvas.width, canvas.height)
+    onCapture(null)
+  }
+
+  return (
+    <div>
+      <canvas ref={canvasRef} width={460} height={120}
+        className="w-full rounded-lg border-2 border-dashed border-gray-300 bg-white touch-none cursor-crosshair"
+        style={{ touchAction: 'none' }}
+        onMouseDown={start} onMouseMove={move} onMouseUp={stop} onMouseLeave={stop}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={stop} />
+      <button type="button" onClick={clear}
+        className="mt-1 text-xs text-gray-400 hover:text-gray-600 underline">
+        Effacer et recommencer
+      </button>
+    </div>
+  )
+}
+
+// ── Signature modal (multi-signataires + signature interne en 1 clic) ─────────
 function SignatureModal({ contract, onClose }: { contract: LegalContract; onClose: () => void }) {
-  const send = useSendSignature()
-  const [signers, setSigners] = useState([{ name: '', email: '', role: '' }])
+  const send    = useSendSignature()
+  const { user } = useAuth()
+  const qc      = useQueryClient()
+
+  // Signataires externes (email)
+  const [signers,    setSigners]    = useState([{ name: '', email: '', role: '' }])
   const [sequential, setSequential] = useState(false)
-  const [sent, setSent]       = useState<{ name: string; email: string; signUrl: string }[]>([])
+
+  // Signature interne (représentant de l'entreprise — DG, PDG…)
+  const [selfSign,     setSelfSign]     = useState(false)
+  const [selfRole,     setSelfRole]     = useState('Directeur Général')
+  const [selfSigData,  setSelfSigData]  = useState<string | null>(null)
+  const [selfConsent,  setSelfConsent]  = useState(false)
+
+  // État envoi
+  const [sent,    setSent]    = useState<{ name: string; email: string; signUrl: string; internal?: boolean }[]>([])
   const [sending, setSending] = useState(false)
-  const [error, setError]     = useState('')
+  const [error,   setError]   = useState('')
 
   const addSigner    = () => setSigners(s => [...s, { name: '', email: '', role: '' }])
   const removeSigner = (i: number) => setSigners(s => s.filter((_, j) => j !== i))
   const updateSigner = (i: number, field: string, val: string) =>
     setSigners(s => s.map((x, j) => j === i ? { ...x, [field]: val } : x))
 
+  const userFullName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'Utilisateur'
+  const userEmail    = user?.email ?? ''
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const valid = signers.filter(s => s.name && s.email)
-    if (valid.length === 0) { setError('Ajoutez au moins un signataire.'); return }
+    const external = signers.filter(s => s.name && s.email)
+    if (external.length === 0 && !selfSign) { setError('Ajoutez au moins un signataire ou activez la signature interne.'); return }
+    if (selfSign && !selfSigData)  { setError('Dessinez votre signature avant de valider.'); return }
+    if (selfSign && !selfConsent)  { setError('Veuillez accepter les conditions légales de signature.'); return }
 
-    setSending(true)
-    setError('')
+    setSending(true); setError('')
     const results: typeof sent = []
 
-    for (const s of valid) {
+    // 1. Invitations externes (email)
+    for (const s of external) {
       try {
         const r = await send.mutateAsync({
-          id:  contract.id,
+          id: contract.id,
           dto: { signerName: s.name, signerEmail: s.email, ...(s.role ? { signerRole: s.role } : {}) },
         })
         results.push({ name: s.name, email: s.email, signUrl: r.signUrl ?? `${window.location.origin}${r.signLink}` })
-      } catch {
-        setError(`Erreur pour ${s.email}`)
-      }
+      } catch { setError(`Erreur pour ${s.email}`) }
+    }
+
+    // 2. Signature interne — DG de l'entreprise signe directement sans email
+    if (selfSign && selfSigData) {
+      try {
+        const r = await send.mutateAsync({
+          id: contract.id,
+          dto: { signerName: userFullName, signerEmail: userEmail, ...(selfRole ? { signerRole: selfRole } : {}) },
+        })
+        const token = r.signLink.split('/sign/')[1]
+        await legalApi.sign.submit(token, { action: 'sign', signatureData: selfSigData })
+        results.push({ name: userFullName, email: userEmail, internal: true, signUrl: '' })
+        qc.invalidateQueries({ queryKey: ['legal', 'contracts'] })
+      } catch (err) { setError('Erreur lors de la signature interne.') }
     }
 
     setSent(results)
@@ -291,7 +372,7 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
         <h2 className="mb-1 text-lg font-semibold text-gray-900">Demande de signature électronique</h2>
         <p className="mb-4 text-sm text-gray-500">{contract.title}</p>
 
-        {/* Existing signatures status */}
+        {/* Signatures existantes */}
         {contract.signatures && contract.signatures.length > 0 && (
           <div className="mb-4 bg-gray-50 rounded-lg p-3 space-y-1">
             <p className="text-xs font-medium text-gray-500 mb-2">Signatures existantes</p>
@@ -299,8 +380,7 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
               <div key={i} className="flex items-center gap-2 text-xs">
                 <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
                   s.status === 'SIGNED'  ? 'bg-green-100 text-green-700' :
-                  s.status === 'REFUSED' ? 'bg-red-100 text-red-700'    :
-                  'bg-yellow-100 text-yellow-700'
+                  s.status === 'REFUSED' ? 'bg-red-100 text-red-700'    : 'bg-yellow-100 text-yellow-700'
                 }`}>
                   {s.status === 'SIGNED' ? '✓' : s.status === 'REFUSED' ? '✗' : '…'}
                 </span>
@@ -315,21 +395,25 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
           <div className="space-y-4">
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <p className="text-sm font-semibold text-green-800 mb-3">
-                ✅ {sent.length} invitation{sent.length > 1 ? 's' : ''} envoyée{sent.length > 1 ? 's' : ''} !
+                ✅ {sent.length} signature{sent.length > 1 ? 's' : ''} traitée{sent.length > 1 ? 's' : ''} !
               </p>
               <div className="space-y-2">
                 {sent.map((s, i) => (
                   <div key={i} className="bg-white rounded-lg p-3 border border-green-100">
-                    <p className="text-xs font-medium text-gray-700">{s.name} · {s.email}</p>
-                    <p className="text-xs text-gray-400 mt-1 break-all">
-                      🔗 <a href={s.signUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{s.signUrl}</a>
+                    <p className="text-xs font-medium text-gray-700">
+                      {s.internal ? '🏢 ' : '📧 '}
+                      {s.name} · {s.email}
                     </p>
+                    {s.internal ? (
+                      <p className="text-xs text-green-600 mt-1 font-medium">✅ Signé directement — aucun email requis</p>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-1 break-all">
+                        🔗 <a href={s.signUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">{s.signUrl}</a>
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-gray-500 mt-3">
-                Un email d'invitation a été envoyé. Les signataires peuvent signer sans compte Athenis.
-              </p>
             </div>
             <button onClick={onClose}
               className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">
@@ -337,19 +421,69 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
             </button>
           </div>
         ) : (
-          <form onSubmit={submit} className="space-y-4">
-            {/* Signataires */}
+          <form onSubmit={submit} className="space-y-5">
+
+            {/* ── Bloc signature interne (DG / représentant de l'entreprise) ── */}
+            <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-4">
+              <label className="flex items-center gap-3 cursor-pointer mb-3">
+                <input type="checkbox" checked={selfSign} onChange={e => setSelfSign(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 accent-emerald-600" />
+                <div>
+                  <span className="text-sm font-semibold text-emerald-800">
+                    🏢 Je signe maintenant (représentant de l'entreprise)
+                  </span>
+                  <p className="text-xs text-emerald-600 mt-0.5">
+                    Signature directe en app — aucun email envoyé, aucun lien requis
+                  </p>
+                </div>
+              </label>
+
+              {selfSign && (
+                <div className="space-y-3 mt-3 pt-3 border-t border-emerald-200">
+                  {/* Identité pré-remplie */}
+                  <div className="bg-white rounded-lg p-3 border border-emerald-200 text-sm">
+                    <p className="font-medium text-gray-800">{userFullName}</p>
+                    <p className="text-gray-500 text-xs">{userEmail}</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Qualité / Rôle</label>
+                    <input value={selfRole} onChange={e => setSelfRole(e.target.value)}
+                      placeholder="ex : Directeur Général, Président, Gérant…"
+                      className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm" />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Votre signature manuscrite numérique
+                    </label>
+                    <InlineSignatureCanvas onCapture={setSelfSigData} />
+                  </div>
+
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" checked={selfConsent} onChange={e => setSelfConsent(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded accent-emerald-600" />
+                    <span className="text-xs text-gray-600 leading-relaxed">
+                      Je confirme avoir lu le document et j'accepte que cette signature électronique
+                      ait la même valeur juridique qu'une signature manuscrite, conformément à la
+                      Loi n°2010/021 du Cameroun et à l'Acte Uniforme OHADA (2010).
+                    </span>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* ── Signataires externes (par email) ── */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-gray-700">
-                  Signataires ({signers.length})
+                  Signataires externes · par email ({signers.length})
                 </label>
                 <button type="button" onClick={addSigner}
                   className="text-xs font-medium text-blue-600 hover:text-blue-700">
-                  + Ajouter un signataire
+                  + Ajouter
                 </button>
               </div>
-
               <div className="space-y-2">
                 {signers.map((s, i) => (
                   <div key={i} className="bg-gray-50 rounded-lg p-3">
@@ -363,10 +497,10 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
                       )}
                     </div>
                     <div className="grid grid-cols-1 gap-2">
-                      <input required placeholder="Nom complet *"
+                      <input placeholder="Nom complet *"
                         className="rounded border border-gray-300 px-2 py-1.5 text-sm w-full"
                         value={s.name} onChange={e => updateSigner(i, 'name', e.target.value)} />
-                      <input required type="email" placeholder="Email *"
+                      <input type="email" placeholder="Email *"
                         className="rounded border border-gray-300 px-2 py-1.5 text-sm w-full"
                         value={s.email} onChange={e => updateSigner(i, 'email', e.target.value)} />
                       <input placeholder="Qualité / Rôle (ex : Directeur Général)"
@@ -378,7 +512,6 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
               </div>
             </div>
 
-            {/* Option signature séquentielle */}
             {signers.length > 1 && (
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={sequential} onChange={e => setSequential(e.target.checked)}
@@ -392,7 +525,7 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
             {!contract.fileName && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <p className="text-xs text-amber-700">
-                  💡 <strong>Conseil :</strong> importez d'abord votre document PDF pour que les signataires
+                  💡 <strong>Conseil :</strong> importez votre document PDF pour que les signataires
                   puissent le visualiser avant de signer.
                 </p>
               </div>
@@ -400,8 +533,7 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
 
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
               <p className="text-xs text-blue-700">
-                🔒 Chaque signataire recevra un email avec un lien sécurisé unique.
-                IP, navigateur et horodatage seront enregistrés (conformité AES · OHADA 2010).
+                🔒 Chaque signature est horodatée avec IP et navigateur (conformité AES · OHADA 2010).
               </p>
             </div>
 
@@ -414,7 +546,7 @@ function SignatureModal({ contract, onClose }: { contract: LegalContract; onClos
               </button>
               <button type="submit" disabled={sending}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:opacity-50">
-                {sending ? 'Envoi en cours…' : `Envoyer ${signers.length > 1 ? `${signers.length} invitations` : 'l\'invitation'}`}
+                {sending ? 'Traitement…' : 'Confirmer'}
               </button>
             </div>
           </form>

@@ -153,6 +153,14 @@ export const legalApi = {
       api.get<{ data: CompletionCertificate }>(`/legal/contracts/${id}/certificate`).then(d),
   },
 
+  /** Endpoints publics — accessibles sans JWT (utilisés depuis la page /sign/:token
+   *  ET depuis la modale interne "Signer maintenant") */
+  sign: {
+    /** Signer ou refuser via token (pas d'auth requise) */
+    submit: (token: string, body: { action: 'sign' | 'refuse'; signatureData?: string; note?: string }) =>
+      axios.post<{ data: ContractSignature }>(`/api/legal/sign/${token}`, body).then(r => r.data.data),
+  },
+
   // GDPR
   gdpr: {
     stats:  ()           => api.get<{ data: GdprStats }>('/legal/gdpr/stats').then(d),
