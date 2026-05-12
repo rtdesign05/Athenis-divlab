@@ -12,10 +12,60 @@ import {
 import * as svc from './legal.service.js'
 
 export const legalRouter = Router()
-legalRouter.use(authenticate)
 
 // Multer — fichiers en mémoire (max 10 MB)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
+
+// ── Endpoints publics — AVANT authenticate (accessibles sans JWT) ─────────────
+
+/**
+ * GET /api/legal/sign/:token
+ * Retourne les métadonnées du contrat pour la page de signature publique.
+ */
+legalRouter.get('/sign/:token', async (req, res, next) => {
+  try {
+    const data = await svc.getSignatureByToken(req.params.token!)
+    if (!data) return res.status(404).json({ success: false, error: 'Lien de signature invalide ou expiré' })
+    res.json({ success: true, data })
+  } catch (e) { next(e) }
+})
+
+/**
+ * GET /api/legal/sign/:token/document
+ * Retourne le document (base64) pour affichage dans la page de signature.
+ */
+legalRouter.get('/sign/:token/document', async (req, res, next) => {
+  try {
+    const doc = await svc.getContractDocument(req.params.token!)
+    if (!doc) return res.status(404).json({ success: false, error: 'Document non trouvé' })
+    res.json({ success: true, data: doc })
+  } catch (e) { next(e) }
+})
+
+/**
+ * POST /api/legal/sign/:token
+ * Body: { action: 'sign'|'refuse', signatureData?: string (base64 PNG), note?: string }
+ * Enregistre la signature ou le refus avec IP + User-Agent.
+ */
+legalRouter.post('/sign/:token', async (req, res, next) => {
+  try {
+    const { action, signatureData, note } = req.body
+    if (!['sign', 'refuse'].includes(action)) {
+      return res.status(400).json({ success: false, error: 'action doit être "sign" ou "refuse"' })
+    }
+    const result = await svc.processSignature(req.params.token!, action, {
+      ...(note            ? { note }          : {}),
+      ...(signatureData   ? { signatureData } : {}),
+      ...(req.ip          ? { ip: req.ip }    : {}),
+      ...(req.headers['user-agent'] ? { userAgent: req.headers['user-agent'] } : {}),
+    })
+    if (!result) return res.status(400).json({ success: false, error: 'Signature invalide, expirée ou déjà traitée' })
+    res.json({ success: true, data: result })
+  } catch (e) { next(e) }
+})
+
+// ── Routes authentifiées ──────────────────────────────────────────────────────
+legalRouter.use(authenticate)
 
 // ── Contracts ─────────────────────────────────────────────────────────────────
 legalRouter.get('/contracts',
@@ -104,54 +154,6 @@ legalRouter.get('/contracts/:id/certificate',
     } catch (e) { next(e) }
   })
 
-// ── Endpoints publics — accessibles sans authentification (via token) ─────────
-
-/**
- * GET /api/legal/sign/:token
- * Retourne les métadonnées du contrat pour la page de signature publique.
- */
-legalRouter.get('/sign/:token', async (req, res, next) => {
-  try {
-    const data = await svc.getSignatureByToken(req.params.token!)
-    if (!data) return res.status(404).json({ success: false, error: 'Lien de signature invalide ou expiré' })
-    res.json({ success: true, data })
-  } catch (e) { next(e) }
-})
-
-/**
- * GET /api/legal/sign/:token/document
- * Retourne le document (base64) pour affichage dans la page de signature.
- * Token vérifié → pas d'auth JWT nécessaire.
- */
-legalRouter.get('/sign/:token/document', async (req, res, next) => {
-  try {
-    const doc = await svc.getContractDocument(req.params.token!)
-    if (!doc) return res.status(404).json({ success: false, error: 'Document non trouvé' })
-    res.json({ success: true, data: doc })
-  } catch (e) { next(e) }
-})
-
-/**
- * POST /api/legal/sign/:token
- * Body: { action: 'sign'|'refuse', signatureData?: string (base64 PNG), note?: string }
- * Enregistre la signature ou le refus avec IP + User-Agent.
- */
-legalRouter.post('/sign/:token', async (req, res, next) => {
-  try {
-    const { action, signatureData, note } = req.body
-    if (!['sign', 'refuse'].includes(action)) {
-      return res.status(400).json({ success: false, error: 'action doit être "sign" ou "refuse"' })
-    }
-    const result = await svc.processSignature(req.params.token!, action, {
-      ...(note            ? { note }          : {}),
-      ...(signatureData   ? { signatureData } : {}),
-      ...(req.ip          ? { ip: req.ip }    : {}),
-      ...(req.headers['user-agent'] ? { userAgent: req.headers['user-agent'] } : {}),
-    })
-    if (!result) return res.status(400).json({ success: false, error: 'Signature invalide, expirée ou déjà traitée' })
-    res.json({ success: true, data: result })
-  } catch (e) { next(e) }
-})
 
 // ── GDPR ──────────────────────────────────────────────────────────────────────
 legalRouter.get('/gdpr/stats',   checkModule('juridique', 'read'),   async (req, res, next) => { try { res.json({ success: true, data: await svc.gdprStats(getCompanyId(req)) }) } catch (e) { next(e) } })

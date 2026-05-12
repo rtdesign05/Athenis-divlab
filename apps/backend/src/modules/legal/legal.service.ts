@@ -364,7 +364,8 @@ export async function processSignature(
     })
   }
 
-  return sig
+  // Retourner la signature mise à jour
+  return prisma.contractSignature.findUnique({ where: { id: sig.id } })
 }
 
 /**

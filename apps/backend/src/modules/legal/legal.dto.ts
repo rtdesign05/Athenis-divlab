@@ -1,11 +1,21 @@
 import { z } from 'zod'
 
+// ── Shared enums (must match Prisma schema) ───────────────────────────────────
+const ContractTypeEnum   = z.enum(['EMPLOYMENT','SERVICE','NDA','PARTNERSHIP','LEASE','SUPPLIER','CLIENT','OTHER'])
+const ContractStatusEnum = z.enum(['DRAFT','PENDING_SIGNATURE','SIGNED','EXPIRED','TERMINATED'])
+
+const ContractPartySchema = z.object({
+  name:  z.string().min(1),
+  email: z.string().email(),
+  role:  z.string().optional(),
+})
+
 // ── Contracts ─────────────────────────────────────────────────────────────────
 
 export const CreateContractDto = z.object({
   title:     z.string().min(1),
-  type:      z.enum(['PRESTATION','CDI','CDD','BAIL','NDA','CGV','CGU','STATUTS','AUTRE']),
-  parties:   z.array(z.string()).min(1),
+  type:      ContractTypeEnum,
+  parties:   z.array(ContractPartySchema).min(1),
   content:   z.string().optional(),
   fileUrl:   z.string().url().optional(),
   expiresAt: z.coerce.date().optional(),
@@ -14,8 +24,8 @@ export const CreateContractDto = z.object({
 
 export const UpdateContractDto = z.object({
   title:        z.string().min(1).optional(),
-  status:       z.enum(['DRAFT','SENT','SIGNED','EXPIRED','CANCELLED']).optional(),
-  parties:      z.array(z.string()).optional(),
+  status:       ContractStatusEnum.optional(),
+  parties:      z.array(ContractPartySchema).optional(),
   content:      z.string().optional(),
   fileUrl:      z.string().url().optional(),
   expiresAt:    z.coerce.date().optional(),
@@ -24,8 +34,8 @@ export const UpdateContractDto = z.object({
 })
 
 export const ListContractsDto = z.object({
-  type:   z.enum(['PRESTATION','CDI','CDD','BAIL','NDA','CGV','CGU','STATUTS','AUTRE']).optional(),
-  status: z.enum(['DRAFT','SENT','SIGNED','EXPIRED','CANCELLED']).optional(),
+  type:   ContractTypeEnum.optional(),
+  status: ContractStatusEnum.optional(),
 })
 
 export const SendSignatureDto = z.object({
