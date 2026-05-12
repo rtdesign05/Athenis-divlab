@@ -69,7 +69,10 @@ export function useSendSignature() {
   return useMutation({
     mutationFn: ({ id, dto }: { id: string; dto: { signerName: string; signerEmail: string; signerRole?: string } }) =>
       legalApi.contracts.sendSignature(id, dto),
-    onSuccess: (_, { id }) => qc.invalidateQueries({ queryKey: CONTRACT_KEYS.detail(id) }),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: CONTRACT_KEYS.all })
+      qc.invalidateQueries({ queryKey: CONTRACT_KEYS.detail(id) })
+    },
   })
 }
 
