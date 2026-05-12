@@ -46,3 +46,24 @@ export async function scanInvoice(file: File): Promise<ScannedInvoice> {
   )
   return res.data.data
 }
+
+/**
+ * Envoie un fichier (image OU PDF) via multipart/form-data et retourne les données extraites.
+ * Utilise le nouvel endpoint POST /scan/invoice/upload qui gère les deux types.
+ */
+export async function uploadFileForScan(
+  file: File,
+): Promise<ScannedInvoice & { provider: string; pages?: number }> {
+  const form = new FormData()
+  form.append('file', file)
+
+  const res = await api.post<{
+    success: boolean
+    data:    ScannedInvoice & { provider: string; pages?: number }
+  }>(
+    '/scan/invoice/upload',
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return res.data.data
+}

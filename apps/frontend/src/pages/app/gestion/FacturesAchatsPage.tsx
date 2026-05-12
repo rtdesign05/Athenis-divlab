@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from 'react'
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type FactureAchatStatut, type FactureAchat } from '@/contexts/GestionContext'
@@ -6,7 +6,7 @@ import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { printDocument } from '@/lib/printDocument'
 import { generateQRDataUrl, buildFactureAchatQR } from '@/lib/qrCode'
 import { ScanAiModal } from '@/features/scan/ScanAiModal'
-import type { ScannedInvoice } from '@/services/scanApi'
+import { uploadFileForScan, type ScannedInvoice } from '@/services/scanApi'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -256,11 +256,12 @@ interface ModalFactureAchatProps {
   achats:         { id: string; fournisseur: string; agence: string; montant: number }[]
   agenceNom:      string | null
   defaultVatRate: number
+  initialScan?:   ScannedInvoice
   onSave:         (data: Omit<FactureAchat, 'id'>) => void
   onClose:        () => void
 }
 
-function ModalFactureAchat({ achats, agenceNom, defaultVatRate, onSave, onClose }: ModalFactureAchatProps) {
+function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onSave, onClose }: ModalFactureAchatProps) {
   const today = new Date().toISOString().slice(0, 10)
 
   const availableAchats = useMemo(
@@ -270,16 +271,29 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, onSave, onClose 
 
   const [showScan, setShowScan] = useState(false)
 
-  const [form, setForm] = useState({
-    commande:    availableAchats[0]?.id ?? '',
-    fournisseur: availableAchats[0]?.fournisseur ?? '',
-    agence:      agenceNom ?? availableAchats[0]?.agence ?? 'Siège',
-    date:        today,
-    echeance:    '',
-    montantHT:   availableAchats[0]?.montant ? Math.round(availableAchats[0].montant / (1 + defaultVatRate / 100)) : 0,
-    tva:         defaultVatRate,
-    statut:      'À valider' as FactureAchatStatut,
-    notes:       '',
+  const [form, setForm] = useState(() => {
+    const base = {
+      commande:    availableAchats[0]?.id ?? '',
+      fournisseur: availableAchats[0]?.fournisseur ?? '',
+      agence:      agenceNom ?? availableAchats[0]?.agence ?? 'Siège',
+      date:        today,
+      echeance:    '',
+      montantHT:   availableAchats[0]?.montant ? Math.round(availableAchats[0].montant / (1 + defaultVatRate / 100)) : 0,
+      tva:         defaultVatRate,
+      statut:      'À valider' as FactureAchatStatut,
+      notes:       '',
+    }
+    if (!initialScan) return base
+    return {
+      ...base,
+      fournisseur: initialScan.vendorName  ?? base.fournisseur,
+      date:        initialScan.invoiceDate ?? base.date,
+      echeance:    initialScan.dueDate     ?? base.echeance,
+      montantHT:   initialScan.subtotal    != null ? Math.round(initialScan.subtotal) : base.montantHT,
+      tva:         initialScan.taxRate     ?? base.tva,
+      notes:       [initialScan.vendorNiu ? `NIU : ${initialScan.vendorNiu}` : '', initialScan.notes ?? '']
+                     .filter(Boolean).join(' · ') || base.notes,
+    }
   })
 
   /** Pré-remplissage depuis ScanAI */
@@ -341,19 +355,31 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, onSave, onClose 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
       <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Nouvelle facture achat</h2>
+          <h2 className="text-sm font-semibold text-gray-900">
+            {initialScan ? '🤖 Vérification OCR' : 'Nouvelle facture achat'}
+          </h2>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowScan(true)}
-              title="Scanner une facture avec ScanAI"
-              className="flex items-center gap-1.5 rounded-lg bg-violet-50 border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition-colors"
-            >
-              📷 ScanAI
-            </button>
+            {!initialScan && (
+              <button
+                type="button"
+                onClick={() => setShowScan(true)}
+                title="Scanner une facture avec ScanAI"
+                className="flex items-center gap-1.5 rounded-lg bg-violet-50 border border-violet-200 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 transition-colors"
+              >
+                📷 ScanAI
+              </button>
+            )}
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">×</button>
           </div>
         </div>
+        {initialScan && (
+          <div className="shrink-0 flex items-center gap-2 px-5 py-2.5 bg-amber-50 border-b border-amber-100">
+            <span className="text-amber-500">⚠️</span>
+            <p className="text-xs text-amber-800">
+              Confiance OCR : <span className="font-semibold">{initialScan.confidence}%</span> — vérifiez les données avant de créer la facture.
+            </p>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Commande fournisseur</label>
@@ -663,7 +689,9 @@ export function FacturesAchatsPage() {
   const { facturesAchats, achats, updateFactureAchatStatut, addFactureAchat } = useGestion()
   const { vatRate, company }    = useCompanySettings()
 
-  const agenceNom = user?.agenceNom ?? null
+  const agenceNom    = user?.agenceNom ?? null
+  const effectiveVat = vatRate ?? defaultVatRate
+
   const [search,       setSearch]       = useState('')
   const [statutFilter, setStatutFilter] = useState<FactureAchatStatut | 'all'>('all')
   const [modal,        setModal]        = useState(false)
@@ -671,13 +699,63 @@ export function FacturesAchatsPage() {
   const [importToast,  setImportToast]  = useState<string | null>(null)
   const [selected,     setSelected]     = useState<FactureAchat | null>(null)
 
+  // ── OCR auto-import ──────────────────────────────────────────────────────────
+  const ocrFileRef                              = useRef<HTMLInputElement>(null)
+  const [ocrScanning,  setOcrScanning]          = useState(false)
+  const [ocrPreFill,   setOcrPreFill]           = useState<ScannedInvoice | null>(null)
+  const [ocrReviewModal, setOcrReviewModal]     = useState(false)
+  const [ocrDragOver,  setOcrDragOver]          = useState(false)
+
+  const handleOcrFile = useCallback(async (file: File) => {
+    const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
+    if (!ALLOWED.includes(file.type)) {
+      setImportToast('❌ Format non supporté — JPG, PNG, WebP ou PDF uniquement')
+      setTimeout(() => setImportToast(null), 4000)
+      return
+    }
+    setOcrScanning(true)
+    try {
+      const data = await uploadFileForScan(file)
+      if (data.confidence >= 75) {
+        // ✅ Confiance suffisante : enregistrement automatique
+        const today   = new Date().toISOString().slice(0, 10)
+        const montantHT = data.subtotal ?? 0
+        const tva       = data.taxRate  ?? effectiveVat
+        addFactureAchat({
+          commande:    '',
+          fournisseur: data.vendorName  ?? 'Fournisseur inconnu',
+          agence:      agenceNom ?? 'Siège',
+          date:        data.invoiceDate ?? today,
+          echeance:    data.dueDate     ?? today,
+          montantHT:   Math.round(montantHT),
+          tva,
+          montantTTC:  Math.round(montantHT * (1 + tva / 100)),
+          statut:      'À valider' as FactureAchatStatut,
+          lignes:      [],
+          notes:       [data.vendorNiu ? `NIU : ${data.vendorNiu}` : '', data.notes ?? '']
+                         .filter(Boolean).join(' · ') || '',
+        })
+        setImportToast(`✅ Facture « ${data.vendorName ?? 'Inconnue'} » enregistrée automatiquement (${data.confidence}% confiance)`)
+        setTimeout(() => setImportToast(null), 5000)
+      } else {
+        // ⚠️ Confiance insuffisante : ouvrir le formulaire pré-rempli pour vérification
+        setOcrPreFill(data)
+        setOcrReviewModal(true)
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur inconnue'
+      setImportToast(`❌ Analyse OCR échouée : ${msg}`)
+      setTimeout(() => setImportToast(null), 5000)
+    } finally {
+      setOcrScanning(false)
+    }
+  }, [addFactureAchat, agenceNom, effectiveVat])
+
   function handleImport(rows: Omit<FactureAchat, 'id'>[]) {
     rows.forEach(r => addFactureAchat(r))
     setImportToast(`${rows.length} facture${rows.length > 1 ? 's' : ''} importée${rows.length > 1 ? 's' : ''} avec succès`)
     setTimeout(() => setImportToast(null), 4000)
   }
-
-  const effectiveVat = vatRate ?? defaultVatRate
 
   const items = useMemo(() => {
     let list = agenceNom ? facturesAchats.filter(f => f.agence === agenceNom) : facturesAchats
@@ -720,12 +798,50 @@ export function FacturesAchatsPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* Bouton OCR auto-import */}
+          <div
+            onDragOver={e => { e.preventDefault(); setOcrDragOver(true) }}
+            onDragLeave={() => setOcrDragOver(false)}
+            onDrop={e => {
+              e.preventDefault()
+              setOcrDragOver(false)
+              const f = e.dataTransfer.files[0]
+              if (f) handleOcrFile(f)
+            }}
+          >
+            <button
+              onClick={() => ocrFileRef.current?.click()}
+              disabled={ocrScanning}
+              className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors
+                ${ocrDragOver
+                  ? 'border-violet-400 bg-violet-100 text-violet-800'
+                  : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'}
+                disabled:opacity-60 disabled:cursor-wait`}
+            >
+              {ocrScanning ? (
+                <>
+                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-violet-400 border-t-transparent" />
+                  Analyse OCR…
+                </>
+              ) : (
+                <>🤖 OCR auto-import</>
+              )}
+            </button>
+          </div>
+          <input
+            ref={ocrFileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+            className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) { handleOcrFile(f); e.target.value = '' } }}
+          />
+
           <button onClick={() => setImportModal(true)}
             className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 transition-colors">
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
-            Importer
+            Importer CSV
           </button>
           <button onClick={() => setModal(true)}
             className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800">
@@ -861,6 +977,16 @@ export function FacturesAchatsPage() {
           defaultVatRate={effectiveVat}
           onSave={data => { addFactureAchat(data); setModal(false) }}
           onClose={() => setModal(false)}
+        />
+      )}
+      {ocrReviewModal && ocrPreFill && (
+        <ModalFactureAchat
+          achats={achats}
+          agenceNom={agenceNom}
+          defaultVatRate={effectiveVat}
+          initialScan={ocrPreFill}
+          onSave={data => { addFactureAchat(data); setOcrReviewModal(false); setOcrPreFill(null) }}
+          onClose={() => { setOcrReviewModal(false); setOcrPreFill(null) }}
         />
       )}
       {importModal && (

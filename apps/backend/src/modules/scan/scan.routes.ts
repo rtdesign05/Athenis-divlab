@@ -1,9 +1,16 @@
 import { Router }       from 'express'
 import { z }            from 'zod'
+import multer           from 'multer'
 import { authenticate } from '../../middleware/authenticate.js'
-import { scanInvoiceImage, type SupportedMimeType } from './scan.service.js'
+import { scanInvoiceImage, scanInvoiceFile, type SupportedMimeType } from './scan.service.js'
 
 const router = Router()
+
+/** Upload en mémoire — 10 Mo max (images + PDF) */
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 10 * 1024 * 1024 },
+})
 
 const ScanInvoiceDto = z.object({
   imageBase64: z.string().min(50, 'Image trop petite ou manquante'),
@@ -51,6 +58,35 @@ router.post('/invoice', authenticate, async (req, res) => {
       error:   'Échec de l\'analyse OCR',
       message,
     })
+  }
+})
+
+/**
+ * POST /api/scan/invoice/upload
+ * Multipart/form-data — champ "file" : image (jpg/png/webp/gif) ou PDF
+ * Retourne les données extraites + provider + pages (PDF uniquement)
+ */
+router.post('/invoice/upload', authenticate, upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'Aucun fichier reçu (champ "file" manquant)' })
+  }
+
+  const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
+  if (!ALLOWED.includes(req.file.mimetype)) {
+    return res.status(400).json({
+      success: false,
+      error:   `Format non supporté : ${req.file.mimetype}. Formats acceptés : JPG, PNG, WebP, GIF, PDF.`,
+    })
+  }
+
+  try {
+    const result = await scanInvoiceFile(req.file.buffer, req.file.mimetype)
+    return res.json({ success: true, data: result })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erreur inconnue'
+    console.error('[ScanAI] Échec OCR (upload) :', message)
+    const status = message.includes('manquante') ? 503 : 500
+    return res.status(status).json({ success: false, error: 'Échec de l\'analyse OCR', message })
   }
 })
 

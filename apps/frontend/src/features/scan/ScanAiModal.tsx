@@ -3,7 +3,7 @@
  * Workflow : sélection image → aperçu → analyse Claude Vision → données extraites → pré-remplissage
  */
 import { useRef, useState, useCallback } from 'react'
-import { scanInvoice, type ScannedInvoice } from '@/services/scanApi'
+import { uploadFileForScan, type ScannedInvoice } from '@/services/scanApi'
 
 interface ScanAiModalProps {
   onResult: (data: ScannedInvoice) => void
@@ -12,8 +12,8 @@ interface ScanAiModalProps {
 
 type Step = 'pick' | 'preview' | 'scanning' | 'result' | 'error'
 
-const ACCEPTED = 'image/jpeg,image/png,image/webp,image/gif'
-const MAX_MB   = 5
+const ACCEPTED = 'image/jpeg,image/png,image/webp,image/gif,application/pdf'
+const MAX_MB   = 10
 
 export function ScanAiModal({ onResult, onClose }: ScanAiModalProps) {
   const fileRef                           = useRef<HTMLInputElement>(null)
@@ -27,17 +27,19 @@ export function ScanAiModal({ onResult, onClose }: ScanAiModalProps) {
 
   const pickFile = useCallback((f: File) => {
     if (f.size > MAX_MB * 1024 * 1024) {
-      setErrorMsg(`Image trop volumineuse (max ${MAX_MB} Mo)`)
+      setErrorMsg(`Fichier trop volumineux (max ${MAX_MB} Mo)`)
       setStep('error')
       return
     }
-    if (!f.type.startsWith('image/')) {
-      setErrorMsg('Format non supporté — utilisez JPG, PNG ou WebP')
+    const isImage = f.type.startsWith('image/')
+    const isPdf   = f.type === 'application/pdf'
+    if (!isImage && !isPdf) {
+      setErrorMsg('Format non supporté — utilisez JPG, PNG, WebP ou PDF')
       setStep('error')
       return
     }
     setFile(f)
-    setPreviewUrl(URL.createObjectURL(f))
+    setPreviewUrl(isImage ? URL.createObjectURL(f) : '')
     setStep('preview')
   }, [])
 
@@ -55,12 +57,11 @@ export function ScanAiModal({ onResult, onClose }: ScanAiModalProps) {
     if (!file) return
     setStep('scanning')
     try {
-      const data = await scanInvoice(file)
+      const data = await uploadFileForScan(file)
       setResult(data)
       setStep('result')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erreur de connexion'
-      // Cas clé manquante
       if (msg.includes('503') || msg.includes('non configuré')) {
         setErrorMsg('ScanAI non configuré — ajoutez ANTHROPIC_API_KEY dans le fichier .env du backend')
       } else {
@@ -119,7 +120,7 @@ export function ScanAiModal({ onResult, onClose }: ScanAiModalProps) {
                 <p className="mt-0.5 text-xs text-gray-400">ou cliquez pour parcourir vos fichiers</p>
               </div>
               <div className="flex gap-2">
-                {['JPG', 'PNG', 'WebP'].map(f => (
+                {['JPG', 'PNG', 'WebP', 'PDF'].map(f => (
                   <span key={f} className="rounded-full bg-white border border-violet-200 px-2.5 py-0.5 text-xs font-medium text-violet-700">{f}</span>
                 ))}
               </div>
@@ -145,12 +146,22 @@ export function ScanAiModal({ onResult, onClose }: ScanAiModalProps) {
           </div>
         )}
 
-        {/* Aperçu image */}
+        {/* Aperçu fichier */}
         {step === 'preview' && file && (
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
-            <div className="rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
-              <img src={previewUrl} alt="Aperçu facture" className="w-full max-h-72 object-contain" />
-            </div>
+            {previewUrl ? (
+              <div className="rounded-xl overflow-hidden border border-gray-200 bg-gray-50">
+                <img src={previewUrl} alt="Aperçu facture" className="w-full max-h-72 object-contain" />
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-violet-200 bg-violet-50 py-10">
+                <span className="text-5xl">📄</span>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-gray-800">Fichier PDF prêt</p>
+                  <p className="mt-0.5 text-xs text-gray-400">Le texte sera extrait et analysé par ScanAI</p>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3 rounded-lg bg-gray-50 px-4 py-2.5">
               <span className="text-lg">📄</span>
               <div className="flex-1 min-w-0">
