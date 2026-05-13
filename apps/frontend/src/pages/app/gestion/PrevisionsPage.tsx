@@ -938,28 +938,6 @@ export function PrevisionsPage() {
           </table>
         </div>
       </div>
-
-      {/* ── Note méthodologique ── */}
-      <div className="shrink-0 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">
-        <p className="font-semibold mb-1">
-          📌 Hypothèses actives
-          {hypothesesModified && <span className="ml-2 text-[10px] font-normal rounded-full bg-green-100 text-green-700 px-2 py-0.5">personnalisées</span>}
-        </p>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-[11px] text-blue-600">
-          <span>• Tréso initiale : {fmt(totalSolde || FALLBACK_BALANCE)} (soldes consolidés)</span>
-          <span>• Croissance CA scénario de base : +{(hypotheses.growth.base.revenue * 100).toFixed(0)}%/an</span>
-          <span>• Saisonnalité : pic {((Math.max(...hypotheses.seasonal) - 1) * 100).toFixed(0)}%, creux {((Math.min(...hypotheses.seasonal) - 1) * 100).toFixed(0)}%</span>
-          <span>• Charges fixes : indexées +{(hypotheses.growth.base.fixed * 100).toFixed(0)}%/an (inflation)</span>
-          <span>• Masse salariale : +{(hypotheses.growth.base.personnel * 100).toFixed(0)}%/an (revalorisation)</span>
-          <span>• Taux IS appliqué : {(hypotheses.tauxIS * 100).toFixed(1)}% (bouclier fiscal)</span>
-        </div>
-        {hypothesesModified && (
-          <button onClick={() => setHypotheses({ growth: JSON.parse(JSON.stringify(DEFAULT_HYPOTHESES.growth)), seasonal: [...DEFAULT_HYPOTHESES.seasonal], tauxIS: DEFAULT_HYPOTHESES.tauxIS })}
-            className="mt-2 text-[11px] text-blue-500 hover:text-blue-700 transition-colors">
-            ↺ Remettre les hypothèses par défaut
-          </button>
-        )}
-      </div>
     </div>
   )
 }
