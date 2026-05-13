@@ -718,9 +718,13 @@ export function FacturesAchatsPage() {
       const data = await uploadFileForScan(file)
       if (data.confidence >= 75) {
         // ✅ Confiance suffisante : enregistrement automatique
-        const today   = new Date().toISOString().slice(0, 10)
+        const today     = new Date().toISOString().slice(0, 10)
         const montantHT = data.subtotal ?? 0
         const tva       = data.taxRate  ?? effectiveVat
+        // Préférer le montant TTC extrait par l'OCR s'il est disponible et non nul
+        const montantTTC = data.total && data.total > 0
+          ? Math.round(data.total)
+          : Math.round(montantHT * (1 + tva / 100))
         addFactureAchat({
           commande:    '',
           fournisseur: data.vendorName  ?? 'Fournisseur inconnu',
@@ -729,7 +733,7 @@ export function FacturesAchatsPage() {
           echeance:    data.dueDate     ?? today,
           montantHT:   Math.round(montantHT),
           tva,
-          montantTTC:  Math.round(montantHT * (1 + tva / 100)),
+          montantTTC,
           statut:      'À valider' as FactureAchatStatut,
           lignes:      [],
           notes:       [data.vendorNiu ? `NIU : ${data.vendorNiu}` : '', data.notes ?? '']
