@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useTresorerie } from '@/contexts/TresorerieContext'
+import { uploadBankStatement, type BankStatementResult } from '@/services/bankApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,6 +79,275 @@ const INITIAL: Compte[] = [
     ],
   },
 ]
+
+// ── Modal import relevé bancaire ──────────────────────────────────────────────
+
+type ImportStep = 'pick' | 'loading' | 'preview' | 'error'
+
+function ModalImportReleve({ compte, onImport, onClose }: {
+  compte:   { banque: string; intitule: string; devise: string }
+  onImport: (result: BankStatementResult) => void
+  onClose:  () => void
+}) {
+  const { fmt } = useCurrency()
+  const fileRef                   = useRef<HTMLInputElement>(null)
+  const [step, setStep]           = useState<ImportStep>('pick')
+  const [result, setResult]       = useState<BankStatementResult | null>(null)
+  const [errorMsg, setErrorMsg]   = useState('')
+  const [dragOver, setDragOver]   = useState(false)
+  const [fileName, setFileName]   = useState('')
+
+  const handleFile = useCallback(async (file: File) => {
+    const ALLOWED = ['text/csv', 'application/pdf', 'application/octet-stream']
+    const ext     = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!ALLOWED.includes(file.type) && !['csv', 'ofx', 'qfx', 'pdf'].includes(ext)) {
+      setErrorMsg('Format non supporté — utilisez PDF, CSV ou OFX')
+      setStep('error')
+      return
+    }
+    setFileName(file.name)
+    setStep('loading')
+    try {
+      const data = await uploadBankStatement(file)
+      if (data.transactions.length === 0) {
+        setErrorMsg('Aucune transaction trouvée dans ce fichier. Vérifiez le format.')
+        setStep('error')
+        return
+      }
+      setResult(data)
+      setStep('preview')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erreur de connexion'
+      setErrorMsg(msg.includes('422') || msg.includes('scanné')
+        ? 'PDF image non supporté — exportez votre relevé en PDF texte ou CSV depuis votre espace bancaire en ligne.'
+        : `Analyse échouée : ${msg}`)
+      setStep('error')
+    }
+  }, [])
+
+  const confColor = (c: number) =>
+    c >= 75 ? 'text-green-700 bg-green-50 border-green-200'
+    : c >= 40 ? 'text-amber-700 bg-amber-50 border-amber-200'
+    : 'text-red-700 bg-red-50 border-red-200'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[90vh]">
+
+        {/* Header */}
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-base">📊</span>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Importer un relevé bancaire</p>
+              <p className="text-xs text-gray-400">{compte.banque} — {compte.intitule}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+
+        {/* Step: pick */}
+        {step === 'pick' && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
+              onClick={() => fileRef.current?.click()}
+              className={`flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed p-10 cursor-pointer transition-all
+                ${dragOver ? 'border-blue-400 bg-blue-50' : 'border-blue-200 bg-blue-50/40 hover:border-blue-400 hover:bg-blue-50'}`}
+            >
+              <span className="text-4xl">🏦</span>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-gray-800">Glissez votre relevé ici</p>
+                <p className="mt-0.5 text-xs text-gray-400">ou cliquez pour parcourir vos fichiers</p>
+              </div>
+              <div className="flex gap-2">
+                {['PDF', 'CSV', 'OFX'].map(f => (
+                  <span key={f} className="rounded-full bg-white border border-blue-200 px-2.5 py-0.5 text-xs font-medium text-blue-700">{f}</span>
+                ))}
+              </div>
+              <input ref={fileRef} type="file" accept=".pdf,.csv,.ofx,.qfx,text/csv,application/pdf" className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.currentTarget.value = '' }} />
+            </div>
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 space-y-1.5">
+              <p className="text-xs font-semibold text-blue-800">💡 Comment obtenir votre relevé</p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 text-xs text-blue-700">
+                {[
+                  ['BICEC', 'Espace client → Relevés → Export PDF/CSV'],
+                  ['UBA', 'MyUBA → Comptes → Télécharger relevé'],
+                  ['Ecobank', 'Ecobank Online → Statement → PDF'],
+                  ['Afriland', 'E-Afriland → Relevés → CSV'],
+                ].map(([b, i]) => (
+                  <div key={b} className="flex gap-1.5">
+                    <span className="font-semibold shrink-0">{b}</span>
+                    <span className="text-blue-500">{i}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step: loading */}
+        {step === 'loading' && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-5 p-10">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin" />
+              <span className="absolute inset-0 flex items-center justify-center text-xl">📊</span>
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-semibold text-gray-800">Analyse en cours…</p>
+              <p className="mt-1 text-xs text-gray-400">{fileName}</p>
+            </div>
+            <div className="flex gap-3 text-xs text-gray-300">
+              {['Extraction texte…', 'Détection transactions…', 'Structuration…'].map((t, i) => (
+                <span key={i} className="animate-pulse" style={{ animationDelay: `${i * 0.4}s` }}>{t}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Step: preview */}
+        {step === 'preview' && result && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            {/* Score confiance */}
+            <div className={`flex items-center justify-between rounded-lg border px-4 py-2.5 ${confColor(result.confidence)}`}>
+              <div className="flex items-center gap-2">
+                <span>{result.confidence >= 75 ? '✅' : result.confidence >= 40 ? '⚠️' : '❌'}</span>
+                <span className="text-xs font-semibold">
+                  {result.confidence >= 75 ? 'Extraction fiable' : result.confidence >= 40 ? 'Extraction partielle — vérifiez' : 'Extraction incertaine'}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                {result.provider && <span className="text-xs opacity-70">{result.provider}</span>}
+                <span className="text-xs font-bold">{result.confidence}% confiance</span>
+              </div>
+            </div>
+
+            {/* Infos compte extrait */}
+            {(result.bankName || result.accountNumber || result.periodStart) && (
+              <div className="rounded-xl border border-gray-100 overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-100">
+                  <p className="text-xs font-semibold text-gray-700">🏦 Informations du relevé</p>
+                </div>
+                <div className="p-4 grid grid-cols-3 gap-3">
+                  {[
+                    ['Banque',      result.bankName],
+                    ['N° compte',   result.accountNumber],
+                    ['Titulaire',   result.accountHolder],
+                    ['Période du',  result.periodStart],
+                    ['au',          result.periodEnd],
+                    ['Devise',      result.currency],
+                  ].map(([label, val]) => val && (
+                    <div key={label}>
+                      <p className="text-xs text-gray-400 mb-0.5">{label}</p>
+                      <p className="text-xs font-medium text-gray-800 truncate">{val}</p>
+                    </div>
+                  ))}
+                </div>
+                {(result.openingBalance != null || result.closingBalance != null) && (
+                  <div className="px-4 pb-4 flex gap-4">
+                    {result.openingBalance != null && (
+                      <div className="rounded-lg bg-gray-50 px-3 py-1.5 text-xs">
+                        <span className="text-gray-500">Solde ouverture</span>
+                        <span className="ml-2 font-semibold text-gray-800">{fmt(result.openingBalance)}</span>
+                      </div>
+                    )}
+                    {result.closingBalance != null && (
+                      <div className="rounded-lg bg-green-50 px-3 py-1.5 text-xs">
+                        <span className="text-green-700">Solde clôture</span>
+                        <span className="ml-2 font-bold text-green-800">{fmt(result.closingBalance)}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tableau des transactions */}
+            <div className="rounded-xl border border-gray-100 overflow-hidden">
+              <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 flex items-center justify-between">
+                <p className="text-xs font-semibold text-gray-700">📋 Transactions ({result.transactions.length})</p>
+                <p className="text-xs text-gray-400">{fileName}</p>
+              </div>
+              <div className="overflow-auto max-h-72">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-gray-50 border-b border-gray-100">
+                    <tr className="text-left text-gray-500 font-semibold">
+                      <th className="px-3 py-2">Date</th>
+                      <th className="px-3 py-2">Libellé</th>
+                      <th className="px-3 py-2 text-right">Débit</th>
+                      <th className="px-3 py-2 text-right">Crédit</th>
+                      {result.transactions.some(t => t.solde != null) && <th className="px-3 py-2 text-right">Solde</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {result.transactions.map((tx, i) => (
+                      <tr key={i} className="hover:bg-gray-50/60">
+                        <td className="px-3 py-2 whitespace-nowrap text-gray-400">
+                          {new Date(tx.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700 max-w-[260px] truncate">{tx.libelle}</td>
+                        <td className="px-3 py-2 text-right font-medium text-red-500">
+                          {tx.debit != null ? fmt(tx.debit) : ''}
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium text-green-600">
+                          {tx.credit != null ? fmt(tx.credit) : ''}
+                        </td>
+                        {result.transactions.some(t => t.solde != null) && (
+                          <td className="px-3 py-2 text-right text-gray-500">
+                            {tx.solde != null ? fmt(tx.solde) : ''}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Step: error */}
+        {step === 'error' && (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center">
+            <span className="text-4xl">❌</span>
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Import impossible</p>
+              <p className="mt-1.5 text-xs text-gray-500 leading-relaxed max-w-sm mx-auto">{errorMsg}</p>
+            </div>
+            <button onClick={() => { setStep('pick'); setErrorMsg(''); setFileName('') }}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+              Réessayer
+            </button>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="shrink-0 flex items-center gap-2 border-t border-gray-100 px-5 py-3">
+          <button onClick={onClose}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
+            Annuler
+          </button>
+          <div className="flex-1" />
+          {step === 'preview' && result && (
+            <>
+              <button onClick={() => { setStep('pick'); setResult(null); setFileName('') }}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
+                Changer de fichier
+              </button>
+              <button onClick={() => { onImport(result); onClose() }}
+                className="flex items-center gap-2 rounded-lg bg-blue-700 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-800">
+                <span>✓</span> Importer {result.transactions.length} transaction{result.transactions.length > 1 ? 's' : ''}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ── Modals ────────────────────────────────────────────────────────────────────
 
@@ -284,6 +554,8 @@ export function BanquesPage() {
   const [showAddCompte, setShowAddCompte] = useState(false)
   const [showAddOp, setShowAddOp] = useState(false)
   const [editingOp, setEditingOp] = useState<Operation | null>(null)
+  const [showImport, setShowImport] = useState(false)
+  const [importToast, setImportToast] = useState<string | null>(null)
 
   const comptesVisibles = agenceNom ? comptes.filter(c => c.agence === agenceNom) : comptes
   const selected = comptesVisibles.find(c => c.id === selectedId) ?? comptesVisibles[0]
@@ -392,6 +664,39 @@ export function BanquesPage() {
     }))
   }
 
+  function importReleve(result: BankStatementResult) {
+    const newOps: Operation[] = result.transactions.map((tx, i) => ({
+      id:      `imp-${Date.now()}-${i}`,
+      date:    tx.date,
+      libelle: tx.libelle,
+      montant: (tx.credit ?? 0) - (tx.debit ?? 0),
+    }))
+    setComptes(cs => cs.map(c => {
+      if (c.id !== selectedId) return c
+      // Calcul du solde : préférer le solde de clôture du relevé s'il est disponible
+      const delta    = newOps.reduce((s, op) => s + op.montant, 0)
+      const newSolde = result.closingBalance ?? c.solde + delta
+      return {
+        ...c,
+        solde:      newSolde,
+        operations: [...newOps, ...c.operations],
+      }
+    }))
+    // Propager vers contexte trésorerie
+    if (selected) {
+      newOps.forEach(op => {
+        addTransaction(
+          { date: op.date, libelle: op.libelle, montant: op.montant },
+          `${selected.banque} — ${selected.intitule}`,
+          'banque',
+          selected.agence,
+        )
+      })
+    }
+    setImportToast(`✅ ${newOps.length} opération${newOps.length > 1 ? 's' : ''} importée${newOps.length > 1 ? 's' : ''} depuis le relevé`)
+    setTimeout(() => setImportToast(null), 5000)
+  }
+
   return (
     <div className="h-full flex gap-3 overflow-hidden">
 
@@ -443,10 +748,16 @@ export function BanquesPage() {
               Opérations
               <span className="ml-2 text-xs font-normal text-gray-400">{selected.operations.length} mouvement{selected.operations.length !== 1 ? 's' : ''}</span>
             </h2>
-            <button onClick={() => setShowAddOp(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800">
-              <span className="text-base leading-none">+</span> Saisir une opération
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors">
+                📂 Importer relevé
+              </button>
+              <button onClick={() => setShowAddOp(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800">
+                <span className="text-base leading-none">+</span> Saisir
+              </button>
+            </div>
           </div>
 
           {selected.operations.length === 0 ? (
@@ -527,6 +838,20 @@ export function BanquesPage() {
       {showAddCompte && <ModalCompte onSave={addCompte} onClose={() => setShowAddCompte(false)} {...(agenceNom ? { defaultAgence: agenceNom } : {})} />}
       {showAddOp && <ModalOperation compte={selected} onSave={addOperation} onClose={() => setShowAddOp(false)} />}
       {editingOp && <ModalOperation compte={selected} initialOp={editingOp} onSave={updateOperation} onClose={() => setEditingOp(null)} />}
+      {showImport && (
+        <ModalImportReleve
+          compte={selected}
+          onImport={importReleve}
+          onClose={() => setShowImport(false)}
+        />
+      )}
+
+      {/* Toast import */}
+      {importToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-2 rounded-xl bg-blue-700 px-5 py-3 text-sm font-medium text-white shadow-lg">
+          {importToast}
+        </div>
+      )}
     </div>
   )
 }

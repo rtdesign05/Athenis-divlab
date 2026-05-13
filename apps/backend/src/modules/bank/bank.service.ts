@@ -118,6 +118,32 @@ function parseOFX(content: string): ParsedTx[] {
 
 // ── Service functions ─────────────────────────────────────────────────────────
 
+import type { BankStatementData } from './bankStatement.provider.js'
+
+/**
+ * Prévisualise un relevé CSV ou OFX sans persister — retourne les transactions parsées
+ * dans le même format que BankStatementData pour un traitement unifié côté frontend.
+ */
+export async function previewBankStatement(content: string, format: 'CSV' | 'OFX'): Promise<BankStatementData> {
+  const parsed = format === 'CSV' ? parseCSV(content) : parseOFX(content)
+  const transactions = parsed.map(tx => ({
+    date:    tx.date.toISOString().slice(0, 10),
+    libelle: tx.label,
+    debit:   tx.type === 'DEBIT'  ? tx.amount : null,
+    credit:  tx.type === 'CREDIT' ? tx.amount : null,
+    solde:   null as number | null,
+  }))
+  return {
+    bankName: null, accountNumber: null, accountHolder: null,
+    periodStart:    transactions[0]?.date ?? null,
+    periodEnd:      transactions[transactions.length - 1]?.date ?? null,
+    openingBalance: null, closingBalance: null,
+    currency:       'XAF',
+    transactions,
+    confidence:     transactions.length > 0 ? 80 : 0,
+  }
+}
+
 export async function importBankStatement(companyId: string, data: ImportBankInput) {
   const parsed = data.format === 'CSV' ? parseCSV(data.content) : parseOFX(data.content)
   if (parsed.length === 0)
