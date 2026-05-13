@@ -38,19 +38,6 @@ function isAlphanumericTiers(n: string): boolean {
   return n.trim().length > 0 && !/^\d+$/.test(n.trim())
 }
 
-/**
- * Un compte centralisateur (OHADA / PCG) est un compte principal qui agrège
- * des comptes auxiliaires/divisionnaires. Heuristique : numéro purement
- * numérique de 2-3 chiffres significatifs (ex: 401, 411, 512), ou compte
- * dont le numéro non zéros est ≤ 3 caractères (ex: 401000000).
- */
-function isCentralizer(numero: string): boolean {
-  if (!/^\d+$/.test(numero)) return false
-  // Compte avec uniquement des zéros après les 3 premiers chiffres → centralisateur
-  const significant = numero.replace(/0+$/, '')
-  return significant.length > 0 && significant.length <= 3
-}
-
 // ── React Query hooks ─────────────────────────────────────────────────────────
 
 function usePlan() {
@@ -95,11 +82,17 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', ce
       : 'ACTIF',
   })
 
-  // En mode centralisateur, on ne filtre que les comptes du plan ≤ 3 chiffres significatifs
-  const filteredPlan = useMemo(() =>
-    centralizerMode ? planEntries.filter(e => isCentralizer(e.numero)) : planEntries,
-    [planEntries, centralizerMode],
-  )
+  // En mode centralisateur, on suggère plutôt les comptes courts (≤ 3 chiffres
+  // significatifs) qui sont typiquement utilisés comme centralisateurs en OHADA.
+  // Mais ce n'est qu'une aide à la saisie — l'utilisateur reste libre.
+  const filteredPlan = useMemo(() => {
+    if (!centralizerMode) return planEntries
+    return planEntries.filter(e => {
+      if (!/^\d+$/.test(e.numero)) return false
+      const sig = e.numero.replace(/0+$/, '')
+      return sig.length > 0 && sig.length <= 3
+    })
+  }, [planEntries, centralizerMode])
 
   const suggestions = useMemo(() =>
     search.length < 2 ? [] :
@@ -121,13 +114,17 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', ce
     && /^\d+$/.test(form.numero.trim())
     && form.numero.trim().length < 9
 
-  // Validation supplémentaire en mode centralisateur
-  const centralizerError = centralizerMode && form.numero.trim().length > 0 && !isCentralizer(finalNumero)
-    ? "Un compte centralisateur doit avoir au maximum 3 chiffres significatifs (ex : 401, 411, 512)"
-    : ''
+  // En mode centralisateur, pas de restriction sur le numéro :
+  // l'utilisateur peut nommer son centralisateur comme il veut
+  // (3 chiffres comme 401, ou alphanumérique comme "GRP-FRN", etc.)
 
   const mutation = useMutation({
-    mutationFn: () => accountingApi.addCompte({ ...form, numero: finalNumero, isSystem: false }),
+    mutationFn: () => accountingApi.addCompte({
+      ...form,
+      numero:        finalNumero,
+      isSystem:      false,
+      isCentralizer: centralizerMode,  // ← FLAG explicite côté backend
+    }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['comptes'] }); onClose() },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : "Erreur lors de l'ajout"),
   })
@@ -215,9 +212,6 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', ce
                     Compte alphanumérique (tiers) — conservé tel quel
                   </p>
                 )}
-                {centralizerError && (
-                  <p className="mt-1 text-xs text-red-600">{centralizerError}</p>
-                )}
               </div>
 
               <div>
@@ -256,7 +250,7 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', ce
             Annuler
           </button>
           <button onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || (!form.numero && !custom) || !!centralizerError}
+            disabled={mutation.isPending || (!form.numero && !custom)}
             className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 disabled:opacity-50">
             {mutation.isPending ? 'Enregistrement…' : centralizerMode ? 'Créer' : 'Activer'}
           </button>
@@ -354,8 +348,12 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
   }, [comptes, tiersOnly, planOnly, showPlan])
 
   // Filtre par tab (Tous / Centralisateurs)
+  // Sur l'onglet centralisateurs : on ne montre QUE les comptes actifs
+  // explicitement marqués comme centralisateurs par l'utilisateur.
   const tabRows = useMemo(() =>
-    tab === 'centralizers' ? allRows.filter(r => isCentralizer(r.numero)) : allRows,
+    tab === 'centralizers'
+      ? allRows.filter(r => r.kind === 'active' && r.compteItem?.isCentralizer === true)
+      : allRows,
     [allRows, tab],
   )
 
@@ -403,7 +401,7 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
   const totalCredit = comptes.reduce((s, c) => s + c.soldeCrediteur, 0)
 
   // Comptage centralisateurs vs tous
-  const centralizersCount = comptes.filter(c => isCentralizer(c.numero)).length
+  const centralizersCount = comptes.filter(c => c.isCentralizer).length
 
   return (
     <div className="space-y-4">
@@ -520,7 +518,7 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
               // ── Compte actif ──────────────────────────────────────────────
               if (row.kind === 'active') {
                 const c = row.compteItem!
-                const central = isCentralizer(c.numero)
+                const central = c.isCentralizer
                 return (
                   <tr key={`active-${c.id}`} className="hover:bg-gray-50/50">
                     <td className="px-4 py-2.5 font-mono text-xs text-gray-700 align-middle">
@@ -578,9 +576,9 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
                     <td className="px-4 py-2.5 text-right">
                       {(() => {
                         const hasMouvements = c.soldeDebiteur > 0 || c.soldeCrediteur > 0
-                        // Les comptes centralisateurs ne sont soumis à aucune
-                        // restriction : système et mouvementés peuvent être supprimés.
-                        const isCentr = isCentralizer(c.numero)
+                        // Les comptes centralisateurs (marqués par l'utilisateur)
+                        // ne sont soumis à aucune restriction de suppression.
+                        const isCentr = c.isCentralizer
                         if (editing === c.id) {
                           return (
                             <button onClick={() => setEditing(null)}
@@ -804,7 +802,7 @@ export function ComptesPage() {
   const isError   = planError   || comptesError
 
   const totalAll   = comptes?.length ?? 0
-  const totalCentr = comptes?.filter(c => isCentralizer(c.numero)).length ?? 0
+  const totalCentr = comptes?.filter(c => c.isCentralizer).length ?? 0
 
   return (
     <div className="space-y-4">

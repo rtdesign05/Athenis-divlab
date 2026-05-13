@@ -556,8 +556,9 @@ model AccountPlan {
   classe    Int
   type      AccountPlanType
   zone      AccountingZone
-  isSystem  Boolean         @default(true) @map("is_system")
-  isActive  Boolean         @default(true) @map("is_active")
+  isSystem      Boolean     @default(true)  @map("is_system")
+  isActive      Boolean     @default(true)  @map("is_active")
+  isCentralizer Boolean     @default(false) @map("is_centralizer")
 
   createdAt DateTime        @default(now()) @map("created_at")
 

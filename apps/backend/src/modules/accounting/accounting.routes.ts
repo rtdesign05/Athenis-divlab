@@ -181,11 +181,12 @@ accountingRouter.post(
 // ── Plan comptable & Comptes ───────────────────────────────────────────────────
 
 const AddCompteBody = z.object({
-  numero:   z.string().min(1).max(10),
-  intitule: z.string().min(1).max(200),
-  classe:   z.number().int().min(1).max(9),
-  type:     z.enum(['ACTIF', 'PASSIF', 'CHARGE', 'PRODUIT']),
-  isSystem: z.boolean().optional(),
+  numero:        z.string().min(1).max(10),
+  intitule:      z.string().min(1).max(200),
+  classe:        z.number().int().min(1).max(9),
+  type:          z.enum(['ACTIF', 'PASSIF', 'CHARGE', 'PRODUIT']),
+  isSystem:      z.boolean().optional(),
+  isCentralizer: z.boolean().optional(),
 })
 
 const UpdateCompteBody = z.object({

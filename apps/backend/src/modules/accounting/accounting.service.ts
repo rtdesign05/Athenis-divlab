@@ -513,6 +513,7 @@ export async function getComptes(companyId: string) {
       type:           c.type,
       zone:           c.zone,
       isSystem:       c.isSystem,
+      isCentralizer:  c.isCentralizer,
       soldeDebiteur:  Math.max(0, d - cr),
       soldeCrediteur: Math.max(0, cr - d),
       soldeNet:       d - cr,
@@ -528,7 +529,7 @@ function normalizeNumero(numero: string): string {
 
 export async function addCompte(
   companyId: string,
-  data: { numero: string; intitule: string; classe: number; type: string; isSystem?: boolean },
+  data: { numero: string; intitule: string; classe: number; type: string; isSystem?: boolean; isCentralizer?: boolean },
 ) {
   const numero  = normalizeNumero(data.numero)   // ← normalisation systématique
 
@@ -544,7 +545,12 @@ export async function addCompte(
     if (!existing.isActive) {
       return prisma.accountPlan.update({
         where: { id: existing.id },
-        data: { isActive: true, intitule: data.intitule },
+        data: {
+          isActive: true,
+          intitule: data.intitule,
+          // Met à jour isCentralizer si explicitement fourni (réactivation)
+          ...(data.isCentralizer !== undefined ? { isCentralizer: data.isCentralizer } : {}),
+        },
       })
     }
     throw new AppError(`Le compte ${numero} existe déjà`, 409, 'DUPLICATE_ACCOUNT')
@@ -554,11 +560,12 @@ export async function addCompte(
     data: {
       companyId,
       numero,
-      intitule: data.intitule,
-      classe:   data.classe,
-      type:     data.type as never,
-      zone:     company.accountingZone,
-      isSystem: data.isSystem ?? false,
+      intitule:      data.intitule,
+      classe:        data.classe,
+      type:          data.type as never,
+      zone:          company.accountingZone,
+      isSystem:      data.isSystem      ?? false,
+      isCentralizer: data.isCentralizer ?? false,
     },
   })
 }
@@ -570,22 +577,13 @@ export async function updateCompte(companyId: string, id: string, intitule: stri
   return prisma.accountPlan.update({ where: { id }, data: { intitule } })
 }
 
-/** Compte centralisateur : numéro purement numérique avec ≤ 3 chiffres significatifs */
-function isCentralizerNumero(numero: string): boolean {
-  if (!/^\d+$/.test(numero)) return false
-  const significant = numero.replace(/0+$/, '')
-  return significant.length > 0 && significant.length <= 3
-}
-
 export async function deleteCompte(companyId: string, id: string) {
   const compte = await prisma.accountPlan.findFirst({ where: { id, companyId } })
   if (!compte) throw new AppError('Compte introuvable', 404, 'NOT_FOUND')
 
-  // Les comptes centralisateurs sont supprimables sans restriction
-  // (l'utilisateur en a la responsabilité finale).
-  const isCentralizer = isCentralizerNumero(compte.numero)
-
-  if (!isCentralizer) {
+  // Les comptes centralisateurs (explicitement marqués par l'utilisateur)
+  // sont supprimables sans restriction. L'utilisateur en a la responsabilité.
+  if (!compte.isCentralizer) {
     // Protection 1 : comptes système non supprimables (préserve le référentiel)
     if (compte.isSystem) {
       throw new AppError(
@@ -595,8 +593,6 @@ export async function deleteCompte(companyId: string, id: string) {
     }
 
     // Protection 2 : comptes mouvementés non supprimables (intégrité comptable)
-    // Un compte ayant déjà eu des écritures comptables ne peut être supprimé
-    // car cela briserait la traçabilité du journal et de la balance.
     const mouvements = await prisma.journalEntry.count({
       where: { companyId, compte: compte.numero },
     })

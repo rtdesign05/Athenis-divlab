@@ -125,7 +125,7 @@ export const accountingApi = {
     `/api/accounting/fec?year=${year}`,
   plan:         () => api.get<{ data: PlanData }>('/accounting/plan').then(d),
   comptes:      () => api.get<{ data: CompteItem[] }>('/accounting/comptes').then(d),
-  addCompte:    (body: { numero: string; intitule: string; classe: number; type: ChartAccountType; isSystem?: boolean }) =>
+  addCompte:    (body: { numero: string; intitule: string; classe: number; type: ChartAccountType; isSystem?: boolean; isCentralizer?: boolean }) =>
     api.post<{ data: CompteItem }>('/accounting/comptes', body).then(d),
   updateCompte: (id: string, intitule: string) =>
     api.put<{ data: CompteItem }>(`/accounting/comptes/${id}`, { intitule }).then(d),
@@ -195,6 +195,7 @@ export interface CompteItem {
   type:           ChartAccountType
   zone:           AccountingZone
   isSystem:       boolean
+  isCentralizer:  boolean
   soldeDebiteur:  number
   soldeCrediteur: number
   soldeNet:       number
