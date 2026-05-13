@@ -141,7 +141,8 @@ export const billingApi = {
   update:       (id: string, dto: Partial<CreateInvoiceDto>) => api.patch<{ data: Invoice }>(`/invoices/${id}`, dto).then(d),
   updateStatus: (id: string, status: InvoiceStatus) => api.patch<{ data: Invoice }>(`/invoices/${id}/status`, { status }).then(d),
   remove:       (id: string)            => api.delete(`/invoices/${id}`),
-  dashboard:    ()                      => api.get<{ data: DashboardStats }>('/invoices/dashboard').then(d),
+  dashboard:    (params?: { from?: string; to?: string }) =>
+    api.get<{ data: DashboardStats }>('/invoices/dashboard', { params }).then(d),
   cashFlow:     ()                      => api.get<{ data: CashFlowForecast }>('/invoices/cash-flow').then(d),
   reminders:    ()                      => api.get<{ data: InvoiceWithReminder[] }>('/invoices/reminders').then(d),
 }

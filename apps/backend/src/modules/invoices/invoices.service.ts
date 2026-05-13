@@ -145,28 +145,37 @@ export async function invoiceStats(companyId: string) {
 
 // ── Dashboard KPIs ────────────────────────────────────────────────────────────
 
-export async function dashboardStats(companyId: string) {
-  const now       = new Date()
-  const y         = now.getFullYear()
-  const startCurr = new Date(y, 0, 1)
-  const startPrev = new Date(y - 1, 0, 1)
-  const endPrev   = new Date(y, 0, 1)
+export async function dashboardStats(
+  companyId: string,
+  opts: { from?: Date; to?: Date } = {},
+) {
+  const now  = new Date()
+  const y    = now.getFullYear()
+  // Inclusive start / exclusive end (midnight of next day)
+  const from = opts.from ?? new Date(y, 0, 1)
+  const to   = opts.to
+    ? new Date(new Date(opts.to).setHours(23, 59, 59, 999))
+    : new Date(y + 1, 0, 1)
+
+  // Previous period: same duration shifted exactly 1 year back
+  const prevFrom = new Date(from.getFullYear() - 1, from.getMonth(), from.getDate())
+  const prevTo   = new Date(to.getFullYear()   - 1, to.getMonth(),   to.getDate(), 23, 59, 59, 999)
 
   const [paidCurr, paidPrev, expenses, paidInvoicesForDSO, pending, overdue] = await Promise.all([
     prisma.invoice.aggregate({
-      where: { companyId, status: 'PAID', paidAt: { gte: startCurr } },
+      where: { companyId, status: 'PAID', paidAt: { gte: from, lte: to } },
       _sum: { amountTTC: true, amountHT: true },
     }),
     prisma.invoice.aggregate({
-      where: { companyId, status: 'PAID', paidAt: { gte: startPrev, lt: endPrev } },
+      where: { companyId, status: 'PAID', paidAt: { gte: prevFrom, lte: prevTo } },
       _sum: { amountTTC: true },
     }),
     prisma.expense.aggregate({
-      where: { companyId, date: { gte: startCurr } },
+      where: { companyId, date: { gte: from, lte: to } },
       _sum: { amount: true },
     }),
     prisma.invoice.findMany({
-      where: { companyId, status: 'PAID', paidAt: { not: null }, issuedAt: { gte: startCurr } },
+      where: { companyId, status: 'PAID', paidAt: { not: null }, issuedAt: { gte: from, lte: to } },
       select: { issuedAt: true, paidAt: true },
     }),
     prisma.invoice.aggregate({

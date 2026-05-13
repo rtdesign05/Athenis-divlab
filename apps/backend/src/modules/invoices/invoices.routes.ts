@@ -22,7 +22,10 @@ invoicesRouter.get(
   checkModule('gestion', 'read'),
   async (req, res, next) => {
     try {
-      const data = await svc.dashboardStats(getCompanyId(req))
+      const opts: { from?: Date; to?: Date } = {}
+      if (req.query.from) opts.from = new Date(req.query.from as string)
+      if (req.query.to)   opts.to   = new Date(req.query.to   as string)
+      const data = await svc.dashboardStats(getCompanyId(req), opts)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },

@@ -40,10 +40,10 @@ export function useInvoice(id: string) {
   })
 }
 
-export function useDashboardStats() {
+export function useDashboardStats(params?: { from?: string; to?: string }) {
   return useQuery({
-    queryKey: BILLING_KEYS.dashboard,
-    queryFn:  () => billingApi.dashboard(),
+    queryKey: [...BILLING_KEYS.dashboard, params?.from, params?.to] as const,
+    queryFn:  () => billingApi.dashboard(params),
     staleTime: 60_000,
   })
 }

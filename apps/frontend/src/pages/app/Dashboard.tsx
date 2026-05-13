@@ -1,3 +1,4 @@
+import { useState, useMemo }      from 'react'
 import { useQuery }               from '@tanstack/react-query'
 import { useDashboardStats, useCashFlow, useReminders } from '@/hooks/useBilling'
 import { useLeaveStats, useEmployeeStats }              from '@/hooks/useHr'
@@ -250,19 +251,141 @@ function EsgWidget({ modules }: { modules: string[] }) {
   )
 }
 
+// ── Period selector ───────────────────────────────────────────────────────────
+
+type PeriodMode = 'full' | 'month' | 'week'
+
+const MONTH_LABELS = ['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Aoû','Sep','Oct','Nov','Déc']
+
+function fmtWeekDay(d: Date): string {
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+}
+
+function getMonday(d: Date): Date {
+  const day  = d.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const m    = new Date(d)
+  m.setDate(d.getDate() + diff)
+  m.setHours(0, 0, 0, 0)
+  return m
+}
+
+function PeriodBar({
+  selectedYear, currentYear, onYearChange,
+  mode, onModeChange,
+  selectedMonth, onMonthChange,
+  weekStart, onWeekShift,
+}: {
+  selectedYear: number; currentYear: number; onYearChange: (y: number) => void
+  mode: PeriodMode; onModeChange: (m: PeriodMode) => void
+  selectedMonth: number; onMonthChange: (m: number) => void
+  weekStart: Date; onWeekShift: (dir: -1 | 1) => void
+}) {
+  const nav = 'flex h-6 w-6 items-center justify-center rounded text-sm text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors'
+  const tabBase   = 'px-3 py-1 text-xs font-medium transition-colors'
+  const tabActive = 'bg-green-700 text-white'
+  const tabInact  = 'text-gray-600 hover:bg-gray-50'
+
+  const sunday = new Date(weekStart.getTime() + 6 * 86_400_000)
+
+  return (
+    <div className="shrink-0 flex flex-wrap items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+
+      {/* ── Year navigator ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white px-1 py-0.5 shadow-sm">
+        <button onClick={() => onYearChange(selectedYear - 1)} className={nav} title="Exercice précédent">‹</button>
+        <span className="w-11 text-center text-sm font-bold text-gray-800">{selectedYear}</span>
+        <button onClick={() => onYearChange(selectedYear + 1)} disabled={selectedYear >= currentYear} className={nav} title="Exercice suivant">›</button>
+      </div>
+
+      <span className="text-gray-300 select-none">|</span>
+
+      {/* ── Period type tabs ───────────────────────────────────────────── */}
+      <div className="flex rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
+        {(['full', 'month', 'week'] as const).map(t => (
+          <button key={t} onClick={() => onModeChange(t)}
+            className={`${tabBase} ${mode === t ? tabActive : tabInact}`}>
+            {t === 'full' ? 'Exercice' : t === 'month' ? 'Mois' : 'Semaine'}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Month chips ────────────────────────────────────────────────── */}
+      {mode === 'month' && (
+        <div className="flex flex-wrap gap-1">
+          {MONTH_LABELS.map((label, i) => (
+            <button key={i} onClick={() => onMonthChange(i + 1)}
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                selectedMonth === i + 1
+                  ? 'bg-green-700 text-white shadow-sm'
+                  : 'border border-gray-200 bg-white text-gray-600 hover:border-green-300 hover:bg-green-50'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Week navigator ─────────────────────────────────────────────── */}
+      {mode === 'week' && (
+        <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-0.5 shadow-sm">
+          <button onClick={() => onWeekShift(-1)} className={nav} title="Semaine précédente">‹</button>
+          <span className="text-xs font-medium text-gray-700 px-1 whitespace-nowrap">
+            {fmtWeekDay(weekStart)} – {fmtWeekDay(sunday)} {selectedYear}
+          </span>
+          <button onClick={() => onWeekShift(1)} className={nav} title="Semaine suivante">›</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 
 export function AppDashboard() {
-  const { fmt }    = useCurrency()
-  const { user }   = useAuth()
+  const { fmt }     = useCurrency()
+  const { user }    = useAuth()
   const { modules } = usePermissions()
-  const currentYear = new Date().getFullYear()
 
-  const { data: stats,    isLoading: stL } = useDashboardStats()
+  const now         = new Date()
+  const currentYear = now.getFullYear()
+
+  // ── Period selector state ────────────────────────────────────────────────────
+  const [selectedYear,  setSelectedYear]  = useState(currentYear)
+  const [periodMode,    setPeriodMode]    = useState<PeriodMode>('full')
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+  const [weekStart,     setWeekStart]     = useState<Date>(() => getMonday(now))
+
+  const { periodFrom, periodTo } = useMemo(() => {
+    if (periodMode === 'full') {
+      return {
+        periodFrom: `${selectedYear}-01-01`,
+        periodTo:   `${selectedYear}-12-31`,
+      }
+    }
+    if (periodMode === 'month') {
+      const lastDay = new Date(selectedYear, selectedMonth, 0).getDate()
+      const mm      = String(selectedMonth).padStart(2, '0')
+      return {
+        periodFrom: `${selectedYear}-${mm}-01`,
+        periodTo:   `${selectedYear}-${mm}-${String(lastDay).padStart(2, '0')}`,
+      }
+    }
+    // week
+    const sunday = new Date(weekStart.getTime() + 6 * 86_400_000)
+    return {
+      periodFrom: weekStart.toISOString().slice(0, 10),
+      periodTo:   sunday.toISOString().slice(0, 10),
+    }
+  }, [selectedYear, periodMode, selectedMonth, weekStart])
+
+  const periodParams = { from: periodFrom, to: periodTo }
+
+  const { data: stats,    isLoading: stL } = useDashboardStats(periodParams)
   const { data: cashFlow, isLoading: cfL } = useCashFlow()
   const { data: reminders }                = useReminders()
   const { totalSolde }                     = useTresorerie()
-  const { data: cr,       isLoading: crL } = useCompteResultat(currentYear)
+  const { data: cr,       isLoading: crL } = useCompteResultat(selectedYear)
 
   const firstName   = (user as { firstName?: string } | null)?.firstName || user?.email?.split('@')[0] || 'vous'
   const companyName = (user as { companyName?: string } | null)?.companyName ?? null
@@ -313,14 +436,27 @@ export function AppDashboard() {
             </p>
           </div>
           <p className="text-xs text-gray-400">
-            {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            {now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
         </div>
+
+        {/* ── Sélecteur exercice / période ─────────────────────────────── */}
+        <PeriodBar
+          selectedYear={selectedYear}
+          currentYear={currentYear}
+          onYearChange={y => { setSelectedYear(y); if (periodMode === 'week') setWeekStart(getMonday(new Date(y, now.getMonth(), now.getDate()))) }}
+          mode={periodMode}
+          onModeChange={m => { setPeriodMode(m); if (m === 'week') setWeekStart(getMonday(now)) }}
+          selectedMonth={selectedMonth}
+          onMonthChange={setSelectedMonth}
+          weekStart={weekStart}
+          onWeekShift={dir => setWeekStart(prev => new Date(prev.getTime() + dir * 7 * 86_400_000))}
+        />
 
         {/* ── KPI row ─────────────────────────────────────────────────────── */}
         <div className="shrink-0 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <Kpi
-            label="CA exercice"
+            label={periodMode === 'full' ? 'CA exercice' : periodMode === 'month' ? `CA — ${MONTH_LABELS[selectedMonth - 1]}` : 'CA semaine'}
             value={stL ? '…' : fmt(stats?.revenue.current ?? 0)}
             sub={stats?.revenue.growth != null ? `${stats.revenue.growth >= 0 ? '▲' : '▼'} ${Math.abs(stats.revenue.growth).toFixed(1)}% vs N-1` : undefined}
             accent={stats?.revenue.growth != null && stats.revenue.growth >= 0 ? 'green' : 'red'}
@@ -387,7 +523,7 @@ export function AppDashboard() {
               <div className="flex items-center justify-between mb-2.5">
                 <h2 className="text-xs font-semibold text-gray-700">
                   Soldes intermédiaires de gestion
-                  <span className="ml-1.5 font-normal text-gray-400">{currentYear}</span>
+                  <span className="ml-1.5 font-normal text-gray-400">{selectedYear}</span>
                 </h2>
                 {sig?.fromCR && (
                   <span className="text-[10px] text-gray-400">Données comptables HT</span>
