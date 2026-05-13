@@ -1,8 +1,37 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { settingsApi, type CompanySettings } from '@/services/settingsApi'
 import { useAuth } from '@/features/auth/useAuth'
 import { AtheisId } from '@/shared/components/ui/AtheisId'
+
+// ── Logo : helpers localStorage ────────────────────────────────────────────────
+
+const LOGO_KEY = 'athenis:company-logo'
+const LOGO_MAX_BYTES = 500_000 // 500 KB après encodage base64 (~370 KB original)
+
+function loadLogo(): string | null {
+  return localStorage.getItem(LOGO_KEY)
+}
+
+function saveLogo(dataUrl: string): void {
+  localStorage.setItem(LOGO_KEY, dataUrl)
+  // Notifie les autres onglets / composants
+  window.dispatchEvent(new StorageEvent('storage', { key: LOGO_KEY, newValue: dataUrl }))
+}
+
+function clearLogo(): void {
+  localStorage.removeItem(LOGO_KEY)
+  window.dispatchEvent(new StorageEvent('storage', { key: LOGO_KEY, newValue: null }))
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload  = () => resolve(reader.result as string)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -109,6 +138,42 @@ export function EntreprisePage() {
   const [error, setError]     = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
 
+  // ── Logo ────────────────────────────────────────────────────────────────
+  const [logo,      setLogo]      = useState<string | null>(loadLogo)
+  const [logoError, setLogoError] = useState<string | null>(null)
+  const fileInputRef              = useRef<HTMLInputElement>(null)
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    setLogoError(null)
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Veuillez sélectionner un fichier image (PNG, JPG, SVG…).')
+      return
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setLogoError(`Fichier trop volumineux (${Math.round(file.size / 1024)} KB). Maximum : 500 KB.`)
+      return
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      saveLogo(dataUrl)
+      setLogo(dataUrl)
+    } catch {
+      setLogoError('Impossible de lire le fichier.')
+    }
+    // Reset input to allow re-uploading the same file
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function handleLogoRemove() {
+    clearLogo()
+    setLogo(null)
+    setLogoError(null)
+  }
+
   async function loadData() {
     setLoading(true)
     setError(null)
@@ -213,8 +278,59 @@ export function EntreprisePage() {
       <Section title="Identité">
         {/* Logo */}
         <Field label="Logo">
-          <div className="flex h-24 w-48 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400 hover:border-gray-300 hover:bg-gray-100 transition-colors select-none">
-            Cliquez pour uploader
+          <div className="flex items-start gap-3">
+            {logo ? (
+              <div className="relative h-24 w-48 rounded-lg border border-gray-200 bg-white overflow-hidden flex items-center justify-center group">
+                <img src={logo} alt="Logo de l'entreprise" className="max-h-full max-w-full object-contain p-2" />
+                <button
+                  type="button"
+                  onClick={handleLogoRemove}
+                  className="absolute top-1 right-1 rounded-md bg-white/95 border border-gray-200 p-1 text-gray-500 opacity-0 group-hover:opacity-100 hover:text-red-600 transition-all"
+                  title="Supprimer le logo"
+                >
+                  <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2h12a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM5 7a1 1 0 011 1v7a2 2 0 002 2h4a2 2 0 002-2V8a1 1 0 112 0v7a4 4 0 01-4 4H8a4 4 0 01-4-4V8a1 1 0 011-1z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-24 w-48 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400 hover:border-forest-300 hover:bg-forest-50/40 hover:text-forest-600 transition-colors select-none"
+              >
+                <svg className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
+                </svg>
+                Cliquez pour uploader
+              </button>
+            )}
+
+            <div className="flex flex-col gap-2 flex-1">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png, image/jpeg, image/svg+xml, image/webp"
+                onChange={handleLogoUpload}
+                className="hidden"
+              />
+              {logo && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors self-start"
+                >
+                  📁 Changer le logo
+                </button>
+              )}
+              <p className="text-[11px] text-gray-400">
+                Formats acceptés : PNG, JPG, SVG, WebP — 500 KB max.<br />
+                {logo
+                  ? '✓ Apparaîtra automatiquement sur vos factures de vente.'
+                  : '💡 Sera affiché en en-tête des factures de vente.'}
+              </p>
+              {logoError && <p className="text-[11px] text-red-600">{logoError}</p>}
+            </div>
           </div>
         </Field>
 
@@ -458,7 +574,24 @@ export function EntreprisePage() {
         </div>
       </Section>
 
-      {/* ── SECTION 5 : Lien vers Agences ── */}
+      {/* ── SECTION 5 : Lien vers Factures de ventes ── */}
+      <Link
+        to="/app/settings/factures-ventes"
+        className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-4 hover:border-forest-300 hover:bg-forest-50/40 transition-colors group"
+      >
+        <div>
+          <h2 className="text-sm font-semibold text-gray-800 group-hover:text-forest-900">
+            🧾 Paramétrage des factures de ventes
+          </h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Choisir un modèle, configurer la numérotation (FV, devis, avoirs, BL, BC), gérer
+            l'affichage et les coordonnées bancaires.
+          </p>
+        </div>
+        <span className="text-gray-400 group-hover:text-forest-700 text-lg">→</span>
+      </Link>
+
+      {/* ── SECTION 6 : Lien vers Agences ── */}
       <Link
         to="/app/settings/agences"
         className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-6 py-4 hover:border-forest-300 hover:bg-forest-50/40 transition-colors group"
