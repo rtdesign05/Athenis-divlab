@@ -79,11 +79,15 @@ export default defineConfig({
     sourcemap: false,
     // Tauri supports modern browsers only — no need for legacy polyfills
     target: isTauri ? ['es2021', 'chrome105', 'safari13'] : 'modules',
+    // react-pdf est lourd (1.4 MB) mais chargé dynamiquement uniquement
+    // lors de la génération de PDF — pas dans le bundle initial.
+    chunkSizeWarningLimit: 1600,
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
-          query: ['@tanstack/react-query'],
+          query:  ['@tanstack/react-query'],
+          pdf:    ['@react-pdf/renderer'],
         },
       },
     },
