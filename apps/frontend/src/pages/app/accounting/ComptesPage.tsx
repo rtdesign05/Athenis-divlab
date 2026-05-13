@@ -578,13 +578,16 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
                     <td className="px-4 py-2.5 text-right">
                       {(() => {
                         const hasMouvements = c.soldeDebiteur > 0 || c.soldeCrediteur > 0
+                        // Les comptes centralisateurs ne sont soumis à aucune
+                        // restriction : système et mouvementés peuvent être supprimés.
+                        const isCentr = isCentralizer(c.numero)
                         if (editing === c.id) {
                           return (
                             <button onClick={() => setEditing(null)}
                               className="text-xs text-gray-400 hover:underline">Annuler</button>
                           )
                         }
-                        if (c.isSystem) {
+                        if (!isCentr && c.isSystem) {
                           return (
                             <span
                               className="text-xs text-gray-300 cursor-not-allowed"
@@ -594,7 +597,7 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
                             </span>
                           )
                         }
-                        if (hasMouvements) {
+                        if (!isCentr && hasMouvements) {
                           return (
                             <span
                               className="inline-flex items-center gap-1 text-xs text-amber-600 cursor-not-allowed"
