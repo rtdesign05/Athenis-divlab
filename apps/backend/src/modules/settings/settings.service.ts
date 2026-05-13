@@ -21,6 +21,8 @@ function toCompanySettingsDto(raw: {
   formeJuridique: string | null
   siren: string | null
   siret: string | null
+  naf: string | null
+  vatNumber: string | null
   capital: object | null   // Decimal
   adresse: string | null
   codePostal: string | null
@@ -28,6 +30,13 @@ function toCompanySettingsDto(raw: {
   telephone: string | null
   email: string | null
   siteWeb: string | null
+  primaryColor: string | null
+  secondaryColor: string | null
+  font: string | null
+  invoiceMentions: string | null
+  paymentTerms: number | null
+  lateInterestRate: object | null  // Decimal
+  discountRate: object | null      // Decimal
 }) {
   return {
     id:                  raw.id,
@@ -36,9 +45,8 @@ function toCompanySettingsDto(raw: {
     legalForm:           raw.formeJuridique,
     siren:               raw.siren,
     siret:               raw.siret,
-    // Fields not yet in DB — return null so frontend shows empty but doesn't crash
-    naf:                 null as null,
-    vatNumber:           null as null,
+    naf:                 raw.naf,
+    vatNumber:           raw.vatNumber,
     capital:             raw.capital !== null ? Number(raw.capital) : null,
     address:             raw.adresse,
     postalCode:          raw.codePostal,
@@ -47,13 +55,13 @@ function toCompanySettingsDto(raw: {
     phone:               raw.telephone,
     contactEmail:        raw.email,
     website:             raw.siteWeb,
-    primaryColor:        null as null,
-    secondaryColor:      null as null,
-    font:                null as null,
-    invoiceMentions:     null as null,
-    paymentTerms:        null as null,
-    lateInterestRate:    null as null,
-    discountRate:        null as null,
+    primaryColor:        raw.primaryColor,
+    secondaryColor:      raw.secondaryColor,
+    font:                raw.font,
+    invoiceMentions:     raw.invoiceMentions,
+    paymentTerms:        raw.paymentTerms,
+    lateInterestRate:    raw.lateInterestRate !== null ? Number(raw.lateInterestRate) : null,
+    discountRate:        raw.discountRate !== null ? Number(raw.discountRate) : null,
     plan:                raw.plan,
     modules:             raw.modules,
     locale:              raw.locale,
@@ -64,33 +72,19 @@ function toCompanySettingsDto(raw: {
   }
 }
 
+const COMPANY_SETTINGS_SELECT = {
+  id: true, nom: true, plan: true, modules: true, locale: true, timezone: true,
+  pays: true, currency: true, accountingZone: true, accountingPlan: true, accountNumberLength: true,
+  logoUrl: true, formeJuridique: true, siren: true, siret: true, naf: true, vatNumber: true, capital: true,
+  adresse: true, codePostal: true, ville: true, telephone: true, email: true, siteWeb: true,
+  primaryColor: true, secondaryColor: true, font: true,
+  invoiceMentions: true, paymentTerms: true, lateInterestRate: true, discountRate: true,
+} as const
+
 export async function getCompanySettings(companyId: string) {
   const raw = await prisma.company.findUniqueOrThrow({
     where: { id: companyId },
-    select: {
-      id: true,
-      nom: true,
-      plan: true,
-      modules: true,
-      locale: true,
-      timezone: true,
-      pays: true,
-      currency: true,
-      accountingZone: true,
-      accountingPlan: true,
-      accountNumberLength: true,
-      logoUrl: true,
-      formeJuridique: true,
-      siren: true,
-      siret: true,
-      capital: true,
-      adresse: true,
-      codePostal: true,
-      ville: true,
-      telephone: true,
-      email: true,
-      siteWeb: true,
-    },
+    select: COMPANY_SETTINGS_SELECT,
   })
   return toCompanySettingsDto(raw)
 }
@@ -103,7 +97,9 @@ export function toCompanyUpdateData(body: Record<string, unknown>): Record<strin
   if ('legalForm'    in body) d.formeJuridique  = body.legalForm     || null
   if ('siren'        in body) d.siren           = body.siren         || null
   if ('siret'        in body) d.siret           = body.siret         || null
-  if ('capital'      in body) d.capital         = body.capital !== null ? Number(body.capital) : null
+  if ('naf'          in body) d.naf             = body.naf           || null
+  if ('vatNumber'    in body) d.vatNumber       = body.vatNumber     || null
+  if ('capital'      in body) d.capital         = body.capital !== null && body.capital !== undefined ? Number(body.capital) : null
   if ('address'      in body) d.adresse         = body.address       || null
   if ('postalCode'   in body) d.codePostal      = body.postalCode    || null
   if ('city'         in body) d.ville           = body.city          || null
@@ -111,14 +107,20 @@ export function toCompanyUpdateData(body: Record<string, unknown>): Record<strin
   if ('phone'        in body) d.telephone       = body.phone         || null
   if ('contactEmail' in body) d.email           = body.contactEmail  || null
   if ('website'      in body) d.siteWeb         = body.website       || null
+  // Personnalisation factures
+  if ('primaryColor'     in body) d.primaryColor     = body.primaryColor     || null
+  if ('secondaryColor'   in body) d.secondaryColor   = body.secondaryColor   || null
+  if ('font'             in body) d.font             = body.font             || null
+  if ('invoiceMentions'  in body) d.invoiceMentions  = body.invoiceMentions  || null
+  if ('paymentTerms'     in body) d.paymentTerms     = body.paymentTerms     !== null && body.paymentTerms     !== undefined ? Number(body.paymentTerms)     : null
+  if ('lateInterestRate' in body) d.lateInterestRate = body.lateInterestRate !== null && body.lateInterestRate !== undefined ? Number(body.lateInterestRate) : null
+  if ('discountRate'     in body) d.discountRate     = body.discountRate     !== null && body.discountRate     !== undefined ? Number(body.discountRate)     : null
   if ('locale'              in body) d.locale             = body.locale
   if ('timezone'            in body) d.timezone           = body.timezone
   if ('accountNumberLength' in body && body.accountNumberLength) {
     const len = Number(body.accountNumberLength)
     if ([3,4,5,6,7,9].includes(len)) d.accountNumberLength = len
   }
-  // Fields not in DB (naf, vatNumber, primaryColor, secondaryColor, font,
-  // invoiceMentions, paymentTerms, lateInterestRate, discountRate) — silently ignored
   return d
 }
 
@@ -130,12 +132,7 @@ export async function updateCompanySettings(
     where: { id: companyId },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: dbData as any,
-    select: {
-      id: true, nom: true, plan: true, modules: true, locale: true, timezone: true,
-      pays: true, currency: true, accountingZone: true, accountingPlan: true, accountNumberLength: true,
-      logoUrl: true, formeJuridique: true, siren: true, siret: true, capital: true,
-      adresse: true, codePostal: true, ville: true, telephone: true, email: true, siteWeb: true,
-    },
+    select: COMPANY_SETTINGS_SELECT,
   })
   return toCompanySettingsDto(updated)
 }

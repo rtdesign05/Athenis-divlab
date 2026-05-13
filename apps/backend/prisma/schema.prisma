@@ -120,10 +120,21 @@ model Company {
   formeJuridique String?        @map("legal_form")
   siren          String?        @unique
   siret          String?
+  naf            String?        @map("naf_code")
+  vatNumber      String?        @map("vat_number")
   capital        Decimal?       @db.Decimal(18, 2)
   secteur        String?
   taille         CompanySize    @default(PME)
   logoUrl        String?        @map("logo")
+
+  // Personnalisation de la facturation
+  primaryColor      String?        @map("primary_color")
+  secondaryColor    String?        @map("secondary_color")
+  font              String?
+  invoiceMentions   String?        @map("invoice_mentions")
+  paymentTerms      Int?           @map("payment_terms")
+  lateInterestRate  Decimal?       @db.Decimal(5, 2) @map("late_interest_rate")
+  discountRate      Decimal?       @db.Decimal(5, 2) @map("discount_rate")
 
   // Localisation
   adresse        String?        @map("address")

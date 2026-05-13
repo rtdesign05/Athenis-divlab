@@ -227,8 +227,22 @@ export function EntreprisePage() {
       setForm(settingsToForm(updated))
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
-    } catch {
-      setError('Une erreur est survenue lors de la sauvegarde.')
+    } catch (err) {
+      // Extraire le vrai message d'erreur de la réponse API si possible
+      const apiErr = err as {
+        response?: { data?: { error?: string; message?: string; details?: Record<string, string[]> } }
+        message?: string
+      }
+      const data = apiErr?.response?.data
+      let msg = data?.error ?? data?.message ?? apiErr?.message ?? 'Une erreur est survenue lors de la sauvegarde.'
+      // Si l'API renvoie des erreurs par champ, les inclure dans le message
+      if (data?.details && typeof data.details === 'object') {
+        const fieldErrors = Object.entries(data.details)
+          .map(([field, errs]) => `${field} : ${Array.isArray(errs) ? errs.join(', ') : String(errs)}`)
+          .join(' · ')
+        if (fieldErrors) msg = `${msg} (${fieldErrors})`
+      }
+      setError(msg)
     } finally {
       setSaving(false)
     }

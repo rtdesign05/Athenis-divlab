@@ -21,27 +21,40 @@ settingsRouter.use(authenticate)
 
 // ── Zod schemas ────────────────────────────────────────────────────────────────
 
+// Helpers Zod : accepter null OU absence pour les champs optionnels
+// (le frontend envoie `null` pour les champs vidés, pas `undefined`)
+const optStr   = z.string().nullable().optional()
+// Email : accepte vide/null/email valide (les chaînes non vides doivent matcher email)
+const optEmail = z.union([z.literal(''), z.string().email()]).nullable().optional()
+// Website : accepte n'importe quel format (domaine, sous-domaine, URL complète, ou vide)
+// — bien plus permissif que .url() qui exige http(s):// — l'utilisateur peut taper
+// "entreprise.cm" ou "www.entreprise.cm" sans préfixe
+const optUrl   = z.string().max(500).nullable().optional()
+const optNum   = z.number().nonnegative().nullable().optional()
+const optInt   = z.number().int().nonnegative().nullable().optional()
+
 const UpdateCompanySchema = z.object({
   name:             z.string().min(1).max(200).optional(),
-  logo:             z.string().optional(),
-  legalForm:        z.string().optional(),
-  siret:            z.string().optional(),
-  naf:              z.string().optional(),
-  vatNumber:        z.string().optional(),
-  capital:          z.number().nonnegative().optional(),
-  address:          z.string().optional(),
-  postalCode:       z.string().optional(),
-  city:             z.string().optional(),
-  phone:            z.string().optional(),
-  contactEmail:     z.string().email().optional(),
-  website:          z.string().url().optional(),
-  primaryColor:     z.string().optional(),
-  secondaryColor:   z.string().optional(),
-  font:             z.string().optional(),
-  invoiceMentions:  z.string().optional(),
-  paymentTerms:     z.number().int().nonnegative().optional(),
-  lateInterestRate: z.number().nonnegative().optional(),
-  discountRate:     z.number().nonnegative().optional(),
+  logo:             optStr,
+  legalForm:        optStr,
+  siren:            optStr,
+  siret:            optStr,
+  naf:              optStr,
+  vatNumber:        optStr,
+  capital:          optNum,
+  address:          optStr,
+  postalCode:       optStr,
+  city:             optStr,
+  phone:            optStr,
+  contactEmail:     optEmail,
+  website:          optUrl,
+  primaryColor:     optStr,
+  secondaryColor:   optStr,
+  font:             optStr,
+  invoiceMentions:  optStr,
+  paymentTerms:     optInt,
+  lateInterestRate: optNum,
+  discountRate:     optNum,
 })
 
 const PermissionLevelSchema = z.enum(['none', 'read', 'write', 'admin'])
