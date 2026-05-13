@@ -576,44 +576,69 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
                       {c.soldeNet !== 0 ? fmt(Math.abs(c.soldeNet)) : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      {editing === c.id ? (
-                        <button onClick={() => setEditing(null)}
-                          className="text-xs text-gray-400 hover:underline">Annuler</button>
-                      ) : c.isSystem ? (
-                        <span
-                          className="text-xs text-gray-300 cursor-not-allowed"
-                          title="Compte système — non supprimable (référence du plan comptable)"
-                        >
-                          🔒
-                        </span>
-                      ) : deleting === c.id ? (
-                        <div className="flex justify-end gap-2 items-center">
+                      {(() => {
+                        const hasMouvements = c.soldeDebiteur > 0 || c.soldeCrediteur > 0
+                        if (editing === c.id) {
+                          return (
+                            <button onClick={() => setEditing(null)}
+                              className="text-xs text-gray-400 hover:underline">Annuler</button>
+                          )
+                        }
+                        if (c.isSystem) {
+                          return (
+                            <span
+                              className="text-xs text-gray-300 cursor-not-allowed"
+                              title="Compte système — non supprimable (référence du plan comptable)"
+                            >
+                              🔒
+                            </span>
+                          )
+                        }
+                        if (hasMouvements) {
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1 text-xs text-amber-600 cursor-not-allowed"
+                              title="Compte mouvementé — non supprimable (préservation de l'intégrité comptable). Solder le compte avant de le supprimer."
+                            >
+                              <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                              </svg>
+                              Mouvementé
+                            </span>
+                          )
+                        }
+                        if (deleting === c.id) {
+                          return (
+                            <div className="flex justify-end gap-2 items-center">
+                              <button
+                                onClick={() => deleteMutation.mutate(c.id)}
+                                disabled={deleteMutation.isPending}
+                                className="rounded-md bg-red-600 text-white px-2 py-1 text-xs font-semibold hover:bg-red-700 disabled:opacity-50"
+                              >
+                                {deleteMutation.isPending ? 'Suppression…' : '✓ Confirmer'}
+                              </button>
+                              <button
+                                onClick={() => setDeleting(null)}
+                                className="text-xs text-gray-400 hover:underline"
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          )
+                        }
+                        return (
                           <button
-                            onClick={() => deleteMutation.mutate(c.id)}
-                            disabled={deleteMutation.isPending}
-                            className="rounded-md bg-red-600 text-white px-2 py-1 text-xs font-semibold hover:bg-red-700 disabled:opacity-50"
+                            onClick={() => setDeleting(c.id)}
+                            title={`Supprimer le compte ${c.numero}`}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
                           >
-                            {deleteMutation.isPending ? 'Suppression…' : '✓ Confirmer'}
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2h12a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM5 7a1 1 0 011 1v7a2 2 0 002 2h4a2 2 0 002-2V8a1 1 0 112 0v7a4 4 0 01-4 4H8a4 4 0 01-4-4V8a1 1 0 011-1z" clipRule="evenodd" />
+                            </svg>
+                            Supprimer
                           </button>
-                          <button
-                            onClick={() => setDeleting(null)}
-                            className="text-xs text-gray-400 hover:underline"
-                          >
-                            Annuler
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setDeleting(c.id)}
-                          title={`Supprimer le compte ${c.numero}`}
-                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                        >
-                          <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2h12a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM5 7a1 1 0 011 1v7a2 2 0 002 2h4a2 2 0 002-2V8a1 1 0 112 0v7a4 4 0 01-4 4H8a4 4 0 01-4-4V8a1 1 0 011-1z" clipRule="evenodd" />
-                          </svg>
-                          Supprimer
-                        </button>
-                      )}
+                        )
+                      })()}
                     </td>
                   </tr>
                 )

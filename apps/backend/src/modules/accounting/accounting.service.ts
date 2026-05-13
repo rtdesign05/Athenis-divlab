@@ -574,6 +574,28 @@ export async function deleteCompte(companyId: string, id: string) {
   const compte = await prisma.accountPlan.findFirst({ where: { id, companyId } })
   if (!compte) throw new AppError('Compte introuvable', 404, 'NOT_FOUND')
 
+  // Protection 1 : comptes système non supprimables (préserve le référentiel)
+  if (compte.isSystem) {
+    throw new AppError(
+      'Compte système non supprimable — il fait partie du plan comptable de référence',
+      403, 'SYSTEM_ACCOUNT',
+    )
+  }
+
+  // Protection 2 : comptes mouvementés non supprimables (intégrité comptable)
+  // Un compte ayant déjà eu des écritures comptables ne peut être supprimé
+  // car cela briserait la traçabilité du journal et de la balance.
+  const mouvements = await prisma.journalEntry.count({
+    where: { companyId, compte: compte.numero },
+  })
+  if (mouvements > 0) {
+    throw new AppError(
+      `Compte mouvementé non supprimable : ${mouvements} écriture(s) comptable(s) référencent ce compte. ` +
+      `Soldez le compte ou supprimez les écritures avant de le désactiver.`,
+      409, 'ACCOUNT_HAS_MOVEMENTS',
+    )
+  }
+
   return prisma.accountPlan.update({ where: { id }, data: { isActive: false } })
 }
 
