@@ -1,9 +1,11 @@
-import { useCurrency } from '@/hooks/useCurrency'
-import { useAuth } from '@/features/auth/useAuth'
-import { Link } from 'react-router-dom'
-import { useTresorerie } from '@/contexts/TresorerieContext'
-import { useGestion } from '@/contexts/GestionContext'
+import { useMemo }          from 'react'
+import { Link }             from 'react-router-dom'
+import { useCurrency }      from '@/hooks/useCurrency'
+import { useAuth }          from '@/features/auth/useAuth'
+import { useTresorerie }    from '@/contexts/TresorerieContext'
+import { useGestion }       from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+import { PeriodBar, usePeriod, MONTH_LABELS } from '@/shared/components/ui/PeriodBar'
 
 // ── Styles statut ─────────────────────────────────────────────────────────────
 
@@ -54,19 +56,48 @@ export function GestionOverviewPage() {
   const { balances, totalSolde }              = useTresorerie()
   const { agences, country }                  = useCompanySettings()
 
-  const agenceNom = user?.agenceNom ?? null
+  const agenceNom   = user?.agenceNom ?? null
+  const now         = new Date()
+  const currentYear = now.getFullYear()
 
-  // Filtrage par agence si utilisateur restreint
-  const commandes = (agenceNom ? allCommandes.filter(v => v.agence === agenceNom) : allCommandes).slice(0, 5)
-  const achats    = (agenceNom ? allAchats.filter(a => a.agence === agenceNom)    : allAchats).slice(0, 5)
-  const tresors   = agenceNom ? balances.filter(b => b.agence === agenceNom)      : balances
+  // ── Sélecteur de période ────────────────────────────────────────────────────
+  const period = usePeriod(currentYear)
+  const { selectedYear, periodMode, selectedMonth, weekStart, periodFrom, periodTo } = period
 
+  // ── Label dynamique de la période ──────────────────────────────────────────
+  const periodLabel = useMemo(() => {
+    if (periodMode === 'full')  return `Exercice ${selectedYear}`
+    if (periodMode === 'month') return `${MONTH_LABELS[selectedMonth - 1]} ${selectedYear}`
+    return 'cette semaine'
+  }, [periodMode, selectedYear, selectedMonth])
+
+  // ── Filtre commandes et achats sur la période ────────────────────────────────
+  const inPeriod = (date: string) => date >= periodFrom && date <= periodTo
+
+  const allVisibleCommandes = agenceNom
+    ? allCommandes.filter(v => v.agence === agenceNom)
+    : allCommandes
+
+  const allVisibleAchats = agenceNom
+    ? allAchats.filter(a => a.agence === agenceNom)
+    : allAchats
+
+  // Pour les KPIs : toutes les données de la période sélectionnée
+  const commandesPeriode = allVisibleCommandes.filter(v => inPeriod(v.date))
+  const achatsPeriode    = allVisibleAchats.filter(a => inPeriod(a.date))
+
+  // Pour les listes récentes : les 5 plus récentes (toutes périodes confondues)
+  const commandesRecentes = allVisibleCommandes.slice(0, 5)
+  const achatsRecents     = allVisibleAchats.slice(0, 5)
+
+  // ── KPIs ────────────────────────────────────────────────────────────────────
+  const tresors          = agenceNom ? balances.filter(b => b.agence === agenceNom) : balances
   const tresoNette       = tresors.reduce((s, t) => s + t.solde, 0)
-  const caMois           = commandes.reduce((s, v) => s + v.montant, 0)
-  const commandesActives = commandes.filter(v => v.statut === 'En cours').length
-  const achatsMois       = achats.reduce((s, a) => s + a.montant, 0)
-  const enAttente        = achats.filter(a => a.statut === 'En attente' || a.statut === 'En cours').length
-  const encours          = commandes.filter(v => v.statut === 'En cours').reduce((s, v) => s + v.montant, 0)
+  const caPeriode        = commandesPeriode.reduce((s, v) => s + v.montant, 0)
+  const commandesActives = commandesPeriode.filter(v => v.statut === 'En cours').length
+  const achatsPeriodeCA  = achatsPeriode.reduce((s, a) => s + a.montant, 0)
+  const enAttente        = achatsPeriode.filter(a => a.statut === 'En attente' || a.statut === 'En cours').length
+  const encours          = commandesPeriode.filter(v => v.statut === 'En cours').reduce((s, v) => s + v.montant, 0)
 
   return (
     <div className="h-full flex flex-col gap-3">
@@ -87,7 +118,6 @@ export function GestionOverviewPage() {
         <div className="shrink-0 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5">
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide shrink-0">🔗 Paramètres actifs</span>
 
-          {/* Devise */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-gray-500">Devise :</span>
             <span className="rounded-full bg-forest-100 px-2 py-0.5 text-[11px] font-bold text-forest-800">{currencyCode}</span>
@@ -98,7 +128,6 @@ export function GestionOverviewPage() {
 
           <span className="text-gray-200 text-xs">|</span>
 
-          {/* Pays */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-gray-500">Pays :</span>
             <span className="text-xs font-medium text-gray-700">{country}</span>
@@ -106,7 +135,6 @@ export function GestionOverviewPage() {
 
           <span className="text-gray-200 text-xs">|</span>
 
-          {/* TVA */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-gray-500">TVA :</span>
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">{defaultVatRate}%</span>
@@ -117,7 +145,6 @@ export function GestionOverviewPage() {
 
           <span className="text-gray-200 text-xs">|</span>
 
-          {/* Agences */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-gray-500">Agences :</span>
             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">
@@ -130,22 +157,63 @@ export function GestionOverviewPage() {
         </div>
       )}
 
+      {/* ── Sélecteur exercice / période ─────────────────────────────────── */}
+      <PeriodBar
+        selectedYear={selectedYear}
+        currentYear={currentYear}
+        onYearChange={y => period.setSelectedYear(y)}
+        mode={periodMode}
+        onModeChange={m => { period.setPeriodMode(m) }}
+        selectedMonth={selectedMonth}
+        onMonthChange={period.setSelectedMonth}
+        weekStart={weekStart}
+        onWeekShift={period.shiftWeek}
+      />
+
       {/* ── KPIs ─────────────────────────────────────────────────────────── */}
       <div className="shrink-0 grid grid-cols-6 gap-3">
-        <KpiCard label="CA — Avril 2026"       value={fmt(caMois)}          sub="Ventes du mois"           accent="green" />
-        <KpiCard label="Encours clients"        value={fmt(encours)}         sub={`${commandesActives} cmd en cours`} accent="blue" />
-        <KpiCard label="Commandes livrées"      value={String(commandes.filter(v => v.statut === 'Livrée').length)}
-                                                sub="ce mois"               accent="green" />
-        <KpiCard label="Achats — Avril 2026"   value={fmt(achatsMois)}      sub="Dépenses fournisseurs"    accent="amber" />
-        <KpiCard label="Cmdes fournisseurs"     value={String(enAttente)}    sub="en transit / commandées"  accent="amber" />
-        <KpiCard label="Trésorerie nette"       value={fmt(agenceNom ? tresoNette : totalSolde)}
-                                                sub="Banques + caisses + MoMo" accent="green" />
+        <KpiCard
+          label={`CA — ${periodLabel}`}
+          value={fmt(caPeriode)}
+          sub="Ventes de la période"
+          accent="green"
+        />
+        <KpiCard
+          label="Encours clients"
+          value={fmt(encours)}
+          sub={`${commandesActives} cmd en cours`}
+          accent="blue"
+        />
+        <KpiCard
+          label="Commandes livrées"
+          value={String(commandesPeriode.filter(v => v.statut === 'Livrée').length)}
+          sub="sur la période"
+          accent="green"
+        />
+        <KpiCard
+          label={`Achats — ${periodLabel}`}
+          value={fmt(achatsPeriodeCA)}
+          sub="Dépenses fournisseurs"
+          accent="amber"
+        />
+        <KpiCard
+          label="Cmdes fournisseurs"
+          value={String(enAttente)}
+          sub="en transit / commandées"
+          accent="amber"
+        />
+        <KpiCard
+          label="Trésorerie nette"
+          value={fmt(agenceNom ? tresoNette : totalSolde)}
+          sub="Banques + caisses + MoMo"
+          accent="green"
+        />
       </div>
 
       {/* ── Corps 3 colonnes ─────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 grid grid-cols-3 gap-3">
 
-        {/* Ventes */}
+        {/* Ventes récentes */}
         <div className="flex flex-col rounded-xl border border-gray-200 bg-white overflow-hidden">
           <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-900">Ventes récentes</h2>
@@ -154,9 +222,9 @@ export function GestionOverviewPage() {
             </Link>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-50">
-            {commandes.length === 0
+            {commandesRecentes.length === 0
               ? <p className="px-4 py-6 text-center text-sm text-gray-400">Aucune vente pour cette agence</p>
-              : commandes.map(v => (
+              : commandesRecentes.map(v => (
                 <div key={v.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -175,7 +243,7 @@ export function GestionOverviewPage() {
           </div>
         </div>
 
-        {/* Achats */}
+        {/* Achats récents */}
         <div className="flex flex-col rounded-xl border border-gray-200 bg-white overflow-hidden">
           <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-900">Achats récents</h2>
@@ -184,9 +252,9 @@ export function GestionOverviewPage() {
             </Link>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-50">
-            {achats.length === 0
+            {achatsRecents.length === 0
               ? <p className="px-4 py-6 text-center text-sm text-gray-400">Aucun achat pour cette agence</p>
-              : achats.map(a => (
+              : achatsRecents.map(a => (
                 <div key={a.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
