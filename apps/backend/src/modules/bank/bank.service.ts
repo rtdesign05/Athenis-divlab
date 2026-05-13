@@ -70,10 +70,11 @@ function parseCSV(content: string): ParsedTx[] {
     debit  = parseFloat(rawDebit)  || 0
     credit = parseFloat(rawCredit) || 0
 
-    if (cols.length === 3 || (!rawCredit && rawDebit)) {
+    // 3-column format: date, libelle, amount (positive = credit, negative = debit)
+    if (cols.length === 3) {
       const amt = parseFloat((cols[2] ?? '').replace(/\s/g, '').replace(',', '.')) || 0
-      if (amt >= 0) credit = amt
-      else          debit  = Math.abs(amt)
+      if (amt >= 0) { credit = amt; debit = 0 }
+      else          { debit = Math.abs(amt); credit = 0 }
     }
 
     if (debit > 0)   results.push({ date, label, amount: debit,  type: 'DEBIT',  reference: null })
