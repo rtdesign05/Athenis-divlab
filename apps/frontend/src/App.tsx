@@ -301,8 +301,17 @@ const router = createBrowserRouter([
   },
 
   { path: '*', element: <Navigate to="/" replace /> },
-])
+], {
+  // Opt-in to React Router v7 behaviors — supprime les future-flag warnings
+  future: {
+    v7_relativeSplatPath:      true,
+    v7_fetcherPersist:         true,
+    v7_normalizeFormMethod:    true,
+    v7_partialHydration:       true,
+    v7_skipActionErrorRevalidation: true,
+  },
+})
 
 export function App() {
-  return <RouterProvider router={router} />
+  return <RouterProvider router={router} future={{ v7_startTransition: true }} />
 }
