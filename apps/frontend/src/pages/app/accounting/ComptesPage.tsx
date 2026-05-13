@@ -38,6 +38,19 @@ function isAlphanumericTiers(n: string): boolean {
   return n.trim().length > 0 && !/^\d+$/.test(n.trim())
 }
 
+/**
+ * Un compte centralisateur (OHADA / PCG) est un compte principal qui agrège
+ * des comptes auxiliaires/divisionnaires. Heuristique : numéro purement
+ * numérique de 2-3 chiffres significatifs (ex: 401, 411, 512), ou compte
+ * dont le numéro non zéros est ≤ 3 caractères (ex: 401000000).
+ */
+function isCentralizer(numero: string): boolean {
+  if (!/^\d+$/.test(numero)) return false
+  // Compte avec uniquement des zéros après les 3 premiers chiffres → centralisateur
+  const significant = numero.replace(/0+$/, '')
+  return significant.length > 0 && significant.length <= 3
+}
+
 // ── React Query hooks ─────────────────────────────────────────────────────────
 
 function usePlan() {
@@ -62,31 +75,38 @@ interface AddModalProps {
   planEntries:    PlanEntry[]
   initialNumero?: string
   initialLabel?:  string
+  centralizerMode?: boolean
   onClose:        () => void
 }
 
-function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', onClose }: AddModalProps) {
+function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', centralizerMode = false, onClose }: AddModalProps) {
   const qc = useQueryClient()
   const [search, setSearch] = useState(
     initialNumero ? `${initialNumero}${initialLabel ? ' — ' + initialLabel : ''}` : '',
   )
-  const [custom, setCustom] = useState(!!initialNumero)
+  const [custom, setCustom] = useState(!!initialNumero || centralizerMode)
   const [error,  setError]  = useState('')
   const [form,   setForm]   = useState<{ numero: string; intitule: string; classe: number; type: ChartAccountType }>({
     numero:   initialNumero,
     intitule: initialLabel,
-    classe:   initialNumero ? (parseInt(initialNumero[0] ?? '4') || 4) : 1,
+    classe:   initialNumero ? (parseInt(initialNumero[0] ?? '4') || 4) : (centralizerMode ? 4 : 1),
     type:     initialNumero
       ? (/^41/.test(initialNumero) ? 'ACTIF' : /^4/.test(initialNumero) ? 'PASSIF' : /^7/.test(initialNumero) ? 'PRODUIT' : 'CHARGE')
       : 'ACTIF',
   })
 
+  // En mode centralisateur, on ne filtre que les comptes du plan ≤ 3 chiffres significatifs
+  const filteredPlan = useMemo(() =>
+    centralizerMode ? planEntries.filter(e => isCentralizer(e.numero)) : planEntries,
+    [planEntries, centralizerMode],
+  )
+
   const suggestions = useMemo(() =>
     search.length < 2 ? [] :
-    planEntries
+    filteredPlan
       .filter(e => e.numero.startsWith(search) || e.intitule.toLowerCase().includes(search.toLowerCase()))
       .slice(0, 10),
-    [search, planEntries],
+    [search, filteredPlan],
   )
 
   function selectEntry(e: PlanEntry) {
@@ -101,23 +121,38 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', on
     && /^\d+$/.test(form.numero.trim())
     && form.numero.trim().length < 9
 
+  // Validation supplémentaire en mode centralisateur
+  const centralizerError = centralizerMode && form.numero.trim().length > 0 && !isCentralizer(finalNumero)
+    ? "Un compte centralisateur doit avoir au maximum 3 chiffres significatifs (ex : 401, 411, 512)"
+    : ''
+
   const mutation = useMutation({
     mutationFn: () => accountingApi.addCompte({ ...form, numero: finalNumero, isSystem: false }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['comptes'] }); onClose() },
     onError: (err: unknown) => setError(err instanceof Error ? err.message : "Erreur lors de l'ajout"),
   })
 
+  const title = centralizerMode ? 'Créer un compte centralisateur' : 'Activer un compte'
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-          <h2 className="text-base font-semibold text-gray-900">Activer un compte</h2>
+          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
 
         <div className="p-6 space-y-4">
+          {centralizerMode && (
+            <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
+              💡 Un compte centralisateur agrège des comptes auxiliaires (ex : <strong>411</strong> regroupe
+              tous les clients <strong>411-DUPONT</strong>, <strong>411-MARTIN</strong>, etc.).
+            </div>
+          )}
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Rechercher dans le plan</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              {centralizerMode ? 'Rechercher un compte centralisateur dans le plan' : 'Rechercher dans le plan'}
+            </label>
             <input
               type="text"
               value={search}
@@ -164,7 +199,7 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', on
                         : f.type,
                     }))
                   }}
-                  placeholder="ex : 411 ou CLI-DUPONT"
+                  placeholder={centralizerMode ? 'ex : 401, 411, 512' : 'ex : 411 ou CLI-DUPONT'}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500 font-mono" />
 
                 {/* Prévisualisation de la normalisation */}
@@ -179,6 +214,9 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', on
                   <p className="mt-1 text-xs text-indigo-500">
                     Compte alphanumérique (tiers) — conservé tel quel
                   </p>
+                )}
+                {centralizerError && (
+                  <p className="mt-1 text-xs text-red-600">{centralizerError}</p>
                 )}
               </div>
 
@@ -218,9 +256,9 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', on
             Annuler
           </button>
           <button onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || (!form.numero && !custom)}
+            disabled={mutation.isPending || (!form.numero && !custom) || !!centralizerError}
             className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 disabled:opacity-50">
-            {mutation.isPending ? 'Enregistrement…' : 'Activer'}
+            {mutation.isPending ? 'Enregistrement…' : centralizerMode ? 'Créer' : 'Activer'}
           </button>
         </div>
       </div>
@@ -247,13 +285,16 @@ interface UnifiedRow {
   tiersEntry?:  TiersEntry
 }
 
+type TabId = 'all' | 'centralizers'
+
 interface UnifiedTabProps {
   plan:         PlanData
   comptes:      CompteItem[]
   comptesTiers: TiersEntry[]
+  tab:          TabId
 }
 
-function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
+function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
   const qc = useQueryClient()
   const { fmt } = useCurrency()
 
@@ -261,6 +302,7 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
   const [classeFilter, setClasse]       = useState<number | null>(null)
   const [showPlan,     setShowPlan]     = useState(false)
   const [showAdd,      setShowAdd]      = useState(false)
+  const [showAddCentr, setShowAddCentr] = useState(false)
   const [addTiers,     setAddTiers]     = useState<TiersEntry | null>(null)
   const [activatePlan, setActivatePlan] = useState<PlanEntry | null>(null)
   const [editing,      setEditing]      = useState<string | null>(null)
@@ -282,7 +324,7 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
     [plan.entries, activeNums],
   )
 
-  // Construire la liste fusionnée
+  // Construire la liste fusionnée puis filtrer par tab
   const allRows = useMemo((): UnifiedRow[] => {
     const rows: UnifiedRow[] = []
 
@@ -311,21 +353,27 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
     return rows
   }, [comptes, tiersOnly, planOnly, showPlan])
 
+  // Filtre par tab (Tous / Centralisateurs)
+  const tabRows = useMemo(() =>
+    tab === 'centralizers' ? allRows.filter(r => isCentralizer(r.numero)) : allRows,
+    [allRows, tab],
+  )
+
   // Filtres recherche + classe
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return allRows.filter(r => {
+    return tabRows.filter(r => {
       const matchClasse = classeFilter === null || r.classe === classeFilter
       const matchSearch = !q || r.numero.toLowerCase().includes(q) || r.intitule.toLowerCase().includes(q)
       return matchClasse && matchSearch
     }).sort((a, b) => a.numero.localeCompare(b.numero))
-  }, [allRows, search, classeFilter])
+  }, [tabRows, search, classeFilter])
 
   // Classes disponibles
   const classes = useMemo(() => {
-    const s = new Set(allRows.map(r => r.classe))
+    const s = new Set(tabRows.map(r => r.classe))
     return Array.from(s).sort((a, b) => a - b)
-  }, [allRows])
+  }, [tabRows])
 
   const editMutation = useMutation({
     mutationFn: ({ id, intitule }: { id: string; intitule: string }) => accountingApi.updateCompte(id, intitule),
@@ -337,8 +385,25 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['comptes'] }); setDeleting(null) },
   })
 
+  function startEdit(c: CompteItem) {
+    // Intitulé éditable pour TOUS les comptes (y compris système) —
+    // l'utilisateur peut personnaliser le libellé. Seule la suppression
+    // reste verrouillée sur les comptes système.
+    setEditing(c.id)
+    setEditVal(c.intitule)
+  }
+
+  function commitEdit(id: string) {
+    const value = editVal.trim()
+    if (value) editMutation.mutate({ id, intitule: value })
+    else setEditing(null)
+  }
+
   const totalDebit  = comptes.reduce((s, c) => s + c.soldeDebiteur,  0)
   const totalCredit = comptes.reduce((s, c) => s + c.soldeCrediteur, 0)
+
+  // Comptage centralisateurs vs tous
+  const centralizersCount = comptes.filter(c => isCentralizer(c.numero)).length
 
   return (
     <div className="space-y-4">
@@ -348,22 +413,41 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-lg">{plan.zoneLabel.flag}</span>
-            <h2 className="text-base font-semibold text-gray-900">{plan.zoneLabel.label}</h2>
+            <h2 className="text-base font-semibold text-gray-900">
+              {tab === 'centralizers' ? 'Comptes centralisateurs' : plan.zoneLabel.label}
+            </h2>
           </div>
           <p className="mt-0.5 text-xs text-gray-500">
-            {comptes.length} compte{comptes.length !== 1 ? 's' : ''} actif{comptes.length !== 1 ? 's' : ''}
-            {' · '}{plan.entries.length} disponibles dans le plan
-            {tiersOnly.length > 0 && (
-              <> · <span className="text-orange-600 font-medium">{tiersOnly.length} tiers à enregistrer</span></>
+            {tab === 'centralizers' ? (
+              <>{centralizersCount} centralisateur{centralizersCount !== 1 ? 's' : ''} actif{centralizersCount !== 1 ? 's' : ''} sur {comptes.length} comptes</>
+            ) : (
+              <>
+                {comptes.length} compte{comptes.length !== 1 ? 's' : ''} actif{comptes.length !== 1 ? 's' : ''}
+                {' · '}{plan.entries.length} disponibles dans le plan
+                {tiersOnly.length > 0 && (
+                  <> · <span className="text-orange-600 font-medium">{tiersOnly.length} tiers à enregistrer</span></>
+                )}
+              </>
             )}
           </p>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 transition-colors whitespace-nowrap"
-        >
-          + Activer un compte
-        </button>
+        <div className="flex items-center gap-2">
+          {tab === 'centralizers' ? (
+            <button
+              onClick={() => setShowAddCentr(true)}
+              className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-800 transition-colors whitespace-nowrap"
+            >
+              + Nouveau compte centralisateur
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowAdd(true)}
+              className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 transition-colors whitespace-nowrap"
+            >
+              + Nouveau compte
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Filtres */}
@@ -393,13 +477,15 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
           ))}
         </div>
 
-        <label className="flex items-center gap-2 cursor-pointer w-fit">
-          <input type="checkbox" checked={showPlan} onChange={e => setShowPlan(e.target.checked)}
-            className="rounded border-gray-300 text-forest-700 focus:ring-forest-500" />
-          <span className="text-xs text-gray-600">
-            Afficher tous les comptes du plan ({planOnly.length} non activés)
-          </span>
-        </label>
+        {tab === 'all' && (
+          <label className="flex items-center gap-2 cursor-pointer w-fit">
+            <input type="checkbox" checked={showPlan} onChange={e => setShowPlan(e.target.checked)}
+              className="rounded border-gray-300 text-forest-700 focus:ring-forest-500" />
+            <span className="text-xs text-gray-600">
+              Afficher tous les comptes du plan ({planOnly.length} non activés)
+            </span>
+          </label>
+        )}
       </div>
 
       {/* Table */}
@@ -415,14 +501,18 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
               <th className="px-4 py-3 w-28 text-right">Solde débit.</th>
               <th className="px-4 py-3 w-28 text-right">Solde crédit.</th>
               <th className="px-4 py-3 w-28 text-right">Solde net</th>
-              <th className="px-4 py-3 w-36 text-right">Actions</th>
+              <th className="px-4 py-3 w-28 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {filteredRows.length === 0 ? (
               <tr>
                 <td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">
-                  {search ? `Aucun compte correspondant à « ${search} »` : 'Aucun compte'}
+                  {search
+                    ? `Aucun compte correspondant à « ${search} »`
+                    : tab === 'centralizers'
+                      ? 'Aucun compte centralisateur actif — cliquez sur « Nouveau compte centralisateur » pour en créer un.'
+                      : 'Aucun compte'}
                 </td>
               </tr>
             ) : filteredRows.map(row => {
@@ -430,21 +520,37 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
               // ── Compte actif ──────────────────────────────────────────────
               if (row.kind === 'active') {
                 const c = row.compteItem!
+                const central = isCentralizer(c.numero)
                 return (
                   <tr key={`active-${c.id}`} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700">{c.numero}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700 align-middle">
+                      <div className="flex items-center gap-1.5">
+                        {central && (
+                          <span className="rounded bg-blue-100 text-blue-700 px-1 py-0.5 text-[9px] font-bold" title="Compte centralisateur">⚙</span>
+                        )}
+                        {c.numero}
+                      </div>
+                    </td>
                     <td className="px-4 py-2.5">
                       {editing === c.id ? (
                         <input autoFocus value={editVal}
                           onChange={e => setEditVal(e.target.value)}
+                          onBlur={() => commitEdit(c.id)}
                           onKeyDown={e => {
-                            if (e.key === 'Enter') editMutation.mutate({ id: c.id, intitule: editVal.trim() })
+                            if (e.key === 'Enter') commitEdit(c.id)
                             if (e.key === 'Escape') setEditing(null)
                           }}
-                          className="w-full rounded border border-gray-200 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-forest-500"
+                          className="w-full rounded border border-blue-400 bg-blue-50 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-forest-500"
                         />
                       ) : (
-                        <span className="text-gray-800 font-medium">{c.intitule}</span>
+                        <button
+                          onClick={() => startEdit(c)}
+                          title="Cliquer pour modifier l'intitulé"
+                          className="group text-left w-full text-gray-800 font-medium px-1 py-0.5 rounded transition-colors hover:bg-blue-50 hover:text-blue-700 cursor-text"
+                        >
+                          {c.intitule}
+                          <span className="ml-1.5 text-[10px] text-gray-300 group-hover:text-gray-500">✎</span>
+                        </button>
                       )}
                     </td>
                     <td className="px-4 py-2.5 text-gray-500 text-xs">{c.classe}</td>
@@ -454,7 +560,11 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-center">
-                      <span className="rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px] font-semibold">✓ Actif</span>
+                      {central ? (
+                        <span className="rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-[10px] font-semibold">⚙ Centralisateur</span>
+                      ) : (
+                        <span className="rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px] font-semibold">✓ Actif</span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 text-right font-medium text-gray-900">
                       {c.soldeDebiteur > 0 ? fmt(c.soldeDebiteur) : '—'}
@@ -467,22 +577,18 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       {editing === c.id ? (
-                        <div className="flex justify-end gap-1">
-                          <button onClick={() => editMutation.mutate({ id: c.id, intitule: editVal.trim() })}
-                            className="text-xs text-green-600 hover:underline">Sauvegarder</button>
-                          <button onClick={() => setEditing(null)}
-                            className="text-xs text-gray-400 hover:underline">Annuler</button>
-                        </div>
+                        <button onClick={() => setEditing(null)}
+                          className="text-xs text-gray-400 hover:underline">Annuler</button>
                       ) : (
                         <div className="flex justify-end gap-2">
-                          {!c.isSystem && (
-                            <button onClick={() => { setEditing(c.id); setEditVal(c.intitule) }}
-                              className="text-xs text-gray-500 hover:text-gray-800">Modifier</button>
-                          )}
                           <button
                             onClick={() => { if (deleting !== c.id) { setDeleting(c.id); return } deleteMutation.mutate(c.id) }}
-                            className={`text-xs ${deleting === c.id ? 'text-red-600 font-semibold' : 'text-gray-400 hover:text-red-500'}`}>
-                            {deleting === c.id ? 'Confirmer' : 'Désactiver'}
+                            disabled={c.isSystem}
+                            className={`text-xs ${
+                              c.isSystem ? 'text-gray-300 cursor-not-allowed' :
+                              deleting === c.id ? 'text-red-600 font-semibold' : 'text-gray-400 hover:text-red-500'
+                            }`}>
+                            {deleting === c.id ? 'Confirmer' : c.isSystem ? '—' : 'Désactiver'}
                           </button>
                           {deleting === c.id && (
                             <button onClick={() => setDeleting(null)} className="text-xs text-gray-400 hover:underline">Annuler</button>
@@ -560,7 +666,7 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
               )
             })}
           </tbody>
-          {comptes.length > 0 && (
+          {comptes.length > 0 && tab === 'all' && (
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600">
                 <td colSpan={5} className="px-4 py-3">Total comptes actifs</td>
@@ -578,6 +684,9 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
       {showAdd && (
         <AddCompteModal planEntries={plan.entries} onClose={() => setShowAdd(false)} />
       )}
+      {showAddCentr && (
+        <AddCompteModal planEntries={plan.entries} centralizerMode onClose={() => setShowAddCentr(false)} />
+      )}
       {addTiers && (
         <AddCompteModal planEntries={plan.entries}
           initialNumero={addTiers.numero} initialLabel={addTiers.intitule}
@@ -592,6 +701,53 @@ function UnifiedTab({ plan, comptes, comptesTiers }: UnifiedTabProps) {
   )
 }
 
+// ── Onglets verticaux ─────────────────────────────────────────────────────────
+
+interface VerticalTabsProps {
+  active:    TabId
+  onChange:  (id: TabId) => void
+  totalAll:  number
+  totalCentr: number
+}
+
+function VerticalTabs({ active, onChange, totalAll, totalCentr }: VerticalTabsProps) {
+  const items: { id: TabId; icon: string; label: string; count: number; desc: string }[] = [
+    { id: 'all',          icon: '📋', label: 'Tous les comptes',       count: totalAll,   desc: 'Vue complète du plan comptable' },
+    { id: 'centralizers', icon: '⚙',  label: 'Comptes centralisateurs', count: totalCentr, desc: 'Comptes principaux (3 chiffres)' },
+  ]
+  return (
+    <aside className="w-56 shrink-0 space-y-1">
+      <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+        Catégories
+      </p>
+      {items.map(it => (
+        <button
+          key={it.id}
+          onClick={() => onChange(it.id)}
+          className={`w-full text-left rounded-lg px-3 py-2.5 transition-colors flex items-start gap-2.5 ${
+            active === it.id
+              ? 'bg-forest-50 border border-forest-200 shadow-sm'
+              : 'border border-transparent hover:bg-gray-50'
+          }`}
+        >
+          <span className={`text-base shrink-0 ${active === it.id ? '' : 'opacity-70'}`}>{it.icon}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-1">
+              <span className={`text-sm font-medium ${active === it.id ? 'text-forest-900' : 'text-gray-700'}`}>
+                {it.label}
+              </span>
+              <span className={`text-[11px] font-mono shrink-0 ${active === it.id ? 'text-forest-700' : 'text-gray-400'}`}>
+                {it.count}
+              </span>
+            </div>
+            <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{it.desc}</p>
+          </div>
+        </button>
+      ))}
+    </aside>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function ComptesPage() {
@@ -599,8 +755,13 @@ export function ComptesPage() {
   const { data: comptes, isLoading: comptesLoading, isError: comptesError } = useComptes()
   const { comptesTiers } = useGestion()
 
+  const [tab, setTab] = useState<TabId>('all')
+
   const isLoading = planLoading || comptesLoading
   const isError   = planError   || comptesError
+
+  const totalAll   = comptes?.length ?? 0
+  const totalCentr = comptes?.filter(c => isCentralizer(c.numero)).length ?? 0
 
   return (
     <div className="space-y-4">
@@ -619,7 +780,12 @@ export function ComptesPage() {
         </div>
       ) : (
         plan && comptes && (
-          <UnifiedTab plan={plan} comptes={comptes} comptesTiers={comptesTiers} />
+          <div className="flex gap-5 items-start">
+            <VerticalTabs active={tab} onChange={setTab} totalAll={totalAll} totalCentr={totalCentr} />
+            <div className="flex-1 min-w-0">
+              <UnifiedTab plan={plan} comptes={comptes} comptesTiers={comptesTiers} tab={tab} />
+            </div>
+          </div>
         )
       )}
     </div>
