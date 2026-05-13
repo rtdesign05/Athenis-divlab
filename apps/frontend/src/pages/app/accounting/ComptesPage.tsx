@@ -701,50 +701,46 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
   )
 }
 
-// ── Onglets verticaux ─────────────────────────────────────────────────────────
+// ── Onglets horizontaux ───────────────────────────────────────────────────────
 
-interface VerticalTabsProps {
+interface HorizontalTabsProps {
   active:    TabId
   onChange:  (id: TabId) => void
   totalAll:  number
   totalCentr: number
 }
 
-function VerticalTabs({ active, onChange, totalAll, totalCentr }: VerticalTabsProps) {
-  const items: { id: TabId; icon: string; label: string; count: number; desc: string }[] = [
-    { id: 'all',          icon: '📋', label: 'Tous les comptes',       count: totalAll,   desc: 'Vue complète du plan comptable' },
-    { id: 'centralizers', icon: '⚙',  label: 'Comptes centralisateurs', count: totalCentr, desc: 'Comptes principaux (3 chiffres)' },
+function HorizontalTabs({ active, onChange, totalAll, totalCentr }: HorizontalTabsProps) {
+  const items: { id: TabId; icon: string; label: string; count: number }[] = [
+    { id: 'all',          icon: '📋', label: 'Tous les comptes',       count: totalAll   },
+    { id: 'centralizers', icon: '⚙',  label: 'Comptes centralisateurs', count: totalCentr },
   ]
   return (
-    <aside className="w-56 shrink-0 space-y-1">
-      <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-        Catégories
-      </p>
+    <div className="flex items-center gap-1 border-b border-gray-200">
       {items.map(it => (
         <button
           key={it.id}
           onClick={() => onChange(it.id)}
-          className={`w-full text-left rounded-lg px-3 py-2.5 transition-colors flex items-start gap-2.5 ${
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
             active === it.id
-              ? 'bg-forest-50 border border-forest-200 shadow-sm'
-              : 'border border-transparent hover:bg-gray-50'
+              ? 'border-forest-900 text-forest-900'
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200'
           }`}
         >
-          <span className={`text-base shrink-0 ${active === it.id ? '' : 'opacity-70'}`}>{it.icon}</span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-1">
-              <span className={`text-sm font-medium ${active === it.id ? 'text-forest-900' : 'text-gray-700'}`}>
-                {it.label}
-              </span>
-              <span className={`text-[11px] font-mono shrink-0 ${active === it.id ? 'text-forest-700' : 'text-gray-400'}`}>
-                {it.count}
-              </span>
-            </div>
-            <p className="text-[10px] text-gray-400 mt-0.5 leading-tight">{it.desc}</p>
-          </div>
+          <span className={active === it.id ? '' : 'opacity-70'}>{it.icon}</span>
+          <span>{it.label}</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-mono font-semibold ${
+              active === it.id
+                ? 'bg-forest-100 text-forest-700'
+                : 'bg-gray-100 text-gray-500'
+            }`}
+          >
+            {it.count}
+          </span>
         </button>
       ))}
-    </aside>
+    </div>
   )
 }
 
@@ -780,11 +776,9 @@ export function ComptesPage() {
         </div>
       ) : (
         plan && comptes && (
-          <div className="flex gap-5 items-start">
-            <VerticalTabs active={tab} onChange={setTab} totalAll={totalAll} totalCentr={totalCentr} />
-            <div className="flex-1 min-w-0">
-              <UnifiedTab plan={plan} comptes={comptes} comptesTiers={comptesTiers} tab={tab} />
-            </div>
+          <div className="space-y-4">
+            <HorizontalTabs active={tab} onChange={setTab} totalAll={totalAll} totalCentr={totalCentr} />
+            <UnifiedTab plan={plan} comptes={comptes} comptesTiers={comptesTiers} tab={tab} />
           </div>
         )
       )}
