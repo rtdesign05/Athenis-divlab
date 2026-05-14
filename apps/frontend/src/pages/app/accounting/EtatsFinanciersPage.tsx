@@ -51,12 +51,12 @@ function variation(n: number, nm1: number): string | null {
 function THead({ year, prevYear, hasPrevYear, showVariation = false }: {
   year: number; prevYear: number; hasPrevYear: boolean; showVariation?: boolean
 }) {
-  const nm1Label = hasPrevYear ? `N-1\xa0(${prevYear})` : 'N-1\xa0(non\xa0disponible)'
+  const nm1Label = hasPrevYear ? `N-1\xa0(${prevYear})` : `N-1\xa0(non\xa0disponible)`
   return (
     <thead>
       <tr className="border-b-2 border-slate-300 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500">
         <th className="px-4 py-2 text-left w-1/2">Libellé</th>
-        <th className="px-4 py-2 text-right">N\xa0({year})</th>
+        <th className="px-4 py-2 text-right">{`N\xa0(${year})`}</th>
         <th className={`px-4 py-2 text-right ${!hasPrevYear ? 'italic text-slate-400' : ''}`}>{nm1Label}</th>
         {showVariation && <th className="px-4 py-2 text-right">Variation</th>}
       </tr>
@@ -119,8 +119,8 @@ function BalanceIndicator({ actifTotal, passifTotal }: { actifTotal: FSPair | un
     <div className={`flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium ${balanced ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}`}>
       <span>{balanced ? '\u2705' : '\u26a0\ufe0f'}</span>
       {balanced
-        ? <>Bilan équilibré\xa0\u2014 Actif\xa0=\xa0Passif\xa0=\xa0{fmt(a)}\xa0\u20ac</>
-        : <>Déséquilibre\xa0: Actif\xa0{fmt(a)}\xa0\u20ac\xa0\u2260\xa0Passif\xa0{fmt(p)}\xa0\u20ac</>}
+        ? <>{`Bilan équilibré\xa0\u2014 Actif\xa0=\xa0Passif\xa0=\xa0${fmt(a)}\xa0\u20ac`}</>
+        : <>{`Déséquilibre\xa0: Actif\xa0${fmt(a)}\xa0\u20ac\xa0\u2260\xa0Passif\xa0${fmt(p)}\xa0\u20ac`}</>}
     </div>
   )
 }
@@ -1215,7 +1215,7 @@ export function EtatsFinanciersPage() {
           <h2 className="text-lg font-semibold text-slate-800">{pageTitle}</h2>
           <p className="text-sm text-slate-500">
             {fsData
-              ? <>Exercice {fsData.year} · comparatif N\xa0/\xa0N-1 ({fsData.prevYear}) <StatusBadge status={fsData.status} /></>
+              ? <>Exercice {fsData.year} · {`comparatif N\xa0/\xa0N-1 (${fsData.prevYear})`} <StatusBadge status={fsData.status} /></>
               : fyData
               ? <>Exercice {fyData.year} <StatusBadge status={fyData.status} /></>
               : 'Aucun exercice sélectionné'}

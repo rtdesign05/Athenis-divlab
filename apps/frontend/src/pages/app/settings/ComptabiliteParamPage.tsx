@@ -181,8 +181,8 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
-function fmtNumber(n: number) {
-  return n.toLocaleString('fr-FR')
+function fmtNumber(n: number | null | undefined) {
+  return (n ?? 0).toLocaleString('fr-FR')
 }
 
 // ── Modal générique ──────────────────────────────────────────────────────────
@@ -598,7 +598,7 @@ function ModalCloseFiscalYear({ fy, zone, onClose }: ModalCloseProps) {
           </div>
           <div>
             <p className="text-[10px] text-gray-400 uppercase tracking-wide">Écritures</p>
-            <p className="text-sm font-semibold text-gray-800">{fmtNumber(fy._count.entries)}</p>
+            <p className="text-sm font-semibold text-gray-800">{fmtNumber(fy._count?.journalEntries)}</p>
           </div>
           <div>
             <p className="text-[10px] text-gray-400 uppercase tracking-wide">Période</p>
@@ -721,7 +721,7 @@ function TabExercices({ zone }: TabExercicesProps) {
                   <StatusBadge status={fy.status} />
                 </td>
                 <td className="px-4 py-3 text-right text-gray-700 font-mono text-xs">
-                  {fmtNumber(fy._count.entries)}
+                  {fmtNumber(fy._count?.journalEntries)}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
@@ -1126,11 +1126,19 @@ export function ComptabiliteParamPage() {
   const { company, refreshCompany } = useCompanySettings()
   const qc = useQueryClient()
 
-  // Zone comptable — lue depuis l'API, fallback 'FRANCE'
-  const zone = (company?.accountingZone ?? 'FRANCE') as AccountingZone
+  // Zone comptable — état local pour réponse immédiate, synchro avec l'API
+  const apiZone = (company?.accountingZone ?? 'OHADA') as AccountingZone
+  const [zone, setZone] = useState<AccountingZone>(apiZone)
+
+  // Sync lorsque la réponse API arrive (chargement initial ou après refreshCompany)
+  useEffect(() => {
+    if (company?.accountingZone) {
+      setZone(company.accountingZone as AccountingZone)
+    }
+  }, [company?.accountingZone])
 
   // Config locale — chargée depuis localStorage
-  const [config, setConfig] = useState<AccountingLocalConfig>(() => loadConfig(zone))
+  const [config, setConfig] = useState<AccountingLocalConfig>(() => loadConfig(apiZone))
 
   // Onglet actif
   const [activeTab, setActiveTab] = useState<TabId>('referentiel')
@@ -1143,6 +1151,10 @@ export function ComptabiliteParamPage() {
       void refreshCompany()
       qc.invalidateQueries({ queryKey: ['company'] })
     },
+    onError: () => {
+      // Rollback UI si l'API échoue
+      setZone(apiZone)
+    },
   })
 
   // Sauvegarde immédiate dans localStorage à chaque changement de config
@@ -1150,9 +1162,9 @@ export function ComptabiliteParamPage() {
     saveConfig(config)
   }, [config])
 
-  // Quand la zone change (API chargée), on met à jour les valeurs par défaut
-  // des comptes si la config n'a pas été personnalisée
+  // Changement de zone : mise à jour immédiate de l'UI + persistance en arrière-plan
   const handleZoneChange = useCallback((newZone: AccountingZone) => {
+    setZone(newZone)          // réponse UI instantanée
     zoneMutation.mutate(newZone)
     // Réinitialise les comptes aux valeurs par défaut pour la nouvelle zone
     setConfig(prev => ({
@@ -1166,7 +1178,8 @@ export function ComptabiliteParamPage() {
       },
       journals: newZone === 'OHADA' ? OHADA_DEFAULT_JOURNALS : FRANCE_DEFAULT_JOURNALS,
     }))
-  }, [zoneMutation])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="max-w-4xl space-y-6">

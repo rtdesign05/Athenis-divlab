@@ -8,6 +8,7 @@ import { TresorerieProvider } from '@/contexts/TresorerieContext'
 import { GestionProvider } from '@/contexts/GestionContext'
 import { CompanySettingsProvider } from '@/contexts/CompanySettingsContext'
 import { ContractsProvider } from '@/contexts/ContractsContext'
+import { FiscalYearProvider } from '@/contexts/FiscalYearContext'
 import { CabinetViewBanner } from '@/features/cabinet/CabinetViewBanner'
 
 export function AppLayout() {
@@ -40,15 +41,17 @@ export function AppLayout() {
         <Topbar onMenuClick={() => setSidebarOpen((v) => !v)} />
         <main className="flex-1 overflow-hidden">
           <ErrorBoundary>
-            <CompanySettingsProvider>
-              <TresorerieProvider>
-                <GestionProvider>
-                  <ContractsProvider>
-                    <Outlet />
-                  </ContractsProvider>
-                </GestionProvider>
-              </TresorerieProvider>
-            </CompanySettingsProvider>
+            <FiscalYearProvider>
+              <CompanySettingsProvider>
+                <TresorerieProvider>
+                  <GestionProvider>
+                    <ContractsProvider>
+                      <Outlet />
+                    </ContractsProvider>
+                  </GestionProvider>
+                </TresorerieProvider>
+              </CompanySettingsProvider>
+            </FiscalYearProvider>
           </ErrorBoundary>
         </main>
       </div>

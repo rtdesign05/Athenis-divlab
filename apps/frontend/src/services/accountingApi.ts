@@ -305,7 +305,7 @@ export interface FiscalYear {
   closedAt:       string | null
   createdAt:      string
   updatedAt:      string
-  _count:         { entries: number; invoices: number; expenses: number }
+  _count:         { journalEntries: number } | null
 }
 
 export interface FiscalYearSummary {

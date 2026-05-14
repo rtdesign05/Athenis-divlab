@@ -1,7 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
 import { ContextualTabBar } from '@/shared/components/layout/ContextualTabBar'
-import { FiscalYearProvider, useFiscalYear } from '@/contexts/FiscalYearContext'
+import { useFiscalYear } from '@/contexts/FiscalYearContext'
 import { FiscalYearSelector } from '@/components/accounting/FiscalYearSelector'
 import { useFiscalYearGuard } from '@/hooks/useFiscalYear'
 
@@ -37,9 +37,5 @@ function AccountingLayoutInner() {
 }
 
 export function AccountingLayout() {
-  return (
-    <FiscalYearProvider>
-      <AccountingLayoutInner />
-    </FiscalYearProvider>
-  )
+  return <AccountingLayoutInner />
 }
