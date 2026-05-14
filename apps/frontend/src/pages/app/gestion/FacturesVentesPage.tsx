@@ -13,6 +13,7 @@ import { SendEmailModal } from '@/components/gestion/SendEmailModal'
 import { encodePaymentToken } from '@/pages/pay/PaymentPage'
 import { printDocument } from '@/lib/printDocument'
 import { generateQRDataUrl, buildFactureVenteQR } from '@/lib/qrCode'
+import { loadInvoiceConfig } from '@/lib/invoiceConfig'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -192,6 +193,33 @@ function InvoiceView({
   const [copied,      setCopied]      = useState(false)
   const [qrDataUrl,   setQrDataUrl]   = useState<string>('')
   const docRef = useRef<HTMLDivElement>(null)
+
+  // ── Paramètres de facture depuis localStorage ─────────────────────────────
+  const invoiceCfg = useMemo(() => loadInvoiceConfig(), [])
+
+  // ── Template visuel ───────────────────────────────────────────────────────
+  type TplKey = 'classique' | 'moderne' | 'minimaliste' | 'colore'
+  const TEMPLATE_CFG: Record<TplKey, {
+    headerBg:   string
+    headerText: string
+    theadBg:    string
+    theadText:  string
+    billBg:     string
+    billBorder: string
+    docStyle:   React.CSSProperties
+    hasBand:    boolean
+  }> = {
+    classique:   { headerBg: '#1a3a2a', headerText: '#fff', theadBg: '#1a3a2a', theadText: '#fff',     billBg: '#f9fafb', billBorder: '#e5e7eb', docStyle: { backgroundColor: '#fff' },                                               hasBand: true  },
+    moderne:     { headerBg: '#1f2937', headerText: '#fff', theadBg: '#1f2937', theadText: '#fff',     billBg: '#fffbeb', billBorder: '#fcd34d', docStyle: { backgroundColor: '#fff' },                                               hasBand: true  },
+    minimaliste: { headerBg: 'none',    headerText: '#111', theadBg: '#f9fafb', theadText: '#374151',  billBg: '#ffffff', billBorder: '#9ca3af', docStyle: { backgroundColor: '#fff' },                                               hasBand: false },
+    colore:      { headerBg: '#7c3aed', headerText: '#fff', theadBg: '#7c3aed', theadText: '#fff',     billBg: '#fdf4ff', billBorder: '#e9d5ff', docStyle: { background: 'linear-gradient(135deg, #faf5ff 0%, #fdf2f8 100%)' },        hasBand: true  },
+  }
+  const tplCfg = TEMPLATE_CFG[(invoiceCfg.template as TplKey)] ?? TEMPLATE_CFG.classique
+
+  // ── Logo : champ API → fallback localStorage (défini dans Paramètres → Entreprise) ──
+  const logoUrl: string | null = company?.logo
+    ?? (typeof window !== 'undefined' ? localStorage.getItem('athenis:company-logo') : null)
+    ?? null
 
   useEffect(() => {
     generateQRDataUrl(buildFactureVenteQR(facture)).then(setQrDataUrl).catch(() => setQrDataUrl(''))
@@ -392,32 +420,76 @@ function InvoiceView({
 
       {/* Document */}
       <div className="flex-1 min-h-0 overflow-y-auto bg-gray-100 p-6">
-        <div ref={docRef} className="max-w-3xl mx-auto bg-white shadow-sm rounded-lg p-10 print:shadow-none print:rounded-none">
+        <div ref={docRef} className="relative max-w-3xl mx-auto shadow-sm rounded-lg p-10 print:shadow-none print:rounded-none overflow-hidden" style={tplCfg.docStyle}>
 
-          {/* Header */}
-          <div className="flex justify-between items-start mb-8">
-            <div>
-              <p className="text-lg font-bold text-gray-900">{companyName}</p>
-              <p className="text-sm text-gray-600">{companyAddress}</p>
-              <p className="text-sm text-gray-600">{companyCity}, Cameroun</p>
-              {companyPhone && <p className="text-sm text-gray-600">Tél : {companyPhone}</p>}
-              {companyEmail && <p className="text-sm text-gray-600">{companyEmail}</p>}
+          {/* ── En-tête document : adapté au modèle visuel ── */}
+          {tplCfg.hasBand ? (
+            /* Classique / Moderne / Coloré — bandeau coloré pleine largeur */
+            <div
+              className="-mx-10 -mt-10 px-10 py-7 mb-8 flex justify-between items-center gap-6"
+              style={{ backgroundColor: tplCfg.headerBg }}
+            >
+              <div className="flex items-center gap-4 min-w-0">
+                {invoiceCfg.display.showLogo && logoUrl && (
+                  <img
+                    src={logoUrl} alt="Logo"
+                    className="h-12 max-w-[100px] object-contain shrink-0 bg-white/20 rounded p-1"
+                  />
+                )}
+                <div className="min-w-0">
+                  <p className="text-lg font-bold truncate" style={{ color: tplCfg.headerText }}>{companyName}</p>
+                  <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.75 }}>{companyAddress}</p>
+                  <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.75 }}>{companyCity}, Cameroun</p>
+                  {companyPhone && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.65 }}>Tél : {companyPhone}</p>}
+                  {companyEmail && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.65 }}>{companyEmail}</p>}
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-2xl font-bold uppercase tracking-wide" style={{ color: tplCfg.headerText }}>
+                  {docTitle(facture.modele)}
+                </p>
+                <p className="mt-1 text-sm font-mono" style={{ color: tplCfg.headerText, opacity: 0.8 }}>N° {facture.id}</p>
+                <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.7 }}>Date : {fmtDate(facture.date)}</p>
+                <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.7 }}>Échéance : {fmtDate(facture.echeance)}</p>
+                {facture.commande && (
+                  <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.7 }}>Commande : {facture.commande}</p>
+                )}
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold text-gray-900 uppercase tracking-wide">
-                {docTitle(facture.modele)}
-              </p>
-              <p className="mt-1 text-sm text-gray-700 font-mono">N° {facture.id}</p>
-              <p className="text-sm text-gray-500">Date : {fmtDate(facture.date)}</p>
-              <p className="text-sm text-gray-500">Échéance : {fmtDate(facture.echeance)}</p>
-              {facture.commande && (
-                <p className="text-sm text-gray-500">Commande : {facture.commande}</p>
-              )}
+          ) : (
+            /* Minimaliste — en-tête épuré avec bordure inférieure */
+            <div className="flex justify-between items-start mb-8 pb-5 border-b-2 border-gray-900">
+              <div className="flex items-start gap-4">
+                {invoiceCfg.display.showLogo && logoUrl && (
+                  <img src={logoUrl} alt="Logo" className="h-10 max-w-[100px] object-contain" />
+                )}
+                <div>
+                  <p className="text-lg font-bold text-gray-900">{companyName}</p>
+                  <p className="text-sm text-gray-600">{companyAddress}</p>
+                  <p className="text-sm text-gray-600">{companyCity}, Cameroun</p>
+                  {companyPhone && <p className="text-sm text-gray-600">Tél : {companyPhone}</p>}
+                  {companyEmail && <p className="text-sm text-gray-600">{companyEmail}</p>}
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-2xl font-bold text-gray-900 uppercase tracking-wide">
+                  {docTitle(facture.modele)}
+                </p>
+                <p className="mt-1 text-sm text-gray-700 font-mono">N° {facture.id}</p>
+                <p className="text-sm text-gray-500">Date : {fmtDate(facture.date)}</p>
+                <p className="text-sm text-gray-500">Échéance : {fmtDate(facture.echeance)}</p>
+                {facture.commande && (
+                  <p className="text-sm text-gray-500">Commande : {facture.commande}</p>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Bill to */}
-          <div className="mb-6 rounded-lg border border-gray-100 bg-gray-50 p-4">
+          <div
+            className="mb-6 rounded-lg border p-4"
+            style={{ backgroundColor: tplCfg.billBg, borderColor: tplCfg.billBorder }}
+          >
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">
               Facturer à
             </p>
@@ -428,13 +500,16 @@ function InvoiceView({
           {/* Lines table */}
           <table className="w-full text-sm mb-6">
             <thead>
-              <tr className="border-b-2 border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                <th className="pb-2 text-left">Description</th>
-                <th className="pb-2 text-center w-16">Qté</th>
-                <th className="pb-2 text-center w-20">Unité</th>
-                <th className="pb-2 text-right w-28">P.U. HT</th>
-                <th className="pb-2 text-right w-8">TVA</th>
-                <th className="pb-2 text-right w-28">Total HT</th>
+              <tr
+                className="text-xs font-semibold uppercase tracking-wide"
+                style={{ backgroundColor: tplCfg.theadBg, color: tplCfg.theadText }}
+              >
+                <th className="py-2 px-2 text-left rounded-tl">Description</th>
+                <th className="py-2 px-2 text-center w-16">Qté</th>
+                <th className="py-2 px-2 text-center w-20">Unité</th>
+                <th className="py-2 px-2 text-right w-28">P.U. HT</th>
+                <th className="py-2 px-2 text-right w-8">TVA</th>
+                <th className="py-2 px-2 text-right w-28 rounded-tr">Total HT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -510,12 +585,60 @@ function InvoiceView({
             </div>
           </div>
 
+          {/* ── Coordonnées bancaires ── */}
+          {invoiceCfg.display.showBankInfo && invoiceCfg.bank.bankName && (
+            <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
+                Coordonnées bancaires
+              </p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-700">
+                {invoiceCfg.bank.bankName && (
+                  <p><span className="text-xs text-gray-400">Banque :</span> {invoiceCfg.bank.bankName}</p>
+                )}
+                {invoiceCfg.bank.iban && (
+                  <p><span className="text-xs text-gray-400">IBAN :</span> <span className="font-mono">{invoiceCfg.bank.iban}</span></p>
+                )}
+                {invoiceCfg.bank.bic && (
+                  <p><span className="text-xs text-gray-400">BIC :</span> <span className="font-mono">{invoiceCfg.bank.bic}</span></p>
+                )}
+                {invoiceCfg.bank.rib && (
+                  <p><span className="text-xs text-gray-400">RIB :</span> <span className="font-mono">{invoiceCfg.bank.rib}</span></p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Mentions légales / conditions ── */}
+          {invoiceCfg.display.showLatePenalty && invoiceCfg.termsText && (
+            <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-1">
+                Conditions générales
+              </p>
+              <p className="text-xs text-gray-500 leading-relaxed">{invoiceCfg.termsText}</p>
+            </div>
+          )}
+
+          {/* ── Signature ── */}
+          {invoiceCfg.display.showSignature && (
+            <div className="mt-6 flex justify-end">
+              <div className="text-center">
+                <div className="w-40 h-16 border-b border-gray-400 mb-1" />
+                <p className="text-xs text-gray-400">Signature &amp; cachet</p>
+              </div>
+            </div>
+          )}
+
           {/* QR Code + Footer */}
           <div className="mt-8 pt-4 border-t border-gray-100 flex items-end justify-between gap-4">
-            <p className="text-xs text-gray-400">
-              {companyName} — {companyAddress}, {companyCity} — Document généré par Athenis
-            </p>
-            {qrDataUrl && (
+            <div>
+              <p className="text-xs text-gray-400">
+                {invoiceCfg.footerText || `${companyName} — ${companyAddress}, ${companyCity}`}
+              </p>
+              {invoiceCfg.display.showVatNumber && company?.vatNumber && (
+                <p className="text-xs text-gray-400 mt-0.5">N° TVA : {company.vatNumber}</p>
+              )}
+            </div>
+            {invoiceCfg.display.showQrCode && qrDataUrl && (
               <div className="flex flex-col items-center shrink-0">
                 <img src={qrDataUrl} alt="QR Code" className="w-20 h-20 border border-gray-200 rounded p-0.5" />
                 <p className="mt-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Vérification</p>
@@ -523,6 +646,18 @@ function InvoiceView({
               </div>
             )}
           </div>
+
+          {/* ── Filigrane ── */}
+          {invoiceCfg.display.showWatermark && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none overflow-hidden">
+              <span
+                className="text-gray-300 font-black text-7xl tracking-widest uppercase"
+                style={{ transform: 'rotate(-35deg)', opacity: 0.15 }}
+              >
+                {invoiceCfg.display.watermarkText || 'DUPLICATA'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>

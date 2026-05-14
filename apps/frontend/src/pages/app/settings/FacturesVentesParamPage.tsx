@@ -15,86 +15,25 @@
 import { useState, useEffect, useRef } from 'react'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { Link } from 'react-router-dom'
+import {
+  type TemplateId,
+  type DocType,
+  type NumberingConfig,
+  type DisplayOptions,
+  type BankInfo,
+  type InvoiceConfig,
+  DEFAULT_INVOICE_CONFIG,
+  loadInvoiceConfig,
+  saveInvoiceConfig,
+} from '@/lib/invoiceConfig'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Aliases locaux (rétro-compatibilité interne) ──────────────────────────────
 
-type TemplateId = 'classique' | 'moderne' | 'minimaliste' | 'colore'
+const DEFAULT_CONFIG = DEFAULT_INVOICE_CONFIG
+const loadConfig     = loadInvoiceConfig
+const saveConfig     = saveInvoiceConfig
 
-type DocType = 'FV' | 'DEV' | 'AV' | 'BL' | 'BC'
-
-interface NumberingConfig {
-  prefix:        string
-  separator:     string
-  yearFormat:    'full' | 'short' | 'none'   // 2026 / 26 / ø
-  monthIn:       boolean
-  padding:       number                       // 4 → "0001"
-  startNumber:   number
-  reset:         'yearly' | 'monthly' | 'never'
-}
-
-interface DisplayOptions {
-  showLogo:         boolean
-  showVatNumber:    boolean
-  showQrCode:       boolean
-  showSignature:    boolean
-  showWatermark:    boolean
-  watermarkText:    string
-  showBankInfo:     boolean
-  showLatePenalty:  boolean
-  showDiscount:     boolean
-}
-
-interface BankInfo {
-  bankName: string
-  iban:     string
-  bic:      string
-  rib:      string
-}
-
-interface InvoiceConfig {
-  template:    TemplateId
-  numbering:   Record<DocType, NumberingConfig>
-  display:     DisplayOptions
-  bank:        BankInfo
-  footerText:  string
-  termsText:   string
-}
-
-// ── Defaults ──────────────────────────────────────────────────────────────────
-
-const DEFAULT_NUMBERING: Record<DocType, NumberingConfig> = {
-  FV:  { prefix: 'FV',  separator: '-', yearFormat: 'full', monthIn: false, padding: 4, startNumber: 1, reset: 'yearly' },
-  DEV: { prefix: 'DEV', separator: '-', yearFormat: 'full', monthIn: false, padding: 4, startNumber: 1, reset: 'yearly' },
-  AV:  { prefix: 'AV',  separator: '-', yearFormat: 'full', monthIn: false, padding: 4, startNumber: 1, reset: 'yearly' },
-  BL:  { prefix: 'BL',  separator: '-', yearFormat: 'full', monthIn: false, padding: 4, startNumber: 1, reset: 'yearly' },
-  BC:  { prefix: 'BC',  separator: '-', yearFormat: 'full', monthIn: false, padding: 4, startNumber: 1, reset: 'yearly' },
-}
-
-const DEFAULT_CONFIG: InvoiceConfig = {
-  template: 'classique',
-  numbering: DEFAULT_NUMBERING,
-  display: {
-    showLogo:        true,
-    showVatNumber:   true,
-    showQrCode:      true,
-    showSignature:   false,
-    showWatermark:   false,
-    watermarkText:   'DUPLICATA',
-    showBankInfo:    true,
-    showLatePenalty: true,
-    showDiscount:    false,
-  },
-  bank: {
-    bankName: '',
-    iban:     '',
-    bic:      '',
-    rib:      '',
-  },
-  footerText: 'Merci pour votre confiance — Pour toute question : contact@entreprise.cm',
-  termsText:  'Paiement par virement bancaire sous 30 jours. Aucun escompte pour règlement anticipé.',
-}
-
-const STORAGE_KEY = 'athenis:invoice-config'
+// ── Labels / order ────────────────────────────────────────────────────────────
 
 const DOC_LABELS: Record<DocType, { label: string; icon: string; color: string }> = {
   FV:  { label: 'Factures de vente',  icon: '🧾', color: 'border-green-300 bg-green-50'  },
@@ -105,30 +44,6 @@ const DOC_LABELS: Record<DocType, { label: string; icon: string; color: string }
 }
 
 const DOC_ORDER: DocType[] = ['FV', 'DEV', 'AV', 'BL', 'BC']
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function loadConfig(): InvoiceConfig {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return DEFAULT_CONFIG
-    const parsed = JSON.parse(raw)
-    return {
-      template:   parsed.template   ?? DEFAULT_CONFIG.template,
-      numbering: { ...DEFAULT_NUMBERING, ...(parsed.numbering ?? {}) },
-      display:   { ...DEFAULT_CONFIG.display,  ...(parsed.display  ?? {}) },
-      bank:      { ...DEFAULT_CONFIG.bank,     ...(parsed.bank     ?? {}) },
-      footerText: parsed.footerText ?? DEFAULT_CONFIG.footerText,
-      termsText:  parsed.termsText  ?? DEFAULT_CONFIG.termsText,
-    }
-  } catch {
-    return DEFAULT_CONFIG
-  }
-}
-
-function saveConfig(cfg: InvoiceConfig): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg))
-}
 
 /** Génère un exemple de numéro de document à partir de la config */
 function previewNumber(n: NumberingConfig): string {

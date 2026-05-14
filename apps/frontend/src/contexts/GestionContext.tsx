@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
+import { loadInvoiceConfig, buildDocNumber } from '@/lib/invoiceConfig'
 
 // ── Helpers ventes récurrentes ────────────────────────────────────────────────
 
@@ -1225,9 +1226,10 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   }
 
   function addFactureVente(f: Omit<FactureVente, 'id'>): FactureVente {
-    const last = facturesVentes[0]?.id ?? 'FAV-0000'
-    const num  = parseInt(last.replace('FAV-', ''), 10) + 1
-    const id   = `FAV-${String(num).padStart(4, '0')}`
+    const invoiceCfg = loadInvoiceConfig()
+    const numCfg     = invoiceCfg.numbering['FV']
+    const seq        = numCfg.startNumber + facturesVentes.length
+    const id         = buildDocNumber(numCfg, seq)
     const next: FactureVente = { id, ...f }
     setFacturesVentes(prev => [next, ...prev])
     return next

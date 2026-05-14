@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useCurrency } from '@/hooks/useCurrency'
 import {
@@ -34,9 +34,18 @@ function normalizeNumero(n: string): string {
   return /^\d+$/.test(trimmed) ? trimmed.padEnd(9, '0') : trimmed
 }
 
-function isAlphanumericTiers(n: string): boolean {
-  return n.trim().length > 0 && !/^\d+$/.test(n.trim())
+/**
+ * Retourne le préfixe significatif d'un numéro de compte centralisateur.
+ * Ex : 401000000 → "401" | 601100000 → "6011" | CLI-GRP → "CLI-GRP"
+ */
+function getCentralizerRoot(numero: string): string {
+  if (/^\d+$/.test(numero)) {
+    const stripped = numero.replace(/0+$/, '')
+    return stripped.length > 0 ? stripped : numero.charAt(0)
+  }
+  return numero
 }
+
 
 // ── React Query hooks ─────────────────────────────────────────────────────────
 
@@ -56,84 +65,68 @@ function useComptes() {
   })
 }
 
-// ── Add / Activate compte modal ───────────────────────────────────────────────
+// ── Add compte modal ──────────────────────────────────────────────────────────
 
 interface AddModalProps {
-  planEntries:    PlanEntry[]
-  initialNumero?: string
-  initialLabel?:  string
+  existingComptes:  CompteItem[]
+  initialNumero?:   string
+  initialLabel?:    string
   centralizerMode?: boolean
-  onClose:        () => void
+  onClose:          () => void
 }
 
-function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', centralizerMode = false, onClose }: AddModalProps) {
+function inferType(num: string): ChartAccountType {
+  if (/^41/.test(num)) return 'ACTIF'
+  if (/^4/.test(num))  return 'PASSIF'
+  if (/^7/.test(num))  return 'PRODUIT'
+  return 'CHARGE'
+}
+
+function AddCompteModal({ existingComptes, initialNumero = '', initialLabel = '', centralizerMode = false, onClose }: AddModalProps) {
   const qc = useQueryClient()
-  const [search, setSearch] = useState(
-    initialNumero ? `${initialNumero}${initialLabel ? ' — ' + initialLabel : ''}` : '',
+  const [numero,   setNumero]   = useState(initialNumero)
+  const [intitule, setIntitule] = useState(initialLabel)
+  const [error,    setError]    = useState('')
+
+  // Numéro final normalisé (zéros si purement numérique)
+  const finalNumero = normalizeNumero(numero)
+
+  // Détection doublon en temps réel
+  const existingNums = useMemo(
+    () => new Set(existingComptes.map(c => c.numero)),
+    [existingComptes],
   )
-  const [custom, setCustom] = useState(!!initialNumero || centralizerMode)
-  const [error,  setError]  = useState('')
-  const [form,   setForm]   = useState<{ numero: string; intitule: string; classe: number; type: ChartAccountType }>({
-    numero:   initialNumero,
-    intitule: initialLabel,
-    classe:   initialNumero ? (parseInt(initialNumero[0] ?? '4') || 4) : (centralizerMode ? 4 : 1),
-    type:     initialNumero
-      ? (/^41/.test(initialNumero) ? 'ACTIF' : /^4/.test(initialNumero) ? 'PASSIF' : /^7/.test(initialNumero) ? 'PRODUIT' : 'CHARGE')
-      : 'ACTIF',
-  })
+  const isDuplicate = finalNumero.length > 0 && existingNums.has(finalNumero)
 
-  // En mode centralisateur, on suggère plutôt les comptes courts (≤ 3 chiffres
-  // significatifs) qui sont typiquement utilisés comme centralisateurs en OHADA.
-  // Mais ce n'est qu'une aide à la saisie — l'utilisateur reste libre.
-  const filteredPlan = useMemo(() => {
-    if (!centralizerMode) return planEntries
-    return planEntries.filter(e => {
-      if (!/^\d+$/.test(e.numero)) return false
-      const sig = e.numero.replace(/0+$/, '')
-      return sig.length > 0 && sig.length <= 3
-    })
-  }, [planEntries, centralizerMode])
+  // Classe et type déduits automatiquement du premier chiffre
+  const classe = numero ? (parseInt(numero[0] ?? '4') || 4) : 4
+  const type   = inferType(numero)
 
-  const suggestions = useMemo(() =>
-    search.length < 2 ? [] :
-    filteredPlan
-      .filter(e => e.numero.startsWith(search) || e.intitule.toLowerCase().includes(search.toLowerCase()))
-      .slice(0, 10),
-    [search, filteredPlan],
-  )
-
-  function selectEntry(e: PlanEntry) {
-    setForm({ numero: e.numero, intitule: e.intitule, classe: e.classe, type: e.type })
-    setSearch(e.numero + ' — ' + e.intitule)
-    setCustom(false)
-  }
-
-  // Numéro qui sera réellement enregistré
-  const finalNumero = normalizeNumero(form.numero)
-  const willBePadded = form.numero.trim().length > 0
-    && /^\d+$/.test(form.numero.trim())
-    && form.numero.trim().length < 9
-
-  // En mode centralisateur, pas de restriction sur le numéro :
-  // l'utilisateur peut nommer son centralisateur comme il veut
-  // (3 chiffres comme 401, ou alphanumérique comme "GRP-FRN", etc.)
+  const canSubmit =
+    numero.trim().length > 0 &&
+    intitule.trim().length > 0 &&
+    !isDuplicate
 
   const mutation = useMutation({
     mutationFn: () => accountingApi.addCompte({
-      ...form,
       numero:        finalNumero,
+      intitule:      intitule.trim(),
+      classe,
+      type,
       isSystem:      false,
-      isCentralizer: centralizerMode,  // ← FLAG explicite côté backend
+      isCentralizer: centralizerMode,
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['comptes'] }); onClose() },
-    onError: (err: unknown) => setError(err instanceof Error ? err.message : "Erreur lors de l'ajout"),
+    onError:   (err: unknown) => setError(err instanceof Error ? err.message : "Erreur lors de l'ajout"),
   })
 
-  const title = centralizerMode ? 'Créer un compte centralisateur' : 'Activer un compte'
+  const title = centralizerMode ? 'Nouveau compte centralisateur' : 'Nouveau compte'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+
+        {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
           <h2 className="text-base font-semibold text-gray-900">{title}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
@@ -142,117 +135,78 @@ function AddCompteModal({ planEntries, initialNumero = '', initialLabel = '', ce
         <div className="p-6 space-y-4">
           {centralizerMode && (
             <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-700">
-              💡 Un compte centralisateur agrège des comptes auxiliaires (ex : <strong>411</strong> regroupe
-              tous les clients <strong>411-DUPONT</strong>, <strong>411-MARTIN</strong>, etc.).
+              💡 Un compte centralisateur agrège des sous-comptes partageant la même racine
+              (ex : <strong>411</strong> regroupe <strong>411-DUPONT</strong>, <strong>411-MARTIN</strong>…).
             </div>
           )}
+
+          {/* Numéro */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
-              {centralizerMode ? 'Rechercher un compte centralisateur dans le plan' : 'Rechercher dans le plan'}
+              Numéro de compte <span className="text-red-500">*</span>
             </label>
             <input
+              autoFocus
               type="text"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setCustom(false); setForm(f => ({ ...f, numero: '', intitule: '' })) }}
-              placeholder="Numéro ou intitulé…"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500"
+              value={numero}
+              onChange={e => { setNumero(e.target.value); setError('') }}
+              placeholder={centralizerMode ? 'ex : 401, 411, 512' : 'ex : 6011, 411, CLI-DUPONT'}
+              className={`w-full rounded-lg border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 transition-colors ${
+                isDuplicate
+                  ? 'border-red-400 bg-red-50 focus:ring-red-300'
+                  : 'border-gray-200 focus:ring-forest-500'
+              }`}
             />
-            {suggestions.length > 0 && (
-              <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-                {suggestions.map(e => (
-                  <button key={e.numero} onClick={() => selectEntry(e)}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50">
-                    <span className="font-mono text-xs text-gray-500 w-24 shrink-0">{e.numero}</span>
-                    <span className="flex-1 truncate text-gray-800">{e.intitule}</span>
-                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${TYPE_COLORS[e.type]}`}>{TYPE_LABELS[e.type]}</span>
-                  </button>
-                ))}
-              </div>
+            {/* Feedback en temps réel */}
+            {isDuplicate ? (
+              <p className="mt-1 flex items-center gap-1 text-xs text-red-600 font-medium">
+                <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                Ce numéro existe déjà ({existingComptes.find(c => c.numero === finalNumero)?.intitule})
+              </p>
+            ) : finalNumero && finalNumero !== numero.trim() ? (
+              <p className="mt-1 text-xs text-gray-400">
+                → Enregistré comme <span className="font-mono font-semibold text-forest-700">{finalNumero}</span>
+              </p>
+            ) : finalNumero && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-gray-500">
+                <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold">Cl.{classe}</span>
+                <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${TYPE_COLORS[type]}`}>{TYPE_LABELS[type]}</span>
+              </p>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="flex-1 border-t border-gray-100" />
-            <button onClick={() => { setCustom(c => !c); setSearch('') }}
-              className="text-xs text-forest-700 hover:underline">
-              {custom ? 'Annuler la saisie manuelle' : 'Saisie manuelle'}
-            </button>
-            <div className="flex-1 border-t border-gray-100" />
+          {/* Intitulé */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Intitulé <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={intitule}
+              onChange={e => { setIntitule(e.target.value); setError('') }}
+              onKeyDown={e => { if (e.key === 'Enter' && canSubmit) mutation.mutate() }}
+              placeholder="Libellé du compte…"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500"
+            />
           </div>
-
-          {(custom || form.numero) && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Numéro de compte</label>
-                <input type="text" value={form.numero}
-                  onChange={e => {
-                    const val = e.target.value
-                    setForm(f => ({
-                      ...f,
-                      numero: val,
-                      classe: val ? (parseInt(val[0] ?? '4') || 4) : f.classe,
-                      type: val
-                        ? (/^41/.test(val) ? 'ACTIF' : /^4/.test(val) ? 'PASSIF' : /^7/.test(val) ? 'PRODUIT' : 'CHARGE')
-                        : f.type,
-                    }))
-                  }}
-                  placeholder={centralizerMode ? 'ex : 401, 411, 512' : 'ex : 411 ou CLI-DUPONT'}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500 font-mono" />
-
-                {/* Prévisualisation de la normalisation */}
-                {willBePadded && (
-                  <p className="mt-1 text-xs text-gray-400">
-                    → Sera enregistré comme{' '}
-                    <span className="font-mono font-semibold text-forest-700">{finalNumero}</span>
-                    {' '}(complété par des zéros)
-                  </p>
-                )}
-                {isAlphanumericTiers(form.numero) && (
-                  <p className="mt-1 text-xs text-indigo-500">
-                    Compte alphanumérique (tiers) — conservé tel quel
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Classe</label>
-                <input type="number" min={1} max={9} value={form.classe}
-                  onChange={e => setForm(f => ({ ...f, classe: Number(e.target.value) }))}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500" />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
-                <select value={form.type}
-                  onChange={e => setForm(f => ({ ...f, type: e.target.value as ChartAccountType }))}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500">
-                  {(Object.keys(TYPE_LABELS) as ChartAccountType[]).map(t => (
-                    <option key={t} value={t}>{TYPE_LABELS[t]}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Intitulé</label>
-                <input type="text" value={form.intitule}
-                  onChange={e => setForm(f => ({ ...f, intitule: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500" />
-              </div>
-            </div>
-          )}
 
           {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
 
+        {/* Footer */}
         <div className="flex justify-end gap-3 border-t border-gray-100 px-6 py-4">
           <button onClick={onClose}
             className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
             Annuler
           </button>
-          <button onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || (!form.numero && !custom)}
-            className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 disabled:opacity-50">
-            {mutation.isPending ? 'Enregistrement…' : centralizerMode ? 'Créer' : 'Activer'}
+          <button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !canSubmit}
+            className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 disabled:opacity-50"
+          >
+            {mutation.isPending ? 'Enregistrement…' : 'Créer'}
           </button>
         </div>
       </div>
@@ -299,9 +253,10 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
   const [showAddCentr, setShowAddCentr] = useState(false)
   const [addTiers,     setAddTiers]     = useState<TiersEntry | null>(null)
   const [activatePlan, setActivatePlan] = useState<PlanEntry | null>(null)
-  const [editing,      setEditing]      = useState<string | null>(null)
-  const [editVal,      setEditVal]      = useState('')
-  const [deleting,     setDeleting]     = useState<string | null>(null)
+  const [editing,           setEditing]           = useState<string | null>(null)
+  const [editVal,           setEditVal]           = useState('')
+  const [deleting,          setDeleting]          = useState<string | null>(null)
+  const [expandedCentralizer, setExpandedCentralizer] = useState<string | null>(null)
 
   // Index des numéros déjà activés
   const activeNums = useMemo(() => new Set(comptes.map(c => c.numero)), [comptes])
@@ -348,12 +303,12 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
   }, [comptes, tiersOnly, planOnly, showPlan])
 
   // Filtre par tab (Tous / Centralisateurs)
-  // Sur l'onglet centralisateurs : on ne montre QUE les comptes actifs
-  // explicitement marqués comme centralisateurs par l'utilisateur.
+  // "Tous les comptes" : exclut les centralisateurs (ils ont leur propre onglet)
+  // "Centralisateurs"  : uniquement les comptes marqués isCentralizer
   const tabRows = useMemo(() =>
     tab === 'centralizers'
       ? allRows.filter(r => r.kind === 'active' && r.compteItem?.isCentralizer === true)
-      : allRows,
+      : allRows.filter(r => !(r.kind === 'active' && r.compteItem?.isCentralizer === true)),
     [allRows, tab],
   )
 
@@ -459,13 +414,15 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
             className="flex-1 min-w-40 rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500"
           />
 
-          <button onClick={() => setClasse(null)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              classeFilter === null ? 'bg-forest-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-            }`}>
-            Toutes classes
-          </button>
-          {classes.map(c => (
+          {tab !== 'centralizers' && (
+            <button onClick={() => setClasse(null)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                classeFilter === null ? 'bg-forest-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}>
+              Toutes classes
+            </button>
+          )}
+          {tab !== 'centralizers' && classes.map(c => (
             <button key={c} onClick={() => setClasse(classeFilter === c ? null : c)}
               className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
                 classeFilter === c ? 'bg-forest-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
@@ -519,129 +476,175 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
               if (row.kind === 'active') {
                 const c = row.compteItem!
                 const central = c.isCentralizer
+                const isExpanded = central && expandedCentralizer === c.id
+                const subAccounts = isExpanded
+                  ? comptes.filter(sub => {
+                      const root = getCentralizerRoot(c.numero)
+                      return !sub.isCentralizer && sub.id !== c.id && sub.numero.startsWith(root)
+                    })
+                  : []
+
                 return (
-                  <tr key={`active-${c.id}`} className="hover:bg-gray-50/50">
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-700 align-middle">
-                      <div className="flex items-center gap-1.5">
-                        {central && (
-                          <span className="rounded bg-blue-100 text-blue-700 px-1 py-0.5 text-[9px] font-bold" title="Compte centralisateur">⚙</span>
-                        )}
-                        {c.numero}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {editing === c.id ? (
-                        <input autoFocus value={editVal}
-                          onChange={e => setEditVal(e.target.value)}
-                          onBlur={() => commitEdit(c.id)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') commitEdit(c.id)
-                            if (e.key === 'Escape') setEditing(null)
-                          }}
-                          className="w-full rounded border border-blue-400 bg-blue-50 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-forest-500"
-                        />
-                      ) : (
-                        <button
-                          onClick={() => startEdit(c)}
-                          title="Cliquer pour modifier l'intitulé"
-                          className="group text-left w-full text-gray-800 font-medium px-1 py-0.5 rounded transition-colors hover:bg-blue-50 hover:text-blue-700 cursor-text"
-                        >
-                          {c.intitule}
-                          <span className="ml-1.5 text-[10px] text-gray-300 group-hover:text-gray-500">✎</span>
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-gray-500 text-xs">{c.classe}</td>
-                    <td className="px-4 py-2.5">
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${TYPE_COLORS[c.type]}`}>
-                        {TYPE_LABELS[c.type]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-center">
-                      {central ? (
-                        <span className="rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-[10px] font-semibold">⚙ Centralisateur</span>
-                      ) : (
-                        <span className="rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px] font-semibold">✓ Actif</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium text-gray-900">
-                      {c.soldeDebiteur > 0 ? fmt(c.soldeDebiteur) : '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-medium text-gray-900">
-                      {c.soldeCrediteur > 0 ? fmt(c.soldeCrediteur) : '—'}
-                    </td>
-                    <td className={`px-4 py-2.5 text-right font-semibold ${c.soldeNet > 0 ? 'text-blue-700' : c.soldeNet < 0 ? 'text-red-600' : 'text-gray-400'}`}>
-                      {c.soldeNet !== 0 ? fmt(Math.abs(c.soldeNet)) : '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      {(() => {
-                        const hasMouvements = c.soldeDebiteur > 0 || c.soldeCrediteur > 0
-                        // Les comptes centralisateurs (marqués par l'utilisateur)
-                        // ne sont soumis à aucune restriction de suppression.
-                        const isCentr = c.isCentralizer
-                        if (editing === c.id) {
-                          return (
-                            <button onClick={() => setEditing(null)}
-                              className="text-xs text-gray-400 hover:underline">Annuler</button>
-                          )
-                        }
-                        if (!isCentr && c.isSystem) {
-                          return (
-                            <span
-                              className="text-xs text-gray-300 cursor-not-allowed"
-                              title="Compte système — non supprimable (référence du plan comptable)"
-                            >
-                              🔒
+                  <Fragment key={`active-${c.id}`}>
+                    <tr
+                      className={`hover:bg-gray-50/50 ${central ? 'cursor-pointer select-none' : ''}`}
+                      onClick={central ? () => setExpandedCentralizer(x => x === c.id ? null : c.id) : undefined}
+                    >
+                      <td className="px-4 py-2.5 font-mono text-xs text-gray-700 align-middle">
+                        <div className="flex items-center gap-1.5">
+                          {central && (
+                            <span className="text-gray-400 text-[10px] w-3 shrink-0">
+                              {isExpanded ? '▼' : '▶'}
                             </span>
-                          )
-                        }
-                        if (!isCentr && hasMouvements) {
+                          )}
+                          {central && (
+                            <span className="rounded bg-blue-100 text-blue-700 px-1 py-0.5 text-[9px] font-bold shrink-0" title="Compte centralisateur">⚙</span>
+                          )}
+                          {c.numero}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {editing === c.id ? (
+                          <input autoFocus value={editVal}
+                            onChange={e => setEditVal(e.target.value)}
+                            onBlur={() => commitEdit(c.id)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') commitEdit(c.id)
+                              if (e.key === 'Escape') setEditing(null)
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            className="w-full rounded border border-blue-400 bg-blue-50 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-forest-500"
+                          />
+                        ) : (
+                          <button
+                            onClick={e => { e.stopPropagation(); startEdit(c) }}
+                            title="Cliquer pour modifier l'intitulé"
+                            className="group text-left w-full text-gray-800 font-medium px-1 py-0.5 rounded transition-colors hover:bg-blue-50 hover:text-blue-700 cursor-text"
+                          >
+                            {c.intitule}
+                            <span className="ml-1.5 text-[10px] text-gray-300 group-hover:text-gray-500">✎</span>
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-500 text-xs">{c.classe}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${TYPE_COLORS[c.type]}`}>
+                          {TYPE_LABELS[c.type]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        {central ? (
+                          <span className="rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-[10px] font-semibold">⚙ Centralisateur</span>
+                        ) : (
+                          <span className="rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px] font-semibold">✓ Actif</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium text-gray-900">
+                        {c.soldeDebiteur > 0 ? fmt(c.soldeDebiteur) : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium text-gray-900">
+                        {c.soldeCrediteur > 0 ? fmt(c.soldeCrediteur) : '—'}
+                      </td>
+                      <td className={`px-4 py-2.5 text-right font-semibold ${c.soldeNet > 0 ? 'text-blue-700' : c.soldeNet < 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                        {c.soldeNet !== 0 ? fmt(Math.abs(c.soldeNet)) : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right" onClick={e => e.stopPropagation()}>
+                        {(() => {
+                          const hasMouvements = c.soldeDebiteur > 0 || c.soldeCrediteur > 0
+                          const isCentr = c.isCentralizer
+                          if (editing === c.id) {
+                            return (
+                              <button onClick={e => { e.stopPropagation(); setEditing(null) }}
+                                className="text-xs text-gray-400 hover:underline">Annuler</button>
+                            )
+                          }
+                          if (!isCentr && c.isSystem) {
+                            return (
+                              <span className="text-xs text-gray-300 cursor-not-allowed" title="Compte système — non supprimable">🔒</span>
+                            )
+                          }
+                          if (!isCentr && hasMouvements) {
+                            return (
+                              <span className="inline-flex items-center gap-1 text-xs text-amber-600 cursor-not-allowed" title="Compte mouvementé — non supprimable">
+                                <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                                Mouvementé
+                              </span>
+                            )
+                          }
+                          if (deleting === c.id) {
+                            return (
+                              <div className="flex justify-end gap-2 items-center">
+                                <button
+                                  onClick={e => { e.stopPropagation(); deleteMutation.mutate(c.id) }}
+                                  disabled={deleteMutation.isPending}
+                                  className="rounded-md bg-red-600 text-white px-2 py-1 text-xs font-semibold hover:bg-red-700 disabled:opacity-50"
+                                >
+                                  {deleteMutation.isPending ? 'Suppression…' : '✓ Confirmer'}
+                                </button>
+                                <button
+                                  onClick={e => { e.stopPropagation(); setDeleting(null) }}
+                                  className="text-xs text-gray-400 hover:underline"
+                                >
+                                  Annuler
+                                </button>
+                              </div>
+                            )
+                          }
                           return (
-                            <span
-                              className="inline-flex items-center gap-1 text-xs text-amber-600 cursor-not-allowed"
-                              title="Compte mouvementé — non supprimable (préservation de l'intégrité comptable). Solder le compte avant de le supprimer."
+                            <button
+                              onClick={e => { e.stopPropagation(); setDeleting(c.id) }}
+                              title={`Supprimer le compte ${c.numero}`}
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
                             >
                               <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2h12a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM5 7a1 1 0 011 1v7a2 2 0 002 2h4a2 2 0 002-2V8a1 1 0 112 0v7a4 4 0 01-4 4H8a4 4 0 01-4-4V8a1 1 0 011-1z" clipRule="evenodd" />
                               </svg>
-                              Mouvementé
-                            </span>
+                              Supprimer
+                            </button>
                           )
-                        }
-                        if (deleting === c.id) {
-                          return (
-                            <div className="flex justify-end gap-2 items-center">
-                              <button
-                                onClick={() => deleteMutation.mutate(c.id)}
-                                disabled={deleteMutation.isPending}
-                                className="rounded-md bg-red-600 text-white px-2 py-1 text-xs font-semibold hover:bg-red-700 disabled:opacity-50"
-                              >
-                                {deleteMutation.isPending ? 'Suppression…' : '✓ Confirmer'}
-                              </button>
-                              <button
-                                onClick={() => setDeleting(null)}
-                                className="text-xs text-gray-400 hover:underline"
-                              >
-                                Annuler
-                              </button>
-                            </div>
-                          )
-                        }
-                        return (
-                          <button
-                            onClick={() => setDeleting(c.id)}
-                            title={`Supprimer le compte ${c.numero}`}
-                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
-                          >
-                            <svg className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2h12a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM5 7a1 1 0 011 1v7a2 2 0 002 2h4a2 2 0 002-2V8a1 1 0 112 0v7a4 4 0 01-4 4H8a4 4 0 01-4-4V8a1 1 0 011-1z" clipRule="evenodd" />
-                            </svg>
-                            Supprimer
-                          </button>
-                        )
-                      })()}
-                    </td>
-                  </tr>
+                        })()}
+                      </td>
+                    </tr>
+
+                    {/* ── Sous-comptes déroulés ──────────────────────── */}
+                    {isExpanded && subAccounts.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="pl-12 py-3 text-xs text-gray-400 italic bg-blue-50/30 border-l-4 border-blue-200">
+                          Aucun compte auxiliaire trouvé pour la racine «&nbsp;{getCentralizerRoot(c.numero)}&nbsp;»
+                        </td>
+                      </tr>
+                    )}
+                    {isExpanded && subAccounts.map(sub => (
+                      <tr key={`sub-${sub.id}`} className="bg-blue-50/30 hover:bg-blue-50/60 border-l-4 border-blue-300">
+                        <td className="px-4 py-2 align-middle">
+                          <div className="flex items-center gap-2 pl-6">
+                            <span className="text-blue-300 text-xs leading-none">└</span>
+                            <span className="font-mono text-xs text-gray-600">{sub.numero}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-gray-700 text-xs">{sub.intitule}</td>
+                        <td className="px-4 py-2 text-gray-400 text-xs">{sub.classe}</td>
+                        <td className="px-4 py-2">
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${TYPE_COLORS[sub.type]}`}>{TYPE_LABELS[sub.type]}</span>
+                        </td>
+                        <td className="px-4 py-2 text-center">
+                          <span className="rounded-full bg-green-100 text-green-700 px-2 py-0.5 text-[10px] font-semibold">✓ Actif</span>
+                        </td>
+                        <td className="px-4 py-2 text-right text-xs font-medium text-gray-700">
+                          {sub.soldeDebiteur > 0 ? fmt(sub.soldeDebiteur) : '—'}
+                        </td>
+                        <td className="px-4 py-2 text-right text-xs font-medium text-gray-700">
+                          {sub.soldeCrediteur > 0 ? fmt(sub.soldeCrediteur) : '—'}
+                        </td>
+                        <td className={`px-4 py-2 text-right text-xs font-semibold ${sub.soldeNet > 0 ? 'text-blue-600' : sub.soldeNet < 0 ? 'text-red-500' : 'text-gray-300'}`}>
+                          {sub.soldeNet !== 0 ? fmt(Math.abs(sub.soldeNet)) : '—'}
+                        </td>
+                        <td className="px-4 py-2" />
+                      </tr>
+                    ))}
+                  </Fragment>
                 )
               }
 
@@ -727,18 +730,18 @@ function UnifiedTab({ plan, comptes, comptesTiers, tab }: UnifiedTabProps) {
 
       {/* Modals */}
       {showAdd && (
-        <AddCompteModal planEntries={plan.entries} onClose={() => setShowAdd(false)} />
+        <AddCompteModal existingComptes={comptes} onClose={() => setShowAdd(false)} />
       )}
       {showAddCentr && (
-        <AddCompteModal planEntries={plan.entries} centralizerMode onClose={() => setShowAddCentr(false)} />
+        <AddCompteModal existingComptes={comptes} centralizerMode onClose={() => setShowAddCentr(false)} />
       )}
       {addTiers && (
-        <AddCompteModal planEntries={plan.entries}
+        <AddCompteModal existingComptes={comptes}
           initialNumero={addTiers.numero} initialLabel={addTiers.intitule}
           onClose={() => setAddTiers(null)} />
       )}
       {activatePlan && (
-        <AddCompteModal planEntries={plan.entries}
+        <AddCompteModal existingComptes={comptes}
           initialNumero={activatePlan.numero} initialLabel={activatePlan.intitule}
           onClose={() => setActivatePlan(null)} />
       )}
@@ -801,8 +804,8 @@ export function ComptesPage() {
   const isLoading = planLoading || comptesLoading
   const isError   = planError   || comptesError
 
-  const totalAll   = comptes?.length ?? 0
-  const totalCentr = comptes?.filter(c => c.isCentralizer).length ?? 0
+  const totalAll   = comptes?.filter(c => !c.isCentralizer).length ?? 0
+  const totalCentr = comptes?.filter(c =>  c.isCentralizer).length ?? 0
 
   return (
     <div className="space-y-4">
