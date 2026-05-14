@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/shared/components/feedback/ErrorBoundary'
 const TABS: readonly SubTab[] = [
   { label: 'Entreprise',         to: '/app/settings/entreprise' },
   { label: 'Factures de ventes', to: '/app/settings/factures-ventes' },
+  { label: 'Comptabilité',       to: '/app/settings/comptabilite' },
   { label: 'Utilisateurs',       to: '/app/settings/utilisateurs' },
   { label: 'Agences',            to: '/app/settings/agences' },
   { label: 'Rôles & Accès',      to: '/app/settings/roles' },

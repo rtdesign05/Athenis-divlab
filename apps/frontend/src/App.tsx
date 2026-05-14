@@ -262,6 +262,7 @@ const router = createBrowserRouter([
           { index: true,           element: <Navigate to="entreprise" replace /> },
           { path: 'entreprise',       lazy: lz(() => import('@/pages/app/settings/EntreprisePage'),             'EntreprisePage') },
           { path: 'factures-ventes',  lazy: lz(() => import('@/pages/app/settings/FacturesVentesParamPage'),   'FacturesVentesParamPage') },
+          { path: 'comptabilite',   lazy: lz(() => import('@/pages/app/settings/ComptabiliteParamPage'),  'ComptabiliteParamPage') },
           { path: 'utilisateurs',  lazy: lz(() => import('@/pages/app/settings/UtilisateursPage'),  'UtilisateursPage') },
           { path: 'agences',       lazy: lz(() => import('@/pages/app/settings/AgencesPage'),       'AgencesPage') },
           { path: 'roles',         lazy: lz(() => import('@/pages/app/settings/RolesPage'),         'RolesPage') },
