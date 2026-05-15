@@ -1214,3 +1214,48 @@ export async function getGrandLivreByFiscalYear(companyId: string, fiscalYearId:
 
   return { fiscalYearId, year: fy.year, status: fy.status, comptes }
 }
+
+// ── Réimputation d'écritures ───────────────────────────────────────────────────
+
+/**
+ * Réimpute des écritures du journal vers un autre compte.
+ * - Vérifie que toutes les écritures appartiennent à la société (anti-IDOR)
+ * - Bloque si l'une des écritures est dans un exercice clôturé (CLOSED)
+ * - Efface le lettrage existant (invalide après changement de compte)
+ * - Met à jour le champ `compte` sur toutes les écritures sélectionnées
+ */
+export async function reimpute(
+  companyId: string,
+  entryIds: string[],
+  newAccount: string,
+): Promise<{ updated: number; newAccount: string }> {
+  const normalized = newAccount.trim()
+  if (!normalized) throw new AppError('Le compte cible est requis', 400, 'VALIDATION_ERROR')
+
+  // Charger les écritures avec leur exercice
+  const entries = await prisma.journalEntry.findMany({
+    where:   { id: { in: entryIds }, companyId },
+    select:  { id: true, fiscalYear: { select: { status: true } } },
+  })
+
+  if (entries.length !== entryIds.length) {
+    throw new AppError('Une ou plusieurs écritures introuvables ou inaccessibles', 404, 'NOT_FOUND')
+  }
+
+  const closedCount = entries.filter(e => e.fiscalYear?.status === 'CLOSED').length
+  if (closedCount > 0) {
+    throw new AppError(
+      `${closedCount} écriture(s) appartiennent à un exercice clôturé. Réouvrez l'exercice avant de réimputer.`,
+      403,
+      'FISCAL_YEAR_CLOSED',
+    )
+  }
+
+  // Mise à jour : nouveau compte + effacement du lettrage (invalide après réimputation)
+  await prisma.journalEntry.updateMany({
+    where: { id: { in: entryIds }, companyId },
+    data:  { compte: normalized, lettrage: null },
+  })
+
+  return { updated: entries.length, newAccount: normalized }
+}

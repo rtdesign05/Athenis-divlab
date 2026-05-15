@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useFiscalYears, useSelectedFiscalYearData } from '@/hooks/useFiscalYear'
 import { accountingApi } from '@/services/accountingApi'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+import { CompteCombobox, type CompteOption } from '@/components/accounting/CompteCombobox'
 import type { GrandLivreLigne } from '@/services/accountingApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -180,7 +181,7 @@ tr:nth-child(even) td{background:#fafafa}
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface MergedLigne extends GrandLivreLigne {
-  runningBalance: number   // solde recalculé sur la période complète
+  runningBalance: number
   fyYear: number
 }
 
@@ -190,12 +191,126 @@ interface MergedCompte {
   lignes: MergedLigne[]
 }
 
+// ── Modal de réimputation ─────────────────────────────────────────────────────
+
+interface ReimputeModalProps {
+  selectedIds:   string[]
+  sourceAccounts: string[]   // comptes sources distincts
+  onConfirm:     (newAccount: string) => void
+  onClose:       () => void
+  isPending:     boolean
+  error:         string | null
+}
+
+function ReimputeModal({ selectedIds, sourceAccounts, onConfirm, onClose, isPending, error }: ReimputeModalProps) {
+  const [targetRaw, setTargetRaw] = useState('')
+  const [targetAccount, setTargetAccount] = useState('')
+
+  function handleSelect(opt: CompteOption) {
+    setTargetAccount(opt.code)
+    setTargetRaw(opt.code)
+  }
+
+  const canConfirm = targetAccount.trim().length >= 2 && !isPending
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+         onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-[#1b4332]">
+          <div className="flex items-center gap-2">
+            <span className="text-white text-lg">↪</span>
+            <h2 className="text-sm font-semibold text-white">Réimputation d'écritures</h2>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white text-xl leading-none">✕</button>
+        </div>
+
+        <div className="p-6 space-y-5">
+
+          {/* Résumé */}
+          <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+            <p className="font-semibold mb-1">
+              {selectedIds.length} écriture{selectedIds.length > 1 ? 's' : ''} sélectionnée{selectedIds.length > 1 ? 's' : ''}
+            </p>
+            <p className="text-xs text-blue-700">
+              Compte{sourceAccounts.length > 1 ? 's' : ''} source&nbsp;:&nbsp;
+              {sourceAccounts.map(a => (
+                <span key={a} className="font-mono bg-blue-100 rounded px-1 mr-1">{a}</span>
+              ))}
+            </p>
+          </div>
+
+          {/* Compte cible */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide">
+              Compte cible <span className="text-red-500">*</span>
+            </label>
+            <CompteCombobox
+              value={targetRaw}
+              onChange={v => { setTargetRaw(v); setTargetAccount(v) }}
+              onSelect={handleSelect}
+              placeholder="Ex. 601100 ou saisir l'intitulé…"
+              autoFocus
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30"
+            />
+            <p className="text-xs text-gray-400">
+              Les écritures seront déplacées vers ce compte. Le lettrage sera effacé.
+            </p>
+          </div>
+
+          {/* Avertissement */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            ⚠️ <strong>Action irréversible</strong> — Cette opération modifie le compte des écritures sélectionnées.
+            Elle est impossible sur un exercice clôturé.
+          </div>
+
+          {/* Erreur API */}
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={onClose}
+              disabled={isPending}
+              className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-medium text-gray-600
+                         hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => canConfirm && onConfirm(targetAccount.trim())}
+              disabled={!canConfirm}
+              className="flex-1 rounded-xl bg-[#1b4332] py-2.5 text-sm font-semibold text-white
+                         hover:bg-[#2d6a4f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors
+                         flex items-center justify-center gap-2"
+            >
+              {isPending ? (
+                <><span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Réimputation…</>
+              ) : (
+                <>↪ Réimputer {selectedIds.length} écriture{selectedIds.length > 1 ? 's' : ''}</>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function GrandLivrePage() {
   const { fmt }              = useCurrency()
   const { company, country } = useCompanySettings()
   const navigate             = useNavigate()
+  const qc                   = useQueryClient()
   const [searchParams]       = useSearchParams()
   const { data: allFY, isLoading: yearsLoading } = useFiscalYears()
   const globalFY = useSelectedFiscalYearData()
@@ -210,6 +325,58 @@ export function GrandLivrePage() {
   const [dateFrom, setDateFrom] = useState(defaultFrom)
   const [dateTo,   setDateTo]   = useState(defaultTo)
   const [search,   setSearch]   = useState(compteParam)
+
+  // ── Sélection pour réimputation ───────────────────────────────────────────
+  const [selectedIds,    setSelectedIds]    = useState<Set<string>>(new Set())
+  const [showReimpute,   setShowReimpute]   = useState(false)
+  const [reimputeError,  setReimputeError]  = useState<string | null>(null)
+  const [successMsg,     setSuccessMsg]     = useState<string | null>(null)
+
+  const toggleEntry = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else              next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleAll = useCallback((ids: string[], allSelected: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (allSelected) ids.forEach(id => next.delete(id))
+      else             ids.forEach(id => next.add(id))
+      return next
+    })
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+    setShowReimpute(false)
+    setReimputeError(null)
+  }, [])
+
+  // ── Mutation réimputation ─────────────────────────────────────────────────
+  const reimputeMutation = useMutation({
+    mutationFn: ({ entryIds, newAccount }: { entryIds: string[]; newAccount: string }) =>
+      accountingApi.reimpute(entryIds, newAccount),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['grand-livre-journal'] })
+      qc.invalidateQueries({ queryKey: ['balance-journal'] })
+      qc.invalidateQueries({ queryKey: ['journal'] })
+      clearSelection()
+      setSuccessMsg(`✓ ${data.updated} écriture${data.updated > 1 ? 's' : ''} réimputée${data.updated > 1 ? 's' : ''} vers le compte ${data.newAccount}`)
+      setTimeout(() => setSuccessMsg(null), 5000)
+    },
+    onError: (err: Error) => {
+      setReimputeError(err.message ?? 'Erreur lors de la réimputation')
+    },
+  })
+
+  function handleReimputeConfirm(newAccount: string) {
+    setReimputeError(null)
+    reimputeMutation.mutate({ entryIds: Array.from(selectedIds), newAccount })
+  }
 
   // ── Exercices couverts par la plage ──────────────────────────────────────
   const coveredFYs = useMemo(() => {
@@ -262,7 +429,6 @@ export function GrandLivrePage() {
       }
     })
 
-    // Trier les lignes par date et recalculer le solde cumulatif sur la période
     return Array.from(compteMap.values())
       .sort((a, b) => a.account.localeCompare(b.account))
       .map(c => {
@@ -286,6 +452,18 @@ export function GrandLivrePage() {
       c.account.toLowerCase().includes(q) || c.label.toLowerCase().includes(q)
     )
   }, [mergedComptes, search])
+
+  // ── Comptes sources des écritures sélectionnées ───────────────────────────
+  const selectedSourceAccounts = useMemo(() => {
+    if (selectedIds.size === 0) return []
+    const accounts = new Set<string>()
+    for (const c of filteredComptes) {
+      for (const l of c.lignes) {
+        if (selectedIds.has(l.id)) accounts.add(c.account)
+      }
+    }
+    return Array.from(accounts).sort()
+  }, [selectedIds, filteredComptes])
 
   // ── Print ─────────────────────────────────────────────────────────────────
   function handlePrint() {
@@ -318,9 +496,9 @@ export function GrandLivrePage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-24">  {/* pb-24 to clear floating toolbar */}
 
-      {/* Fil d'Ariane — affiché quand on vient de la Balance */}
+      {/* Fil d'Ariane */}
       {compteParam && (
         <div className="flex items-center gap-2">
           <button
@@ -352,15 +530,29 @@ export function GrandLivrePage() {
               : 'Aucun exercice dans la plage sélectionnée'}
           </p>
         </div>
-        <button
-          onClick={handlePrint}
-          disabled={filteredComptes.length === 0}
-          className="flex items-center gap-2 rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-white
-                     hover:bg-[#2d6a4f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-        >
-          🖨 Éditer / Imprimer
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {selectedIds.size > 0 && (
+            <span className="rounded-full bg-[#1b4332] text-white text-xs font-semibold px-3 py-1">
+              {selectedIds.size} sélectionnée{selectedIds.size > 1 ? 's' : ''}
+            </span>
+          )}
+          <button
+            onClick={handlePrint}
+            disabled={filteredComptes.length === 0}
+            className="flex items-center gap-2 rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-white
+                       hover:bg-[#2d6a4f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            🖨 Éditer / Imprimer
+          </button>
+        </div>
       </div>
+
+      {/* Message succès */}
+      {successMsg && (
+        <div className="flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 font-medium">
+          {successMsg}
+        </div>
+      )}
 
       {/* Bannière lecture seule */}
       {hasClosedFY && (
@@ -415,29 +607,27 @@ export function GrandLivrePage() {
             })}
           </div>
 
-          {/* Raccourcis exercices passés */}
+          {/* Raccourcis exercices */}
           {(allFY ?? []).filter(fy => fy.id !== globalFY?.id).length > 0 && (
             <div className="flex items-end gap-1.5 flex-wrap">
               <span className="text-xs text-gray-400 self-center">Exercices :</span>
-              {(allFY ?? [])
-                .sort((a, b) => b.year - a.year)
-                .map(fy => {
-                  const active = dateFrom === fy.startDate.slice(0, 10) && dateTo === fy.endDate.slice(0, 10)
-                  const isClosed = fy.status === 'CLOSED' || fy.status === 'LOCKED'
-                  return (
-                    <button key={fy.id}
-                      onClick={() => applyPreset(fy.startDate.slice(0, 10), fy.endDate.slice(0, 10))}
-                      className={`rounded-md px-2.5 py-1.5 text-xs font-medium border transition-colors flex items-center gap-1
-                        ${active
-                          ? 'bg-[#1b4332] text-white border-[#1b4332]'
-                          : isClosed
-                            ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-                    >
-                      {isClosed && '🔒 '}{fy.year}
-                    </button>
-                  )
-                })}
+              {(allFY ?? []).sort((a, b) => b.year - a.year).map(fy => {
+                const active   = dateFrom === fy.startDate.slice(0, 10) && dateTo === fy.endDate.slice(0, 10)
+                const isClosed = fy.status === 'CLOSED' || fy.status === 'LOCKED'
+                return (
+                  <button key={fy.id}
+                    onClick={() => applyPreset(fy.startDate.slice(0, 10), fy.endDate.slice(0, 10))}
+                    className={`rounded-md px-2.5 py-1.5 text-xs font-medium border transition-colors
+                      ${active
+                        ? 'bg-[#1b4332] text-white border-[#1b4332]'
+                        : isClosed
+                          ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    {isClosed && '🔒 '}{fy.year}
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -474,9 +664,7 @@ export function GrandLivrePage() {
               return (
                 <span key={fy.id}
                   className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium
-                    ${isClosed
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-green-100 text-green-800'}`}
+                    ${isClosed ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}
                 >
                   {isClosed ? '🔒' : '✓'} {fy.year}
                   {' '}({fmtDate(fy.startDate)} → {fmtDate(fy.endDate)})
@@ -484,11 +672,6 @@ export function GrandLivrePage() {
                 </span>
               )
             })}
-            {coveredFYs.length === 0 && (
-              <span className="text-xs text-gray-400 italic">
-                Aucun exercice ne couvre cette plage. Créez ou étendez un exercice dans Paramètres.
-              </span>
-            )}
           </div>
         )}
       </div>
@@ -500,9 +683,7 @@ export function GrandLivrePage() {
         <div className="flex flex-col items-center justify-center py-20 gap-2 text-slate-500">
           <p className="text-2xl">📅</p>
           <p className="text-sm font-medium">Aucun exercice dans cette plage</p>
-          <p className="text-xs text-gray-400">
-            Modifiez les dates ou créez un exercice comptable dans Paramètres.
-          </p>
+          <p className="text-xs text-gray-400">Modifiez les dates ou créez un exercice dans Paramètres.</p>
         </div>
       )}
 
@@ -521,18 +702,38 @@ export function GrandLivrePage() {
         </div>
       )}
 
-      {/* Comptes */}
+      {/* ── Comptes ── */}
       {filteredComptes.map(c => {
         const totalD = c.lignes.reduce((s, l) => s + l.debit,  0)
         const totalC = c.lignes.reduce((s, l) => s + l.credit, 0)
         const solde  = totalD - totalC
+
+        const lineIds      = c.lignes.map(l => l.id)
+        const selectedHere = lineIds.filter(id => selectedIds.has(id))
+        const allSelected  = lineIds.length > 0 && selectedHere.length === lineIds.length
+        const someSelected = selectedHere.length > 0 && !allSelected
+
         return (
           <div key={c.account} className={`rounded-xl border bg-white overflow-hidden
-            ${hasClosedFY ? 'border-amber-200' : 'border-gray-200'}`}>
+            ${hasClosedFY ? 'border-amber-200' : selectedHere.length > 0 ? 'border-[#1b4332]/40' : 'border-gray-200'}`}>
+
             {/* Header compte */}
-            <div className={`border-b px-5 py-3 flex items-center justify-between gap-3
-              ${hasClosedFY ? 'bg-amber-50 border-amber-100' : 'bg-gray-50 border-gray-100'}`}>
+            <div className={`border-b px-4 py-3 flex items-center justify-between gap-3
+              ${hasClosedFY ? 'bg-amber-50 border-amber-100'
+                : selectedHere.length > 0 ? 'bg-[#1b4332]/5 border-[#1b4332]/10'
+                : 'bg-gray-50 border-gray-100'}`}>
               <div className="flex items-center gap-3">
+                {/* Checkbox select-all pour ce compte */}
+                {!hasClosedFY && (
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={el => { if (el) el.indeterminate = someSelected }}
+                    onChange={() => toggleAll(lineIds, allSelected)}
+                    className="h-4 w-4 rounded border-gray-300 text-[#1b4332] focus:ring-[#1b4332] cursor-pointer"
+                    title={allSelected ? 'Tout désélectionner' : 'Tout sélectionner'}
+                  />
+                )}
                 <span className="font-mono text-sm font-semibold text-[#1b4332] bg-[#1b4332]/10 rounded px-2 py-0.5">
                   {c.account}
                 </span>
@@ -541,6 +742,11 @@ export function GrandLivrePage() {
                 {hasClosedFY && (
                   <span className="text-[10px] font-medium bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 border border-amber-200">
                     🔒 Lecture seule
+                  </span>
+                )}
+                {selectedHere.length > 0 && (
+                  <span className="text-[10px] font-medium bg-[#1b4332] text-white rounded-full px-2 py-0.5">
+                    {selectedHere.length} sélectionnée{selectedHere.length > 1 ? 's' : ''}
                   </span>
                 )}
               </div>
@@ -557,6 +763,7 @@ export function GrandLivrePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 text-left text-xs font-semibold text-gray-500">
+                    {!hasClosedFY && <th className="pl-4 pr-2 py-2.5 w-8" />}
                     <th className="px-4 py-2.5">Date</th>
                     <th className="px-4 py-2.5">Journal</th>
                     <th className="px-4 py-2.5">Pièce</th>
@@ -567,32 +774,53 @@ export function GrandLivrePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {c.lignes.map(l => (
-                    <tr key={`${l.id}-${l.fyYear}`} className="hover:bg-gray-50/50">
-                      <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{fmtDate(l.date)}</td>
-                      <td className="px-4 py-2">
-                        <span className="text-xs font-medium bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">
-                          {l.journalCode}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 font-mono text-xs text-gray-400">{l.reference ?? '—'}</td>
-                      <td className="px-4 py-2 text-gray-700">{l.label}</td>
-                      <td className="px-4 py-2 text-right font-medium text-blue-700">
-                        {l.debit ? fmt(l.debit) : ''}
-                      </td>
-                      <td className="px-4 py-2 text-right font-medium text-orange-600">
-                        {l.credit ? fmt(l.credit) : ''}
-                      </td>
-                      <td className={`px-4 py-2 text-right font-semibold
-                        ${l.runningBalance >= 0 ? 'text-[#1b4332]' : 'text-red-600'}`}>
-                        {fmt(Math.abs(l.runningBalance))}{' '}
-                        <span className="text-xs font-normal">{l.runningBalance >= 0 ? 'D' : 'C'}</span>
-                      </td>
-                    </tr>
-                  ))}
+                  {c.lignes.map(l => {
+                    const isSelected = selectedIds.has(l.id)
+                    return (
+                      <tr
+                        key={`${l.id}-${l.fyYear}`}
+                        className={`transition-colors ${
+                          isSelected
+                            ? 'bg-[#1b4332]/5 hover:bg-[#1b4332]/8'
+                            : 'hover:bg-gray-50/50'
+                        }`}
+                      >
+                        {!hasClosedFY && (
+                          <td className="pl-4 pr-2 py-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleEntry(l.id)}
+                              className="h-4 w-4 rounded border-gray-300 text-[#1b4332] focus:ring-[#1b4332] cursor-pointer"
+                            />
+                          </td>
+                        )}
+                        <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{fmtDate(l.date)}</td>
+                        <td className="px-4 py-2">
+                          <span className="text-xs font-medium bg-gray-100 text-gray-600 rounded px-1.5 py-0.5">
+                            {l.journalCode}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 font-mono text-xs text-gray-400">{l.reference ?? '—'}</td>
+                        <td className="px-4 py-2 text-gray-700">{l.label}</td>
+                        <td className="px-4 py-2 text-right font-medium text-blue-700">
+                          {l.debit ? fmt(l.debit) : ''}
+                        </td>
+                        <td className="px-4 py-2 text-right font-medium text-orange-600">
+                          {l.credit ? fmt(l.credit) : ''}
+                        </td>
+                        <td className={`px-4 py-2 text-right font-semibold
+                          ${l.runningBalance >= 0 ? 'text-[#1b4332]' : 'text-red-600'}`}>
+                          {fmt(Math.abs(l.runningBalance))}{' '}
+                          <span className="text-xs font-normal">{l.runningBalance >= 0 ? 'D' : 'C'}</span>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold text-sm">
+                    {!hasClosedFY && <td />}
                     <td colSpan={4} className="px-4 py-2.5 text-gray-700">
                       Totaux — {c.account}
                     </td>
@@ -609,6 +837,49 @@ export function GrandLivrePage() {
           </div>
         )
       })}
+
+      {/* ── Barre flottante de sélection ── */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40
+                        flex items-center gap-3 rounded-2xl border border-[#1b4332]/20
+                        bg-[#1b4332] text-white shadow-2xl px-5 py-3 min-w-max">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-bold">
+              {selectedIds.size}
+            </span>
+            <span className="text-sm font-medium">
+              écriture{selectedIds.size > 1 ? 's' : ''} sélectionnée{selectedIds.size > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="h-5 w-px bg-white/30" />
+          <button
+            onClick={() => { setReimputeError(null); setShowReimpute(true) }}
+            className="flex items-center gap-1.5 rounded-xl bg-white text-[#1b4332] px-4 py-1.5
+                       text-sm font-semibold hover:bg-green-50 transition-colors"
+          >
+            ↪ Réimputer vers…
+          </button>
+          <button
+            onClick={clearSelection}
+            className="text-white/70 hover:text-white text-sm ml-1 transition-colors"
+            title="Annuler la sélection"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* ── Modal réimputation ── */}
+      {showReimpute && (
+        <ReimputeModal
+          selectedIds={Array.from(selectedIds)}
+          sourceAccounts={selectedSourceAccounts}
+          onConfirm={handleReimputeConfirm}
+          onClose={() => { setShowReimpute(false); setReimputeError(null) }}
+          isPending={reimputeMutation.isPending}
+          error={reimputeError}
+        />
+      )}
     </div>
   )
 }

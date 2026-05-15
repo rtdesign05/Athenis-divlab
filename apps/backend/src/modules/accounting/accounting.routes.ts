@@ -489,6 +489,23 @@ accountingRouter.delete(
   },
 )
 
+// ── Réimputation ──────────────────────────────────────────────────────────────
+
+accountingRouter.put(
+  '/journal/reimpute',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { entryIds, newAccount } = req.body as { entryIds?: string[]; newAccount?: string }
+      if (!Array.isArray(entryIds) || entryIds.length === 0 || !newAccount) {
+        throw new AppError('entryIds (tableau non vide) et newAccount sont requis', 400, 'VALIDATION_ERROR')
+      }
+      const data = await svc.reimpute(getCompanyId(req)!, entryIds, newAccount)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
 // ── Lettrage ──────────────────────────────────────────────────────────────────
 
 accountingRouter.put(

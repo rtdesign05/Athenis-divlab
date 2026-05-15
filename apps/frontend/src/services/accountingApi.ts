@@ -155,6 +155,8 @@ export const accountingApi = {
     api.delete(`/accounting/journal/piece/${pieceId}`),
   deleteJournalEntry: (id: string) =>
     api.delete(`/accounting/journal/${id}`),
+  reimpute: (entryIds: string[], newAccount: string) =>
+    api.put<{ data: { updated: number; newAccount: string } }>('/accounting/journal/reimpute', { entryIds, newAccount }).then(d),
   setLettrage: (entryIds: string[], code: string) =>
     api.put<{ data: { updated: number; code: string } }>('/accounting/journal/lettrage', { entryIds, code }).then(d),
   deleteLettrage: (code: string, fiscalYearId: string) =>
