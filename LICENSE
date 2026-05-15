@@ -1,0 +1,89 @@
+LICENCE PROPRIÉTAIRE — LOGICIEL CONFIDENTIEL
+============================================
+
+Copyright (c) 2024-2026 Ulrich Mouafo. Tous droits réservés.
+
+AVERTISSEMENT — LECTURE OBLIGATOIRE AVANT TOUT ACCÈS AU CODE SOURCE
+
+Ce logiciel, son code source, sa documentation, ses bases de données,
+ses interfaces, ses algorithmes, ses structures de données et toute
+information associée (ci-après « le Logiciel ») constituent des œuvres
+protégées par le droit d'auteur et sont la propriété exclusive de
+Ulrich Mouafo (ci-après « le Propriétaire »).
+
+1. DROITS ACCORDÉS
+   L'accès à ce dépôt est accordé à titre strictement personnel et
+   confidentiel. Aucune licence d'utilisation, de reproduction ou
+   de distribution n'est accordée par le simple fait d'avoir accès
+   au code source.
+
+2. INTERDICTIONS
+   Sont strictement interdits, sans autorisation écrite préalable
+   et explicite du Propriétaire :
+
+   a) La copie, reproduction ou duplication du Logiciel, en tout
+      ou en partie, sous quelque forme que ce soit ;
+
+   b) La modification, adaptation, traduction ou création d'œuvres
+      dérivées basées sur le Logiciel ;
+
+   c) La distribution, vente, location, prêt, sous-licence ou mise
+      à disposition du Logiciel à des tiers ;
+
+   d) L'utilisation du Logiciel à des fins commerciales ou pour
+      développer un produit concurrent ;
+
+   e) La décompilation, le désassemblage ou toute tentative d'accès
+      au code source par rétro-ingénierie ;
+
+   f) La suppression ou modification des mentions de copyright,
+      de marque ou des présentes conditions.
+
+3. CONFIDENTIALITÉ
+   Toute personne ayant accès au Logiciel s'engage à :
+
+   - Maintenir la stricte confidentialité du code source et de
+     toute information technique associée ;
+   - Ne pas divulguer, publier ou partager le Logiciel ou des
+     informations le concernant à des tiers sans autorisation ;
+   - Informer immédiatement le Propriétaire de tout accès non
+     autorisé ou de toute violation de la présente licence.
+
+4. SANCTIONS
+   Toute violation des présentes conditions expose le contrevenant
+   à des poursuites civiles et pénales, notamment au titre de :
+
+   - La contrefaçon (Code de la Propriété Intellectuelle) ;
+   - La concurrence déloyale ;
+   - La violation du secret des affaires (Directive UE 2016/943) ;
+   - Le vol de données informatiques (Code pénal).
+
+   Le Propriétaire se réserve le droit de réclamer des dommages
+   et intérêts à hauteur du préjudice subi.
+
+5. ABSENCE DE GARANTIE
+   Le Logiciel est fourni « tel quel » sans garantie d'aucune sorte.
+   Le Propriétaire ne saurait être tenu responsable de tout dommage
+   direct ou indirect résultant de l'utilisation du Logiciel.
+
+6. LOI APPLICABLE
+   La présente licence est régie par le droit français. Tout litige
+   sera soumis à la compétence exclusive des tribunaux français.
+
+7. CONTACT
+   Pour toute demande d'autorisation ou question relative à cette
+   licence, contacter : mouafoulrich15@gmail.com
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PROPRIETARY LICENSE — CONFIDENTIAL SOFTWARE
+
+Copyright (c) 2024-2026 Ulrich Mouafo. All rights reserved.
+
+This software and its source code are the exclusive property of
+Ulrich Mouafo. Access to this repository does not grant any license
+to use, copy, modify, distribute or sublicense the software.
+
+Any unauthorized use, reproduction or distribution of this software,
+in whole or in part, is strictly prohibited and may result in civil
+and criminal penalties.

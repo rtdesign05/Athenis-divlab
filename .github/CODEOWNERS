@@ -1,0 +1,24 @@
+# CODEOWNERS — Athenis
+#
+# Chaque Pull Request doit être approuvée par le propriétaire du projet
+# avant de pouvoir être fusionnée dans main.
+#
+# Référence : https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Propriétaire par défaut pour tous les fichiers
+* @ulrichmouafo
+
+# Backend
+apps/backend/ @ulrichmouafo
+
+# Frontend
+apps/frontend/ @ulrichmouafo
+
+# Infrastructure
+infra/ @ulrichmouafo
+
+# Packages partagés
+packages/ @ulrichmouafo
+
+# Configuration CI/CD et sécurité
+.github/ @ulrichmouafo
