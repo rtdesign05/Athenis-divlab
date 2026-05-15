@@ -666,17 +666,15 @@ export function JournalPage() {
                 </tr>
               ) : (
                 groups.map((group, gi) => {
-                  const isHovered  = hoveredKey === group.key
-                  const isMulti    = group.rows.length > 1
-                  const groupBg    = isHovered
+                  const isHovered = hoveredKey === group.key
+                  const groupBg   = isHovered
                     ? 'bg-blue-50/60'
                     : gi % 2 === 0 ? '' : 'bg-slate-50/60'
-                  const borderCol  = JOURNAL_BORDER[group.rows[0]?.journalCode ?? ''] ?? 'border-l-gray-300'
+                  const borderCol = JOURNAL_BORDER[group.rows[0]?.journalCode ?? ''] ?? 'border-l-gray-300'
                   return (
                     <Fragment key={group.key}>
                       {group.rows.map((e, ri) => {
                         const isFirstRow = ri === 0
-                        const isLastRow  = ri === group.rows.length - 1
                         return (
                           <tr key={e.id}
                             onMouseEnter={() => setHoveredKey(group.key)}
@@ -685,40 +683,25 @@ export function JournalPage() {
                               isFirstRow && gi > 0 ? 'border-t-2 border-gray-200' : 'border-t border-gray-100'
                             }`}>
 
-                            {/* Colonne indicateur : bordure colorée (première ligne) + trait de continuation */}
+                            {/* Bordure colorée par journal */}
                             <td className="w-1.5 p-0">
-                              {isFirstRow ? (
-                                <div className={`h-full w-1.5 border-l-4 ${borderCol} ${isMulti ? 'rounded-tl' : 'rounded-l'}`} />
-                              ) : (
-                                <div className={`h-full w-1.5 border-l-4 ${borderCol} opacity-30 ${isLastRow ? 'rounded-bl' : ''}`} />
-                              )}
+                              <div className={`h-full w-1.5 border-l-4 ${borderCol}`} />
                             </td>
 
                             <td className="px-4 py-2 text-gray-500 text-xs whitespace-nowrap">
-                              {isFirstRow ? formatDate(e.date) : ''}
+                              {formatDate(e.date)}
                             </td>
                             <td className="px-4 py-2">
-                              {isFirstRow && (
-                                <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${JOURNAL_COLOR[e.journalCode] ?? 'bg-gray-100 text-gray-600'}`}>
-                                  {e.journalCode}
+                              <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${JOURNAL_COLOR[e.journalCode] ?? 'bg-gray-100 text-gray-600'}`}>
+                                {e.journalCode}
+                              </span>
+                            </td>
+                            {/* Pièce / Référence sur toutes les lignes */}
+                            <td className="px-4 py-2">
+                              {e.reference && (
+                                <span className="font-mono text-xs text-gray-500 truncate max-w-[110px]" title={e.reference}>
+                                  {e.reference}
                                 </span>
-                              )}
-                            </td>
-                            {/* Pièce / Référence : uniquement sur première ligne + badge nb lignes */}
-                            <td className="px-4 py-2">
-                              {isFirstRow && (
-                                <div className="flex items-center gap-1.5">
-                                  {e.reference && (
-                                    <span className="font-mono text-xs text-gray-500 truncate max-w-[110px]" title={e.reference}>
-                                      {e.reference}
-                                    </span>
-                                  )}
-                                  {isMulti && (
-                                    <span className="inline-flex items-center rounded-full bg-[#1b4332]/10 text-[#1b4332] text-[10px] font-semibold px-1.5 py-0.5 leading-none whitespace-nowrap">
-                                      {group.rows.length} L
-                                    </span>
-                                  )}
-                                </div>
                               )}
                             </td>
 
