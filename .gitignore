@@ -20,3 +20,12 @@ coverage/
 # Temp
 *.tmp
 *.temp
+
+# SSL certificates — never commit real certs
+infra/nginx/certs/*.pem
+infra/nginx/certs/*.crt
+infra/nginx/certs/*.key
+
+# Backups
+*.sql.gz
+*.sql.bak
