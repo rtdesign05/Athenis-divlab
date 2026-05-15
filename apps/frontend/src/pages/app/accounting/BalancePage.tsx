@@ -111,6 +111,7 @@ function openBalancePrint(
   coveredYears: number[],
   multiYear: boolean,
   tabLabel: string,
+  showEqCheck = true,   // false pour les vues partielles (clients, fournisseurs)
 ) {
   const today    = new Date().toLocaleDateString('fr-FR')
   const isOHADA  = !['FR', 'BE', 'CH', 'LU'].includes(info.country)
@@ -222,11 +223,12 @@ tfoot td{font-size:8.5pt;font-weight:bold;padding:4px 6px;border:.5px solid #ccc
       </tr>
     </tfoot>
   </table>
+  ${showEqCheck ? `
   <div class="eq-block ${equilibre ? 'eq-ok' : 'eq-err'}">
     <span>${equilibre ? '✓ Balance ÉQUILIBRÉE' : '✗ Balance DÉSÉQUILIBRÉE'}</span>
     <span>Σ Débit = Σ Crédit = ${fmtAmt(totalDebit)}</span>
     ${!equilibre ? `<span>Écart : ${fmtAmt(Math.abs(totalDebit - totalCredit))}</span>` : ''}
-  </div>
+  </div>` : ''}
   <div class="footer">
     <span>${refText}</span>
     <span>Édité le ${today} — ${info.companyName}</span>
@@ -414,16 +416,17 @@ function BalanceRowUI({ r, fmt, onClick }: { r: BalanceRow; fmt: (v: number) => 
 interface BalanceTableProps {
   rows:       BalanceRow[]
   groupByClass: boolean
-  totalD:     number
-  totalC:     number
-  equilibre:  boolean
+  totalD:      number
+  totalC:      number
+  equilibre:   boolean
+  showEqCheck?: boolean  // false pour les vues partielles (clients, fournisseurs)
   hasClosedFY: boolean
-  search:     string
-  fmt:        (v: number) => string
-  navigate:   (to: string) => void
+  search:      string
+  fmt:         (v: number) => string
+  navigate:    (to: string) => void
 }
 
-function BalanceTable({ rows, groupByClass, totalD, totalC, equilibre, hasClosedFY, search, fmt, navigate }: BalanceTableProps) {
+function BalanceTable({ rows, groupByClass, totalD, totalC, equilibre, showEqCheck = true, hasClosedFY, search, fmt, navigate }: BalanceTableProps) {
   const groupedRows = useMemo(() => {
     if (!groupByClass) return null
     const map = new Map<string, BalanceRow[]>()
@@ -500,17 +503,19 @@ function BalanceTable({ rows, groupByClass, totalD, totalC, equilibre, hasClosed
           </tfoot>
         </table>
       </div>
-      <div className={`flex items-center justify-between px-5 py-3 border-t text-sm font-medium
-        ${equilibre ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-        <span>
-          {equilibre ? '✓ Balance équilibrée' : '✗ Balance déséquilibrée'}
-          {search && ' (sur la sélection)'}
-        </span>
-        <span className="text-xs font-normal opacity-75">
-          Σ Débit = Σ Crédit = {fmt(totalD)}
-          {!equilibre && <> · Écart : {fmt(Math.abs(totalD - totalC))}</>}
-        </span>
-      </div>
+      {showEqCheck && (
+        <div className={`flex items-center justify-between px-5 py-3 border-t text-sm font-medium
+          ${equilibre ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+          <span>
+            {equilibre ? '✓ Balance équilibrée' : '✗ Balance déséquilibrée'}
+            {search && ' (sur la sélection)'}
+          </span>
+          <span className="text-xs font-normal opacity-75">
+            Σ Débit = Σ Crédit = {fmt(totalD)}
+            {!equilibre && <> · Écart : {fmt(Math.abs(totalD - totalC))}</>}
+          </span>
+        </div>
+      )}
     </div>
   )
 }
@@ -725,7 +730,13 @@ export function BalancePage() {
 
   const activeTotalD  = activeRows.reduce((s, r) => s + r.totalDebit,  0)
   const activeTotalC  = activeRows.reduce((s, r) => s + r.totalCredit, 0)
-  const activeEq      = Math.abs(activeTotalD - activeTotalC) < 0.01
+  // L'équilibre débit=crédit n'a de sens que pour la balance GÉNÉRALE (tous comptes).
+  // Les vues partielles (clients 41x, fournisseurs 40x) sont structurellement déséquilibrées
+  // car leurs contreparties (produits, charges, trésorerie…) n'y figurent pas.
+  const showEquilibreCheck = activeTab === 'generale'
+  const activeEq      = showEquilibreCheck
+    ? Math.abs(activeTotalD - activeTotalC) < 0.01
+    : true   // pas de vérification sur les vues filtrées
 
   // ── Balance âgée — tous tiers (calculé quand onglet âgée actif) ───────────
   const allAgedRows = useMemo((): AgedRow[] => {
@@ -851,6 +862,7 @@ export function BalancePage() {
       activeTotalD, activeTotalC, activeEq,
       fmt, hasClosedFY, coveredYears, isMultiYear,
       tabLabel,
+      showEquilibreCheck,
     )
   }
 
@@ -876,7 +888,7 @@ export function BalancePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {mergedRows.length > 0 && !isAgeeTab && (
+          {mergedRows.length > 0 && showEquilibreCheck && (
             <span className={`rounded-full px-3 py-1 text-xs font-medium
               ${activeEq ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
               {activeEq ? '✓ Équilibrée' : '✗ Déséquilibrée'}
@@ -1112,6 +1124,7 @@ export function BalancePage() {
               )}
               <BalanceTable rows={clientRows} groupByClass={false}
                 totalD={activeTotalD} totalC={activeTotalC} equilibre={activeEq}
+                showEqCheck={false}
                 hasClosedFY={hasClosedFY} search={search} fmt={fmt} navigate={navigate} />
             </>
           )}
@@ -1148,6 +1161,7 @@ export function BalancePage() {
               )}
               <BalanceTable rows={fournisseurRows} groupByClass={false}
                 totalD={activeTotalD} totalC={activeTotalC} equilibre={activeEq}
+                showEqCheck={false}
                 hasClosedFY={hasClosedFY} search={search} fmt={fmt} navigate={navigate} />
             </>
           )}
