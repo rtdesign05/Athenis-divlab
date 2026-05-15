@@ -824,8 +824,52 @@ export async function getJournalByFiscalYear(companyId: string, fiscalYearId: st
       debit:       Number(e.debit),
       credit:      Number(e.credit),
       reference:   e.reference,
+      lettrage:    e.lettrage ?? null,
     })),
   }
+}
+
+// ── Lettrage ────────────────────────────────────────────────────────────────
+
+/** Assign a lettrage code to a set of journal entries (must all belong to same company). */
+export async function setLettrage(
+  companyId: string,
+  entryIds: string[],
+  code: string,
+) {
+  if (!entryIds.length) throw new AppError('Aucune écriture sélectionnée', 400, 'VALIDATION_ERROR')
+  if (!code.trim()) throw new AppError('Code de lettrage manquant', 400, 'VALIDATION_ERROR')
+  const normalCode = code.trim().toUpperCase()
+
+  // Verify all entries belong to this company
+  const count = await prisma.journalEntry.count({
+    where: { id: { in: entryIds }, companyId },
+  })
+  if (count !== entryIds.length) {
+    throw new AppError('Une ou plusieurs écritures introuvables', 404, 'NOT_FOUND')
+  }
+
+  await prisma.journalEntry.updateMany({
+    where: { id: { in: entryIds }, companyId },
+    data:  { lettrage: normalCode },
+  })
+  return { updated: entryIds.length, code: normalCode }
+}
+
+/** Remove a lettrage code from all entries sharing it in a given fiscal year. */
+export async function deleteLettrage(
+  companyId: string,
+  code: string,
+  fiscalYearId: string,
+) {
+  if (!code.trim()) throw new AppError('Code de lettrage manquant', 400, 'VALIDATION_ERROR')
+  const normalCode = code.trim().toUpperCase()
+
+  const result = await prisma.journalEntry.updateMany({
+    where: { companyId, fiscalYearId, lettrage: normalCode },
+    data:  { lettrage: null },
+  })
+  return { unlettered: result.count }
 }
 
 export async function createJournalEntry(
@@ -877,6 +921,31 @@ export async function createJournalEntryBatch(
   }
   if (data.lines.length < 2) {
     throw new AppError('Au moins 2 lignes sont requises pour une écriture comptable', 400, 'VALIDATION_ERROR')
+  }
+
+  // ── Date within fiscal year ─────────────────────────────────────────────────
+  // Extournes are intentionally dated N+1 — only block dates clearly outside the
+  // fiscal year by more than 1 year (hard error) or warn for dates outside the
+  // FY period by up to 1 year (soft warning returned in response).
+  const entryDate = data.date
+  const fyStart   = new Date(fy.startDate)
+  const fyEnd     = new Date(fy.endDate)
+  // Allow entries dated up to 12 months after FY end (covers Jan 1 N+1 extournes)
+  const hardCutoff = new Date(fyEnd)
+  hardCutoff.setFullYear(hardCutoff.getFullYear() + 1)
+  if (entryDate < new Date(fyStart.getFullYear() - 1, 0, 1)) {
+    throw new AppError(
+      `La date de l'écriture (${entryDate.toISOString().slice(0,10)}) est trop ancienne pour l'exercice ${fy.year}`,
+      400,
+      'DATE_OUT_OF_RANGE',
+    )
+  }
+  if (entryDate > hardCutoff) {
+    throw new AppError(
+      `La date de l'écriture (${entryDate.toISOString().slice(0,10)}) dépasse d'un an la fin de l'exercice ${fy.year}`,
+      400,
+      'DATE_OUT_OF_RANGE',
+    )
   }
   const totalDebit  = data.lines.reduce((s, l) => s + l.debit,  0)
   const totalCredit = data.lines.reduce((s, l) => s + l.credit, 0)

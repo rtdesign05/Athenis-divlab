@@ -489,6 +489,37 @@ accountingRouter.delete(
   },
 )
 
+// ── Lettrage ──────────────────────────────────────────────────────────────────
+
+accountingRouter.put(
+  '/journal/lettrage',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { entryIds, code } = req.body as { entryIds?: string[]; code?: string }
+      if (!Array.isArray(entryIds) || entryIds.length === 0 || !code) {
+        throw new AppError('entryIds (tableau) et code sont requis', 400, 'VALIDATION_ERROR')
+      }
+      const data = await svc.setLettrage(getCompanyId(req)!, entryIds, code)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.delete(
+  '/journal/lettrage/:code',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { code } = req.params as { code: string }
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await svc.deleteLettrage(getCompanyId(req)!, code, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
 accountingRouter.get(
   '/balance-journal',
   checkModule('comptabilite', 'read'),

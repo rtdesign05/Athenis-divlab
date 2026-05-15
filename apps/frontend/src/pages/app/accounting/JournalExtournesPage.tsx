@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { accountingApi } from '@/services/accountingApi'
 import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
-import type { JournalEntryRow } from '@/services/accountingApi'
+import type { JournalEntryRow, FiscalYear } from '@/services/accountingApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -30,15 +30,33 @@ const JOURNAL_COLOR: Record<string, string> = {
 // ── Extourne Modal ────────────────────────────────────────────────────────────
 
 interface ExtourneModalProps {
-  entries:   JournalEntryRow[]     // all entries of the same pieceId
-  fyId:      string
-  onSuccess: () => void
-  onClose:   () => void
+  entries:    JournalEntryRow[]     // all entries of the same pieceId
+  fyId:       string
+  fiscalYear: FiscalYear | null     // for date validation
+  onSuccess:  () => void
+  onClose:    () => void
 }
 
-function ExtourneModal({ entries, fyId, onSuccess, onClose }: ExtourneModalProps) {
-  const [date, setDate] = useState(todayISO())
+/** Suggests Jan 1 of the year AFTER the fiscal year — recommended SYSCOHADA/PCG practice. */
+function suggestExtourneDate(fy: FiscalYear | null): string {
+  if (!fy) return todayISO()
+  const nextYear = fy.year + 1
+  return `${nextYear}-01-01`
+}
+
+function ExtourneModal({ entries, fyId, fiscalYear, onSuccess, onClose }: ExtourneModalProps) {
+  const [date, setDate] = useState(() => suggestExtourneDate(fiscalYear))
   const [done, setDone] = useState(false)
+
+  // ── Date validation relative to fiscal year ────────────────────────────────
+  const fyStart = fiscalYear ? new Date(fiscalYear.startDate) : null
+  const fyEnd   = fiscalYear ? new Date(fiscalYear.endDate)   : null
+  const selectedDate = date ? new Date(date) : null
+
+  const isBeforeFY = selectedDate && fyStart && selectedDate < fyStart
+  const isAfterFY  = selectedDate && fyEnd   && selectedDate > fyEnd
+  const isOutsideFY = !!(isBeforeFY || isAfterFY)
+  const isNextYear = selectedDate && fiscalYear && selectedDate.getFullYear() === fiscalYear.year + 1
 
   const qc = useQueryClient()
   const { mutate: createBatch, isPending } = useMutation({
@@ -93,10 +111,47 @@ function ExtourneModal({ entries, fyId, onSuccess, onClose }: ExtourneModalProps
           ) : (
             <>
               {/* Date picker */}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Date de l'extourne</label>
-                <input type="date" value={date} onChange={e => setDate(e.target.value)}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500/30" />
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-gray-600">Date de l'extourne</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={e => setDate(e.target.value)}
+                    className={`rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                      isOutsideFY
+                        ? 'border-amber-400 focus:ring-amber-400/30'
+                        : 'border-gray-200 focus:ring-forest-500/30'
+                    }`}
+                  />
+                  {fiscalYear && (
+                    <button
+                      type="button"
+                      onClick={() => setDate(suggestExtourneDate(fiscalYear))}
+                      className="text-xs text-forest-700 underline hover:text-forest-900"
+                    >
+                      ← 1 jan. {fiscalYear.year + 1} (recommandé)
+                    </button>
+                  )}
+                </div>
+
+                {/* Validation messages */}
+                {isOutsideFY && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    ⚠️ Cette date est en dehors de l'exercice {fiscalYear?.year} ({fiscalYear?.startDate?.slice(0,10)} – {fiscalYear?.endDate?.slice(0,10)}).
+                    L'extourne sera enregistrée dans l'exercice de la date choisie.
+                  </div>
+                )}
+                {isNextYear && !isOutsideFY && (
+                  <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+                    ✅ Bonne pratique SYSCOHADA/PCG : extourne au 1er janvier {fiscalYear?.year + 1} pour régulariser l'exercice {fiscalYear?.year}.
+                  </div>
+                )}
+                {!isOutsideFY && !isNextYear && (
+                  <p className="text-xs text-gray-400">
+                    💡 Conseil : datez l'extourne au 1er janvier {fiscalYear ? fiscalYear.year + 1 : 'N+1'} selon les normes comptables.
+                  </p>
+                )}
               </div>
 
               {/* Preview table */}
@@ -160,6 +215,12 @@ export function JournalExtournesPage() {
 
   const [selectedFyId, setSelectedFyId] = useState<string | null>(null)
   const fyId = selectedFyId ?? fy?.id ?? null
+
+  // Resolve the full FiscalYear object for the active fyId
+  const activeFY = useMemo(() => {
+    if (!years || !fyId) return null
+    return years.find(y => y.id === fyId) ?? null
+  }, [years, fyId])
 
   const { data: journal, isLoading } = useQuery({
     queryKey: ['journal', fyId],
@@ -333,6 +394,7 @@ export function JournalExtournesPage() {
         <ExtourneModal
           entries={extourning}
           fyId={fyId}
+          fiscalYear={activeFY}
           onSuccess={() => {}}
           onClose={() => setExtourning(null)}
         />

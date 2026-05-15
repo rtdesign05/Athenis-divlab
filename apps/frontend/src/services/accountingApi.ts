@@ -155,6 +155,10 @@ export const accountingApi = {
     api.delete(`/accounting/journal/piece/${pieceId}`),
   deleteJournalEntry: (id: string) =>
     api.delete(`/accounting/journal/${id}`),
+  setLettrage: (entryIds: string[], code: string) =>
+    api.put<{ data: { updated: number; code: string } }>('/accounting/journal/lettrage', { entryIds, code }).then(d),
+  deleteLettrage: (code: string, fiscalYearId: string) =>
+    api.delete<{ data: { unlettered: number } }>(`/accounting/journal/lettrage/${encodeURIComponent(code)}`, { params: { fiscalYearId } }).then(d),
   getBalanceByFiscalYear: (fiscalYearId: string) =>
     api.get<{ data: BalanceData }>('/accounting/balance-journal', { params: { fiscalYearId } }).then(d),
   getGrandLivreByFiscalYear: (fiscalYearId: string) =>
@@ -236,6 +240,7 @@ export interface JournalEntryRow {
   debit:       number
   credit:      number
   reference:   string | null
+  lettrage:    string | null
 }
 
 export interface JournalData {

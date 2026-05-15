@@ -7,6 +7,47 @@ import { useCurrency } from '@/hooks/useCurrency'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import type { BalanceRow } from '@/services/accountingApi'
 
+// ── Tab types ─────────────────────────────────────────────────────────────────
+
+type BalanceTab = 'generale' | 'clients' | 'fournisseurs' | 'agee'
+
+const TABS: { id: BalanceTab; label: string }[] = [
+  { id: 'generale',     label: 'Balance générale' },
+  { id: 'clients',      label: 'Balance clients' },
+  { id: 'fournisseurs', label: 'Balance fournisseurs' },
+  { id: 'agee',         label: 'Balance âgée' },
+]
+
+type AgingBucket = 'courant' | '0-30' | '31-60' | '61-90' | '91+'
+
+const AGING_BUCKETS: AgingBucket[] = ['courant', '0-30', '31-60', '61-90', '91+']
+const AGING_LABELS: Record<AgingBucket, string> = {
+  'courant': 'Non échu',
+  '0-30':    '0 – 30 j',
+  '31-60':   '31 – 60 j',
+  '61-90':   '61 – 90 j',
+  '91+':     '> 90 j',
+}
+const AGING_COLORS: Record<AgingBucket, string> = {
+  'courant': 'text-green-700',
+  '0-30':    'text-blue-700',
+  '31-60':   'text-amber-600',
+  '61-90':   'text-orange-600',
+  '91+':     'text-red-700',
+}
+
+function getAgingBucket(ageDays: number): AgingBucket {
+  if (ageDays <  0)  return 'courant'
+  if (ageDays <= 30) return '0-30'
+  if (ageDays <= 60) return '31-60'
+  if (ageDays <= 90) return '61-90'
+  return '91+'
+}
+
+// Account classification (same for PCG / OHADA — both use class 4)
+function isClientAccount(account: string)    { return account.startsWith('41') }
+function isSupplierAccount(account: string)  { return account.startsWith('40') }
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function Spinner() {
@@ -24,8 +65,6 @@ function fmtDate(d: string | Date): string {
 function toISO(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
-
-// ── Regroupement par classe ───────────────────────────────────────────────────
 
 const CLASSE_LABEL: Record<string, string> = {
   '1': 'Classe 1 — Capitaux',
@@ -63,14 +102,15 @@ function openBalancePrint(
   readOnly: boolean,
   coveredYears: number[],
   multiYear: boolean,
+  tabLabel: string,
 ) {
   const today    = new Date().toLocaleDateString('fr-FR')
   const isOHADA  = !['FR', 'BE', 'CH', 'LU'].includes(info.country)
   const idLabel  = isOHADA ? 'NUI / RCCM' : 'SIRET'
   const idValue  = isOHADA ? (info.vatNumber ?? '—') : (info.siret ?? info.siren ?? '—')
   const docTitle = isOHADA
-    ? 'BALANCE GÉNÉRALE DES COMPTES (SYSCOHADA révisé)'
-    : 'BALANCE GÉNÉRALE DES COMPTES (Plan Comptable Général)'
+    ? `${tabLabel.toUpperCase()} (SYSCOHADA révisé)`
+    : `${tabLabel.toUpperCase()} (Plan Comptable Général)`
   const refText  = isOHADA
     ? 'Établi conformément au Système Comptable OHADA — SYSCOHADA révisé'
     : 'Établi conformément au Plan Comptable Général (PCG) — Règlement ANC n° 2014-03'
@@ -95,7 +135,7 @@ function openBalancePrint(
 
   const html = `<!DOCTYPE html>
 <html lang="fr"><head><meta charset="UTF-8"/>
-<title>Balance — ${coveredYears.join('/')}</title>
+<title>${tabLabel} — ${coveredYears.join('/')}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:Arial,sans-serif;font-size:9pt;color:#111;background:#fff}
@@ -202,22 +242,247 @@ function BalanceRowUI({ r, fmt, onClick }: { r: BalanceRow; fmt: (v: number) => 
       className="hover:bg-[#1b4332]/5 cursor-pointer group transition-colors"
       title={`Voir le détail du compte ${r.account}`}
     >
-      <td className="px-5 py-2.5 font-mono text-xs text-[#1b4332] group-hover:underline">
-        {r.account}
-      </td>
+      <td className="px-5 py-2.5 font-mono text-xs text-[#1b4332] group-hover:underline">{r.account}</td>
       <td className="px-5 py-2.5 text-gray-700 group-hover:text-[#1b4332]">
         {r.label}
         <span className="ml-2 opacity-0 group-hover:opacity-60 text-[10px] text-[#1b4332]">→ détail</span>
       </td>
       <td className="px-5 py-2.5 text-right text-gray-700">{r.totalDebit  > 0 ? fmt(r.totalDebit)  : ''}</td>
       <td className="px-5 py-2.5 text-right text-gray-700">{r.totalCredit > 0 ? fmt(r.totalCredit) : ''}</td>
-      <td className="px-5 py-2.5 text-right font-medium text-blue-700">
-        {r.soldeDebiteur  > 0 ? fmt(r.soldeDebiteur)  : ''}
-      </td>
-      <td className="px-5 py-2.5 text-right font-medium text-orange-600">
-        {r.soldeCrediteur > 0 ? fmt(r.soldeCrediteur) : ''}
-      </td>
+      <td className="px-5 py-2.5 text-right font-medium text-blue-700">{r.soldeDebiteur  > 0 ? fmt(r.soldeDebiteur)  : ''}</td>
+      <td className="px-5 py-2.5 text-right font-medium text-orange-600">{r.soldeCrediteur > 0 ? fmt(r.soldeCrediteur) : ''}</td>
     </tr>
+  )
+}
+
+// ── Sub-table shared by générale / clients / fournisseurs ─────────────────────
+
+interface BalanceTableProps {
+  rows:       BalanceRow[]
+  groupByClass: boolean
+  totalD:     number
+  totalC:     number
+  equilibre:  boolean
+  hasClosedFY: boolean
+  search:     string
+  fmt:        (v: number) => string
+  navigate:   (to: string) => void
+}
+
+function BalanceTable({ rows, groupByClass, totalD, totalC, equilibre, hasClosedFY, search, fmt, navigate }: BalanceTableProps) {
+  const groupedRows = useMemo(() => {
+    if (!groupByClass) return null
+    const map = new Map<string, BalanceRow[]>()
+    for (const r of rows) {
+      const cls = r.account.charAt(0)
+      if (!map.has(cls)) map.set(cls, [])
+      map.get(cls)!.push(r)
+    }
+    return map
+  }, [rows, groupByClass])
+
+  if (rows.length === 0) return null
+
+  return (
+    <div className={`rounded-xl border bg-white overflow-hidden ${hasClosedFY ? 'border-amber-200' : 'border-gray-200'}`}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className={`border-b text-left text-xs font-semibold text-white ${hasClosedFY ? 'bg-amber-800' : 'bg-[#1b4332]'}`}>
+              <th className="px-5 py-3">Compte</th>
+              <th className="px-5 py-3">Intitulé</th>
+              <th className="px-5 py-3 text-center" colSpan={2}>
+                <span className="block text-[10px] font-normal opacity-75 mb-0.5">Mouvements de la période</span>
+                <div className="flex justify-center gap-8"><span>Débit</span><span>Crédit</span></div>
+              </th>
+              <th className="px-5 py-3 text-center" colSpan={2}>
+                <span className="block text-[10px] font-normal opacity-75 mb-0.5">Soldes</span>
+                <div className="flex justify-center gap-8"><span>Débiteur D</span><span>Créditeur C</span></div>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {groupedRows
+              ? Array.from(groupedRows.entries()).map(([cls, clsRows]) => {
+                  const clsD  = clsRows.reduce((s, r) => s + r.totalDebit,     0)
+                  const clsC  = clsRows.reduce((s, r) => s + r.totalCredit,    0)
+                  const clsSD = clsRows.reduce((s, r) => s + r.soldeDebiteur,  0)
+                  const clsSC = clsRows.reduce((s, r) => s + r.soldeCrediteur, 0)
+                  return (
+                    <Fragment key={cls}>
+                      <tr className="border-t-2 border-[#1b4332]/20">
+                        <td colSpan={6} className="px-5 py-2 text-xs font-semibold text-[#1b4332] bg-[#1b4332]/5">
+                          {CLASSE_LABEL[cls] ?? `Classe ${cls}`}
+                        </td>
+                      </tr>
+                      {clsRows.map(r => (
+                        <BalanceRowUI key={r.account} r={r} fmt={fmt}
+                          onClick={() => navigate(`/app/accounting/grand-livre?compte=${encodeURIComponent(r.account)}`)} />
+                      ))}
+                      <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-xs">
+                        <td colSpan={2} className="px-5 py-2 text-gray-600 italic">Sous-total {cls}</td>
+                        <td className="px-5 py-2 text-right">{fmt(clsD)}</td>
+                        <td className="px-5 py-2 text-right">{fmt(clsC)}</td>
+                        <td className="px-5 py-2 text-right text-blue-700">{clsSD > 0 ? fmt(clsSD) : ''}</td>
+                        <td className="px-5 py-2 text-right text-orange-600">{clsSC > 0 ? fmt(clsSC) : ''}</td>
+                      </tr>
+                    </Fragment>
+                  )
+                })
+              : rows.map(r => (
+                  <BalanceRowUI key={r.account} r={r} fmt={fmt}
+                    onClick={() => navigate(`/app/accounting/grand-livre?compte=${encodeURIComponent(r.account)}`)} />
+                ))
+            }
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-[#1b4332] bg-[#1b4332]/10 font-bold text-sm">
+              <td colSpan={2} className="px-5 py-3 text-gray-900">TOTAL</td>
+              <td className="px-5 py-3 text-right">{fmt(totalD)}</td>
+              <td className="px-5 py-3 text-right">{fmt(totalC)}</td>
+              <td className="px-5 py-3 text-right text-blue-700">{fmt(rows.reduce((s, r) => s + r.soldeDebiteur,  0))}</td>
+              <td className="px-5 py-3 text-right text-orange-600">{fmt(rows.reduce((s, r) => s + r.soldeCrediteur, 0))}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div className={`flex items-center justify-between px-5 py-3 border-t text-sm font-medium
+        ${equilibre ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+        <span>
+          {equilibre ? '✓ Balance équilibrée' : '✗ Balance déséquilibrée'}
+          {search && ' (sur la sélection)'}
+        </span>
+        <span className="text-xs font-normal opacity-75">
+          Σ Débit = Σ Crédit = {fmt(totalD)}
+          {!equilibre && <> · Écart : {fmt(Math.abs(totalD - totalC))}</>}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ── Balance âgée table ────────────────────────────────────────────────────────
+
+interface AgedRow {
+  account: string
+  label:   string
+  type:    'client' | 'fournisseur' | 'tiers'
+  buckets: Record<AgingBucket, number>
+  total:   number
+}
+
+function AgedBalanceTable({ rows, fmt }: { rows: AgedRow[]; fmt: (v: number) => string }) {
+  const clientRows    = rows.filter(r => r.type === 'client')
+  const supplierRows  = rows.filter(r => r.type === 'fournisseur')
+  const otherRows     = rows.filter(r => r.type === 'tiers')
+
+  function sectionTotal(sRows: AgedRow[], bucket: AgingBucket) {
+    return sRows.reduce((s, r) => s + r.buckets[bucket], 0)
+  }
+
+  function renderSection(title: string, sRows: AgedRow[], colorClass: string) {
+    if (sRows.length === 0) return null
+    return (
+      <>
+        <tr>
+          <td colSpan={7} className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide ${colorClass} bg-opacity-10`}>
+            {title}
+          </td>
+        </tr>
+        {sRows.map(r => (
+          <tr key={r.account} className="hover:bg-gray-50 transition-colors">
+            <td className="px-4 py-2.5 font-mono text-xs text-[#1b4332]">{r.account}</td>
+            <td className="px-4 py-2.5 text-xs text-gray-700 max-w-[180px] truncate">{r.label}</td>
+            {AGING_BUCKETS.map(b => (
+              <td key={b} className={`px-4 py-2.5 text-right text-xs font-medium ${Math.abs(r.buckets[b]) > 0.01 ? AGING_COLORS[b] : 'text-gray-300'}`}>
+                {Math.abs(r.buckets[b]) > 0.01 ? fmt(Math.abs(r.buckets[b])) : '—'}
+              </td>
+            ))}
+            <td className="px-4 py-2.5 text-right text-xs font-bold text-gray-800">
+              {fmt(Math.abs(r.total))}
+            </td>
+          </tr>
+        ))}
+        <tr className="bg-gray-50 border-t border-gray-200 font-semibold text-xs">
+          <td colSpan={2} className="px-4 py-2 text-gray-500 italic">Sous-total {title}</td>
+          {AGING_BUCKETS.map(b => {
+            const v = sectionTotal(sRows, b)
+            return (
+              <td key={b} className={`px-4 py-2 text-right ${Math.abs(v) > 0.01 ? AGING_COLORS[b] : 'text-gray-300'}`}>
+                {Math.abs(v) > 0.01 ? fmt(Math.abs(v)) : '—'}
+              </td>
+            )
+          })}
+          <td className="px-4 py-2 text-right text-gray-800">
+            {fmt(Math.abs(sRows.reduce((s, r) => s + r.total, 0)))}
+          </td>
+        </tr>
+      </>
+    )
+  }
+
+  if (rows.length === 0) return (
+    <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
+      <p className="text-2xl">✅</p>
+      <p className="text-sm font-medium">Aucune écriture non lettrée dans cette période</p>
+      <p className="text-xs text-gray-400">Toutes les écritures de tiers sont lettrées, ou aucune écriture n'existe.</p>
+    </div>
+  )
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-max">
+          <thead>
+            <tr className="bg-[#1b4332] text-white text-xs font-semibold">
+              <th className="px-4 py-3 text-left">Compte</th>
+              <th className="px-4 py-3 text-left">Intitulé</th>
+              {AGING_BUCKETS.map(b => (
+                <th key={b} className="px-4 py-3 text-right">{AGING_LABELS[b]}</th>
+              ))}
+              <th className="px-4 py-3 text-right">Total ouvert</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {renderSection('Clients (41x)', clientRows, 'text-blue-800 bg-blue-50')}
+            {renderSection('Fournisseurs (40x)', supplierRows, 'text-orange-800 bg-orange-50')}
+            {renderSection('Autres tiers (4x)', otherRows, 'text-gray-800 bg-gray-50')}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-[#1b4332] bg-[#1b4332]/10 font-bold text-xs">
+              <td colSpan={2} className="px-4 py-3 text-gray-900">TOTAL GÉNÉRAL</td>
+              {AGING_BUCKETS.map(b => {
+                const v = rows.reduce((s, r) => s + r.buckets[b], 0)
+                return (
+                  <td key={b} className={`px-4 py-3 text-right ${Math.abs(v) > 0.01 ? AGING_COLORS[b] : 'text-gray-400'}`}>
+                    {Math.abs(v) > 0.01 ? fmt(Math.abs(v)) : '—'}
+                  </td>
+                )
+              })}
+              <td className="px-4 py-3 text-right text-gray-900">
+                {fmt(Math.abs(rows.reduce((s, r) => s + r.total, 0)))}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-500">
+        💡 Seules les écritures <strong>non lettrées</strong> des comptes de tiers (classe 4) sont affichées.
+        L'ancienneté est calculée depuis la date de l'écriture jusqu'à la date de fin de période sélectionnée.
+      </div>
+    </div>
+  )
+}
+
+// ── KPI cards ─────────────────────────────────────────────────────────────────
+
+function KpiCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+  return (
+    <div className={`rounded-xl border p-4 ${color}`}>
+      <p className="text-xs font-medium uppercase tracking-wide opacity-70">{label}</p>
+      <p className="text-xl font-bold mt-1">{value}</p>
+      {sub && <p className="text-xs mt-0.5 opacity-60">{sub}</p>}
+    </div>
   )
 }
 
@@ -229,6 +494,13 @@ export function BalancePage() {
   const navigate             = useNavigate()
   const { data: allFY, isLoading: yearsLoading } = useFiscalYears()
   const globalFY = useSelectedFiscalYearData()
+
+  // ── Tab ───────────────────────────────────────────────────────────────────
+  const [activeTab, setActiveTab] = useState<BalanceTab>('generale')
+
+  // ── Accounting zone (from company settings) ───────────────────────────────
+  // Zone already read from company settings context; used for print header & labels
+  const isOHADA = !['FR', 'BE', 'CH', 'LU'].includes(country)
 
   // ── Dates initiales ───────────────────────────────────────────────────────
   const defaultFrom = globalFY?.startDate.slice(0, 10) ?? toISO(new Date(new Date().getFullYear(), 0, 1))
@@ -253,7 +525,7 @@ export function BalancePage() {
   const coveredYears = coveredFYs.map(fy => fy.year)
   const isMultiYear  = coveredFYs.length > 1
 
-  // ── Chargement parallèle ──────────────────────────────────────────────────
+  // ── Balance queries (tabs 1-3) ────────────────────────────────────────────
   const fyQueries = useQueries({
     queries: coveredFYs.map(fy => ({
       queryKey:  ['balance-journal', fy.id],
@@ -263,13 +535,24 @@ export function BalancePage() {
     })),
   })
 
-  const isLoading = yearsLoading || fyQueries.some(q => q.isLoading)
-  const isError   = fyQueries.some(q => q.isError)
+  // ── Journal queries (tab 4 — balance âgée) ────────────────────────────────
+  const journalQueries = useQueries({
+    queries: coveredFYs.map(fy => ({
+      queryKey:  ['journal', fy.id],
+      queryFn:   () => accountingApi.getJournal(fy.id),
+      staleTime: 30_000,
+      enabled:   activeTab === 'agee' && coveredFYs.length > 0,
+    })),
+  })
+
+  const isLoadingBalance  = yearsLoading || fyQueries.some(q => q.isLoading)
+  const isLoadingJournal  = journalQueries.some(q => q.isLoading)
+  const isLoading         = isLoadingBalance || (activeTab === 'agee' && isLoadingJournal)
+  const isError           = fyQueries.some(q => q.isError)
 
   // ── Fusion des balances (cumul par compte) ────────────────────────────────
-  const { mergedRows } = useMemo(() => {
+  const mergedRows = useMemo(() => {
     const rowMap = new Map<string, BalanceRow>()
-
     fyQueries.forEach(q => {
       if (!q.data) return
       for (const r of q.data.rows) {
@@ -287,13 +570,11 @@ export function BalancePage() {
         }
       }
     })
-
-    const rows = Array.from(rowMap.values()).sort((a, b) => a.account.localeCompare(b.account))
-    return { mergedRows: rows }
+    return Array.from(rowMap.values()).sort((a, b) => a.account.localeCompare(b.account))
   }, [fyQueries])
 
   // ── Filtrage recherche ────────────────────────────────────────────────────
-  const filteredRows = useMemo<BalanceRow[]>(() => {
+  const searchedRows = useMemo<BalanceRow[]>(() => {
     const q = search.trim().toLowerCase()
     if (!q) return mergedRows
     return mergedRows.filter(r =>
@@ -301,21 +582,73 @@ export function BalancePage() {
     )
   }, [mergedRows, search])
 
-  const filteredTotalD  = filteredRows.reduce((s, r) => s + r.totalDebit,  0)
-  const filteredTotalC  = filteredRows.reduce((s, r) => s + r.totalCredit, 0)
-  const filteredEq      = Math.abs(filteredTotalD - filteredTotalC) < 0.01
+  // ── Vues par onglet (générale / clients / fournisseurs) ───────────────────
+  const generaleRows     = searchedRows
+  const clientRows       = useMemo(() => searchedRows.filter(r => isClientAccount(r.account)),   [searchedRows])
+  const fournisseurRows  = useMemo(() => searchedRows.filter(r => isSupplierAccount(r.account)), [searchedRows])
 
-  // ── Regroupement par classe ───────────────────────────────────────────────
-  const groupedRows = useMemo(() => {
-    if (!groupByClass) return null
-    const map = new Map<string, BalanceRow[]>()
-    for (const r of filteredRows) {
-      const cls = r.account.charAt(0)
-      if (!map.has(cls)) map.set(cls, [])
-      map.get(cls)!.push(r)
+  // Choose active rows for the shared balance table
+  const activeRows = activeTab === 'clients'      ? clientRows
+                   : activeTab === 'fournisseurs' ? fournisseurRows
+                   : generaleRows
+
+  const activeTotalD  = activeRows.reduce((s, r) => s + r.totalDebit,  0)
+  const activeTotalC  = activeRows.reduce((s, r) => s + r.totalCredit, 0)
+  const activeEq      = Math.abs(activeTotalD - activeTotalC) < 0.01
+
+  // ── Balance âgée ─────────────────────────────────────────────────────────
+  const agedRows = useMemo((): AgedRow[] => {
+    if (activeTab !== 'agee') return []
+    const refDate = new Date(dateTo)
+    const accMap  = new Map<string, { label: string; type: AgedRow['type']; buckets: Record<AgingBucket, number> }>()
+
+    for (const q of journalQueries) {
+      if (!q.data) continue
+      for (const entry of q.data.entries) {
+        // Only class-4 accounts
+        if (!entry.account.startsWith('4')) continue
+        // Only unlettred entries (open/pending)
+        if (entry.lettrage) continue
+
+        const ageDays = Math.floor(
+          (refDate.getTime() - new Date(entry.date).getTime()) / (1000 * 60 * 60 * 24)
+        )
+        const bucket = getAgingBucket(ageDays)
+        // net contribution: debit - credit (positive = debit solde for the account)
+        const net = entry.debit - entry.credit
+
+        if (!accMap.has(entry.account)) {
+          const type: AgedRow['type'] = isClientAccount(entry.account)   ? 'client'
+                                       : isSupplierAccount(entry.account) ? 'fournisseur'
+                                       : 'tiers'
+          accMap.set(entry.account, {
+            label:   '',
+            type,
+            buckets: { 'courant': 0, '0-30': 0, '31-60': 0, '61-90': 0, '91+': 0 },
+          })
+        }
+        accMap.get(entry.account)!.buckets[bucket] += net
+      }
     }
-    return map
-  }, [filteredRows, groupByClass])
+
+    // Fill labels from balance data
+    for (const row of mergedRows) {
+      if (accMap.has(row.account)) {
+        accMap.get(row.account)!.label = row.label
+      }
+    }
+
+    return Array.from(accMap.entries())
+      .map(([account, data]) => ({
+        account,
+        label:   data.label || account,
+        type:    data.type,
+        buckets: data.buckets,
+        total:   Object.values(data.buckets).reduce((s, v) => s + v, 0),
+      }))
+      .filter(r => Math.abs(r.total) > 0.01)
+      .sort((a, b) => a.account.localeCompare(b.account))
+  }, [activeTab, journalQueries, mergedRows, dateTo])
 
   // ── Print ─────────────────────────────────────────────────────────────────
   function handlePrint() {
@@ -329,17 +662,32 @@ export function BalancePage() {
       city:        company?.city ?? null,
       country,
     }
+    const tabLabel = TABS.find(t => t.id === activeTab)?.label ?? 'Balance'
     openBalancePrint(
-      info, dateFrom, dateTo, filteredRows,
-      filteredTotalD, filteredTotalC, filteredEq,
+      info, dateFrom, dateTo, activeRows,
+      activeTotalD, activeTotalC, activeEq,
       fmt, hasClosedFY, coveredYears, isMultiYear,
+      tabLabel,
     )
   }
 
   // ── Presets ───────────────────────────────────────────────────────────────
   function applyPreset(from: string, to: string) { setDateFrom(from); setDateTo(to) }
-
   const fyYear = globalFY?.year ?? new Date().getFullYear()
+
+  // ── KPIs clients ──────────────────────────────────────────────────────────
+  const clientKpis = useMemo(() => {
+    const totalCreances  = clientRows.reduce((s, r) => s + r.soldeDebiteur,  0)
+    const totalRecouvres = clientRows.reduce((s, r) => s + r.soldeCrediteur, 0)
+    return { totalCreances, totalRecouvres, netARecouvrer: totalCreances - totalRecouvres }
+  }, [clientRows])
+
+  // ── KPIs fournisseurs ─────────────────────────────────────────────────────
+  const supplierKpis = useMemo(() => {
+    const totalDettes  = fournisseurRows.reduce((s, r) => s + r.soldeCrediteur, 0)
+    const avances      = fournisseurRows.reduce((s, r) => s + r.soldeDebiteur,  0)
+    return { totalDettes, avances, netARegler: totalDettes - avances }
+  }, [fournisseurRows])
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -348,29 +696,45 @@ export function BalancePage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Balance générale</h1>
+          <h1 className="text-xl font-semibold text-gray-900">Balance des comptes</h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            {coveredFYs.length > 0
-              ? `${filteredRows.length} compte(s) · exercice(s) ${coveredYears.join(', ')}`
-              : 'Aucun exercice dans la plage sélectionnée'}
+            {isOHADA ? 'SYSCOHADA révisé' : 'Plan Comptable Général (PCG)'}
+            {coveredFYs.length > 0 && ` · exercice(s) ${coveredYears.join(', ')}`}
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {mergedRows.length > 0 && (
+          {mergedRows.length > 0 && activeTab !== 'agee' && (
             <span className={`rounded-full px-3 py-1 text-xs font-medium
-              ${filteredEq ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-              {filteredEq ? '✓ Équilibrée' : '✗ Déséquilibrée'}
+              ${activeEq ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+              {activeEq ? '✓ Équilibrée' : '✗ Déséquilibrée'}
             </span>
           )}
           <button
             onClick={handlePrint}
-            disabled={filteredRows.length === 0}
+            disabled={activeTab !== 'agee' ? activeRows.length === 0 : agedRows.length === 0}
             className="flex items-center gap-2 rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-white
                        hover:bg-[#2d6a4f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             🖨 Éditer / Imprimer
           </button>
         </div>
+      </div>
+
+      {/* ── Tab bar ── */}
+      <div className="flex border-b border-gray-200 bg-white rounded-t-xl overflow-hidden">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+              activeTab === tab.id
+                ? 'border-[#1b4332] text-[#1b4332] bg-[#1b4332]/5'
+                : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Bannière lecture seule */}
@@ -383,7 +747,6 @@ export function BalancePage() {
               {coveredFYs.filter(f => f.status === 'CLOSED' || f.status === 'LOCKED')
                 .map(f => `Exercice ${f.year} (${f.status === 'CLOSED' ? 'clôturé' : 'verrouillé'})`)
                 .join(' · ')}
-              {' '}— aucune modification n'est possible sur ces écritures.
             </p>
           </div>
         </div>
@@ -406,20 +769,16 @@ export function BalancePage() {
           {/* Période */}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-gray-500">Du</label>
-            <input type="date" value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30"
-            />
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30" />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-gray-500">Au</label>
-            <input type="date" value={dateTo} min={dateFrom}
-              onChange={e => setDateTo(e.target.value)}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30"
-            />
+            <input type="date" value={dateTo} min={dateFrom} onChange={e => setDateTo(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30" />
           </div>
 
-          {/* Presets trimestres */}
+          {/* Presets */}
           <div className="flex items-end gap-1.5">
             {[
               { label: 'Exercice', from: defaultFrom, to: defaultTo },
@@ -432,10 +791,7 @@ export function BalancePage() {
               return (
                 <button key={p.label} onClick={() => applyPreset(p.from, p.to)}
                   className={`rounded-md px-2.5 py-1.5 text-xs font-medium border transition-colors
-                    ${active
-                      ? 'bg-[#1b4332] text-white border-[#1b4332]'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-                >
+                    ${active ? 'bg-[#1b4332] text-white border-[#1b4332]' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
                   {p.label}
                 </button>
               )
@@ -450,15 +806,11 @@ export function BalancePage() {
                 const active   = dateFrom === fy.startDate.slice(0, 10) && dateTo === fy.endDate.slice(0, 10)
                 const isClosed = fy.status === 'CLOSED' || fy.status === 'LOCKED'
                 return (
-                  <button key={fy.id}
-                    onClick={() => applyPreset(fy.startDate.slice(0, 10), fy.endDate.slice(0, 10))}
+                  <button key={fy.id} onClick={() => applyPreset(fy.startDate.slice(0, 10), fy.endDate.slice(0, 10))}
                     className={`rounded-md px-2.5 py-1.5 text-xs font-medium border transition-colors
-                      ${active
-                        ? 'bg-[#1b4332] text-white border-[#1b4332]'
-                        : isClosed
-                          ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
-                  >
+                      ${active ? 'bg-[#1b4332] text-white border-[#1b4332]'
+                        : isClosed ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
                     {isClosed && '🔒 '}{fy.year}
                   </button>
                 )
@@ -468,42 +820,36 @@ export function BalancePage() {
         </div>
 
         <div className="flex flex-wrap gap-3 items-end pt-2 border-t border-gray-100">
-          {/* Recherche */}
-          <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-            <label className="text-xs font-medium text-gray-500">Rechercher un compte</label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
-              <input
-                type="text"
-                placeholder="N° compte ou intitulé…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-full rounded-lg border border-gray-300 pl-8 pr-3 py-1.5 text-sm
-                           focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30"
-              />
-              {search && (
-                <button onClick={() => setSearch('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">
-                  ✕
-                </button>
-              )}
+          {/* Recherche (hidden for agee tab) */}
+          {activeTab !== 'agee' && (
+            <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+              <label className="text-xs font-medium text-gray-500">Rechercher un compte</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                <input type="text" placeholder="N° compte ou intitulé…" value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 pl-8 pr-3 py-1.5 text-sm
+                             focus:outline-none focus:ring-2 focus:ring-[#1b4332]/30" />
+                {search && (
+                  <button onClick={() => setSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Grouper par classe */}
-          <label className="flex items-center gap-2 self-end pb-1.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={groupByClass}
-              onChange={e => setGroupByClass(e.target.checked)}
-              className="rounded border-gray-300 text-[#1b4332] focus:ring-[#1b4332]"
-            />
-            <span className="text-sm text-gray-600">Grouper par classe</span>
-          </label>
+          {/* Grouper par classe (générale only) */}
+          {activeTab === 'generale' && (
+            <label className="flex items-center gap-2 self-end pb-1.5 cursor-pointer">
+              <input type="checkbox" checked={groupByClass} onChange={e => setGroupByClass(e.target.checked)}
+                className="rounded border-gray-300 text-[#1b4332] focus:ring-[#1b4332]" />
+              <span className="text-sm text-gray-600">Grouper par classe</span>
+            </label>
+          )}
 
           {/* Exercices couverts */}
           {coveredFYs.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap ml-auto">
               <span className="text-xs text-gray-400">Couverts :</span>
               {coveredFYs.map(fy => {
                 const isClosed = fy.status === 'CLOSED' || fy.status === 'LOCKED'
@@ -511,8 +857,7 @@ export function BalancePage() {
                 return (
                   <span key={fy.id}
                     className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium
-                      ${isClosed ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}
-                  >
+                      ${isClosed ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-800'}`}>
                     {isClosed ? '🔒' : '✓'} {fy.year}{q?.isLoading ? ' ⏳' : ''}
                   </span>
                 )
@@ -522,9 +867,8 @@ export function BalancePage() {
         </div>
       </div>
 
-      {/* États */}
+      {/* États de chargement / erreur */}
       {isLoading && <Spinner />}
-
       {!isLoading && coveredFYs.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 gap-2 text-slate-500">
           <p className="text-2xl">📅</p>
@@ -532,116 +876,129 @@ export function BalancePage() {
           <p className="text-xs text-gray-400">Modifiez les dates ou créez un exercice dans Paramètres.</p>
         </div>
       )}
-
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           Impossible de charger la balance. Vérifiez la connexion au serveur.
         </div>
       )}
 
-      {!isLoading && filteredRows.length === 0 && coveredFYs.length > 0 && (
-        <div className="flex flex-col items-center justify-center py-16 gap-2 text-slate-400">
-          {search
-            ? <p className="text-sm">Aucun compte ne correspond à «&nbsp;{search}&nbsp;».</p>
-            : <p className="text-sm">Aucune écriture pour cet exercice.</p>
-          }
-        </div>
-      )}
+      {/* ── Tab content ── */}
+      {!isLoading && coveredFYs.length > 0 && (
+        <>
+          {/* ── Balance générale ── */}
+          {activeTab === 'generale' && (
+            <>
+              {generaleRows.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-16 gap-2 text-slate-400">
+                  {search
+                    ? <p className="text-sm">Aucun compte ne correspond à «&nbsp;{search}&nbsp;».</p>
+                    : <p className="text-sm">Aucune écriture pour cet exercice.</p>}
+                </div>
+              )}
+              <BalanceTable rows={generaleRows} groupByClass={groupByClass}
+                totalD={activeTotalD} totalC={activeTotalC} equilibre={activeEq}
+                hasClosedFY={hasClosedFY} search={search} fmt={fmt} navigate={navigate} />
+            </>
+          )}
 
-      {filteredRows.length > 0 && (
-        <div className={`rounded-xl border bg-white overflow-hidden
-          ${hasClosedFY ? 'border-amber-200' : 'border-gray-200'}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className={`border-b text-left text-xs font-semibold text-white
-                  ${hasClosedFY ? 'bg-amber-800' : 'bg-[#1b4332]'}`}>
-                  <th className="px-5 py-3">Compte</th>
-                  <th className="px-5 py-3">Intitulé</th>
-                  <th className="px-5 py-3 text-center" colSpan={2}>
-                    <span className="block text-[10px] font-normal opacity-75 mb-0.5">Mouvements de la période</span>
-                    <div className="flex justify-center gap-8">
-                      <span>Débit</span><span>Crédit</span>
-                    </div>
-                  </th>
-                  <th className="px-5 py-3 text-center" colSpan={2}>
-                    <span className="block text-[10px] font-normal opacity-75 mb-0.5">Soldes</span>
-                    <div className="flex justify-center gap-8">
-                      <span>Débiteur D</span><span>Créditeur C</span>
-                    </div>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {groupedRows
-                  ? Array.from(groupedRows.entries()).map(([cls, rows]) => {
-                      const clsD  = rows.reduce((s, r) => s + r.totalDebit,     0)
-                      const clsC  = rows.reduce((s, r) => s + r.totalCredit,    0)
-                      const clsSD = rows.reduce((s, r) => s + r.soldeDebiteur,  0)
-                      const clsSC = rows.reduce((s, r) => s + r.soldeCrediteur, 0)
-                      return (
-                        <Fragment key={cls}>
-                          <tr className="border-t-2 border-[#1b4332]/20">
-                            <td colSpan={6} className="px-5 py-2 text-xs font-semibold text-[#1b4332] bg-[#1b4332]/5">
-                              {CLASSE_LABEL[cls] ?? `Classe ${cls}`}
-                            </td>
-                          </tr>
-                          {rows.map(r => (
-                            <BalanceRowUI
-                              key={r.account} r={r} fmt={fmt}
-                              onClick={() => navigate(`/app/accounting/grand-livre?compte=${encodeURIComponent(r.account)}`)}
-                            />
-                          ))}
-                          <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-xs">
-                            <td colSpan={2} className="px-5 py-2 text-gray-600 italic">Sous-total {cls}</td>
-                            <td className="px-5 py-2 text-right">{fmt(clsD)}</td>
-                            <td className="px-5 py-2 text-right">{fmt(clsC)}</td>
-                            <td className="px-5 py-2 text-right text-blue-700">{clsSD > 0 ? fmt(clsSD) : ''}</td>
-                            <td className="px-5 py-2 text-right text-orange-600">{clsSC > 0 ? fmt(clsSC) : ''}</td>
-                          </tr>
-                        </Fragment>
-                      )
-                    })
-                  : filteredRows.map(r => (
-                      <BalanceRowUI
-                        key={r.account} r={r} fmt={fmt}
-                        onClick={() => navigate(`/app/accounting/grand-livre?compte=${encodeURIComponent(r.account)}`)}
-                      />
-                    ))
-                }
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-[#1b4332] bg-[#1b4332]/10 font-bold text-sm">
-                  <td colSpan={2} className="px-5 py-3 text-gray-900">TOTAL GÉNÉRAL</td>
-                  <td className="px-5 py-3 text-right">{fmt(filteredTotalD)}</td>
-                  <td className="px-5 py-3 text-right">{fmt(filteredTotalC)}</td>
-                  <td className="px-5 py-3 text-right text-blue-700">
-                    {fmt(filteredRows.reduce((s, r) => s + r.soldeDebiteur,  0))}
-                  </td>
-                  <td className="px-5 py-3 text-right text-orange-600">
-                    {fmt(filteredRows.reduce((s, r) => s + r.soldeCrediteur, 0))}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          {/* ── Balance clients ── */}
+          {activeTab === 'clients' && (
+            <>
+              {/* KPIs */}
+              <div className="grid grid-cols-3 gap-3">
+                <KpiCard
+                  label="Total créances clients"
+                  value={fmt(clientKpis.totalCreances)}
+                  sub="Solde débiteur comptes 41x"
+                  color="border-blue-200 bg-blue-50 text-blue-900"
+                />
+                <KpiCard
+                  label="Règlements reçus"
+                  value={fmt(clientKpis.totalRecouvres)}
+                  sub="Solde créditeur comptes 41x"
+                  color="border-green-200 bg-green-50 text-green-900"
+                />
+                <KpiCard
+                  label="Net à recouvrer"
+                  value={fmt(Math.abs(clientKpis.netARecouvrer))}
+                  sub={clientKpis.netARecouvrer >= 0 ? 'Solde net débiteur' : 'Solde net créditeur'}
+                  color={clientKpis.netARecouvrer > 0 ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-800'}
+                />
+              </div>
+              {clientRows.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-16 gap-2 text-slate-400">
+                  <p className="text-2xl">👤</p>
+                  <p className="text-sm font-medium">Aucun compte client (41x) dans cet exercice</p>
+                  <p className="text-xs text-gray-400">Les comptes clients sont identifiés par les numéros commençant par 41.</p>
+                </div>
+              )}
+              <BalanceTable rows={clientRows} groupByClass={false}
+                totalD={activeTotalD} totalC={activeTotalC} equilibre={activeEq}
+                hasClosedFY={hasClosedFY} search={search} fmt={fmt} navigate={navigate} />
+            </>
+          )}
 
-          {/* Pied équilibre */}
-          <div className={`flex items-center justify-between px-5 py-3 border-t text-sm font-medium
-            ${filteredEq
-              ? 'bg-green-50 border-green-200 text-green-800'
-              : 'bg-red-50   border-red-200   text-red-800'}`}>
-            <span>
-              {filteredEq ? '✓ Balance équilibrée' : '✗ Balance déséquilibrée'}
-              {search && ' (sur la sélection)'}
-              {isMultiYear && ` — ${coveredYears.length} exercices cumulés`}
-            </span>
-            <span className="text-xs font-normal opacity-75">
-              Σ Débit = Σ Crédit = {fmt(filteredTotalD)}
-              {!filteredEq && <> · Écart : {fmt(Math.abs(filteredTotalD - filteredTotalC))}</>}
-            </span>
-          </div>
-        </div>
+          {/* ── Balance fournisseurs ── */}
+          {activeTab === 'fournisseurs' && (
+            <>
+              {/* KPIs */}
+              <div className="grid grid-cols-3 gap-3">
+                <KpiCard
+                  label="Total dettes fournisseurs"
+                  value={fmt(supplierKpis.totalDettes)}
+                  sub="Solde créditeur comptes 40x"
+                  color="border-orange-200 bg-orange-50 text-orange-900"
+                />
+                <KpiCard
+                  label="Paiements effectués"
+                  value={fmt(supplierKpis.avances)}
+                  sub="Solde débiteur comptes 40x"
+                  color="border-green-200 bg-green-50 text-green-900"
+                />
+                <KpiCard
+                  label="Net à régler"
+                  value={fmt(Math.abs(supplierKpis.netARegler))}
+                  sub={supplierKpis.netARegler >= 0 ? 'Solde net créditeur' : 'Solde net débiteur'}
+                  color={supplierKpis.netARegler > 0 ? 'border-red-200 bg-red-50 text-red-900' : 'border-gray-200 bg-gray-50 text-gray-800'}
+                />
+              </div>
+              {fournisseurRows.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-16 gap-2 text-slate-400">
+                  <p className="text-2xl">🏭</p>
+                  <p className="text-sm font-medium">Aucun compte fournisseur (40x) dans cet exercice</p>
+                  <p className="text-xs text-gray-400">Les comptes fournisseurs sont identifiés par les numéros commençant par 40.</p>
+                </div>
+              )}
+              <BalanceTable rows={fournisseurRows} groupByClass={false}
+                totalD={activeTotalD} totalC={activeTotalC} equilibre={activeEq}
+                hasClosedFY={hasClosedFY} search={search} fmt={fmt} navigate={navigate} />
+            </>
+          )}
+
+          {/* ── Balance âgée ── */}
+          {activeTab === 'agee' && (
+            <>
+              {/* Info banner */}
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                <strong>Balance âgée</strong> — Écritures non lettrées des comptes de tiers (classe 4),
+                vieillies par rapport au <strong>{fmtDate(dateTo)}</strong>.
+                Paramétrez le lettrage dans l'onglet <em>Lettrage</em> pour maintenir cette vue à jour.
+              </div>
+
+              {/* Aging legend */}
+              <div className="flex items-center gap-4 flex-wrap px-1">
+                {AGING_BUCKETS.map(b => (
+                  <span key={b} className={`inline-flex items-center gap-1.5 text-xs font-medium ${AGING_COLORS[b]}`}>
+                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-current opacity-60" />
+                    {AGING_LABELS[b]}
+                  </span>
+                ))}
+              </div>
+
+              {isLoadingJournal ? <Spinner /> : <AgedBalanceTable rows={agedRows} fmt={fmt} />}
+            </>
+          )}
+        </>
       )}
     </div>
   )

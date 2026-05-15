@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
 import { useFiscalYearGuard } from '@/hooks/useFiscalYear'
@@ -7,25 +7,31 @@ import { useCurrency } from '@/hooks/useCurrency'
 import { CompteCombobox, normalizeCompteCode } from '@/components/accounting/CompteCombobox'
 import type { CompteOption } from '@/components/accounting/CompteCombobox'
 
-type JournalFilter = 'ALL' | 'VTE' | 'ACH' | 'BQ' | 'CAI' | 'OD'
+// ── Dynamic journal options (read from accounting config stored in localStorage) ──
 
-const FILTER_LABELS: Record<JournalFilter, string> = {
-  ALL: 'Tous',
-  VTE: 'Ventes',
-  ACH: 'Achats',
-  BQ:  'Banque',
-  CAI: 'Caisse',
-  OD:  'OD',
-}
-
-const JOURNAL_OPTIONS = [
+const DEFAULT_JOURNAL_OPTIONS = [
   { code: 'VTE', label: 'Ventes' },
   { code: 'ACH', label: 'Achats' },
   { code: 'BQ',  label: 'Banque' },
   { code: 'CAI', label: 'Caisse' },
   { code: 'OD',  label: 'Opérations diverses' },
-  { code: 'AUTRE', label: 'Autre…' },
 ]
+
+/** Reads active journal codes from ComptabiliteParamPage settings (Tab 4).
+ *  Falls back to the defaults above if nothing is configured. */
+function loadJournalOptions(): { code: string; label: string }[] {
+  try {
+    const raw = localStorage.getItem('athenis:accounting-config')
+    if (!raw) return DEFAULT_JOURNAL_OPTIONS
+    const cfg = JSON.parse(raw) as { journals?: { code: string; label: string; active?: boolean }[] }
+    const active = (cfg.journals ?? [])
+      .filter(j => j.active !== false && j.code?.trim())
+      .map(j => ({ code: j.code.trim().toUpperCase(), label: j.label || j.code }))
+    return active.length > 0 ? active : DEFAULT_JOURNAL_OPTIONS
+  } catch {
+    return DEFAULT_JOURNAL_OPTIONS
+  }
+}
 
 const JOURNAL_COLOR: Record<string, string> = {
   VTE: 'bg-green-100 text-green-700',
@@ -74,9 +80,12 @@ function newLine(): EntryLine {
   return { id: Math.random().toString(36).slice(2), compte: '', libelle: '', debit: '', credit: '' }
 }
 
-function makeEmptyForm(initialJournal?: string): EntryForm {
-  const journal = initialJournal ?? 'VTE'
-  const isKnown = JOURNAL_OPTIONS.some(o => o.code === journal && o.code !== 'AUTRE')
+function makeEmptyForm(
+  initialJournal?: string,
+  opts: { code: string }[] = DEFAULT_JOURNAL_OPTIONS,
+): EntryForm {
+  const journal = initialJournal ?? opts[0]?.code ?? 'VTE'
+  const isKnown = opts.some(o => o.code === journal)
   return {
     date: todayISO(),
     journal: isKnown ? journal : 'AUTRE',
@@ -106,10 +115,19 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
   const isEditMode = !!editPieceId
   const queryClient = useQueryClient()
 
+  // Load journal options from config once at mount
+  const journalOptions = useMemo(() => loadJournalOptions(), [])
+  // Options shown in the select, with an "Autre…" escape hatch
+  const journalSelectOptions = useMemo(
+    () => [...journalOptions, { code: 'AUTRE', label: 'Autre…' }],
+    [journalOptions],
+  )
+
   const [form, setForm] = useState<EntryForm>(() => {
+    const opts = loadJournalOptions()
     if (editData) {
       const journal = editData.journal
-      const isKnown = JOURNAL_OPTIONS.some(o => o.code === journal && o.code !== 'AUTRE')
+      const isKnown = opts.some(o => o.code === journal)
       return {
         date: editData.date,
         journal: isKnown ? journal : 'AUTRE',
@@ -118,7 +136,7 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
         lines: editData.lines.map(l => ({ ...l, id: Math.random().toString(36).slice(2) })),
       }
     }
-    return makeEmptyForm(initialJournal)
+    return makeEmptyForm(initialJournal, opts)
   })
   const [error, setError] = useState<string | null>(null)
 
@@ -244,7 +262,7 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
                   <span className="ml-1.5 text-gray-400 font-normal">(commun à toutes les lignes)</span>
                 </label>
                 <select value={form.journal} onChange={e => setHeader('journal', e.target.value)} className={INPUT}>
-                  {JOURNAL_OPTIONS.map(o => (
+                  {journalSelectOptions.map(o => (
                     <option key={o.code} value={o.code}>{o.code !== 'AUTRE' ? `${o.code} / ${o.label}` : o.label}</option>
                   ))}
                 </select>
@@ -469,7 +487,7 @@ export function JournalPage() {
   const fmt = (n: number) => n === 0 ? '' : fmtAmount(n)
   const queryClient = useQueryClient()
 
-  const [filter, setFilter]             = useState<JournalFilter>('ALL')
+  const [filter, setFilter]             = useState<string>('ALL')
   const [showModal, setShowModal]       = useState(false)
   const [modalJournal, setModalJournal] = useState<string | undefined>(undefined)
   const [hoveredKey, setHoveredKey]     = useState<string | null>(null)
@@ -503,7 +521,18 @@ export function JournalPage() {
     },
   })
 
+  // Build dynamic filter tabs: configured journals + any extra codes in actual data
+  const journalOptions = useMemo(() => loadJournalOptions(), [])
   const entries = data?.entries ?? []
+  const filterOptions = useMemo(() => {
+    const configCodes = new Set(journalOptions.map(j => j.code))
+    const dataCodes = [...new Set(entries.map(e => e.journalCode))].filter(c => !configCodes.has(c))
+    return [
+      ...journalOptions,
+      ...dataCodes.map(c => ({ code: c, label: c })),
+    ]
+  }, [journalOptions, entries])
+
   const visible = filter === 'ALL' ? entries : entries.filter(e => e.journalCode === filter)
   const groups  = groupEntries(visible)
 
@@ -553,14 +582,16 @@ export function JournalPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        {(Object.keys(FILTER_LABELS) as JournalFilter[]).map((f) => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-              filter === f ? 'bg-forest-900 text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-            }`}>
-            {FILTER_LABELS[f]}
-          </button>
-        ))}
+        <select
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+        >
+          <option value="ALL">Tous les journaux</option>
+          {filterOptions.map(j => (
+            <option key={j.code} value={j.code}>{j.code} — {j.label}</option>
+          ))}
+        </select>
         {!isReadOnly && fyData && (
           <div className="relative group">
             <button onClick={() => openNewModal('')} title="Ajouter un journal"

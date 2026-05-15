@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { accountingApi } from '@/services/accountingApi'
 import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
 import type { JournalEntryRow } from '@/services/accountingApi'
@@ -109,6 +109,7 @@ function EntryRow({ entry, letCode, selected, onToggle, isReadOnly }: RowProps) 
 export function JournalLettragehPage() {
   const fy = useSelectedFiscalYearData()
   const { data: years } = useFiscalYears()
+  const qc = useQueryClient()
 
   const [selectedFyId, setSelectedFyId] = useState<string | null>(null)
 
@@ -121,10 +122,40 @@ export function JournalLettragehPage() {
     staleTime: 30_000,
   })
 
-  const [lettrages, setLettrages] = useState<Lettrage[]>([])
   const [selected,  setSelected]  = useState<Set<string>>(new Set())
   const [accountFilter, setAccountFilter] = useState('')
   const [showOnlyUnlettered, setShowOnlyUnlettered] = useState(true)
+  const [lettrageError, setLettrageError] = useState<string | null>(null)
+
+  // ── Mutations ────────────────────────────────────────────────────────────────
+
+  const { mutate: doSetLettrage, isPending: isLettering } = useMutation({
+    mutationFn: ({ entryIds, code }: { entryIds: string[]; code: string }) =>
+      accountingApi.setLettrage(entryIds, code),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['journal', fyId] })
+      setSelected(new Set())
+      setLettrageError(null)
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setLettrageError(msg ?? 'Erreur lors du lettrage')
+    },
+  })
+
+  const { mutate: doDeleteLettrage, isPending: isUnlettering } = useMutation({
+    mutationFn: (code: string) => accountingApi.deleteLettrage(code, fyId!),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['journal', fyId] })
+      setLettrageError(null)
+    },
+    onError: (e: unknown) => {
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setLettrageError(msg ?? 'Erreur lors du délettrage')
+    },
+  })
+
+  // ── Derived state ────────────────────────────────────────────────────────────
 
   // Entries that are candidates for lettrage (class 4 accounts)
   const candidates = useMemo(() => {
@@ -132,13 +163,24 @@ export function JournalLettragehPage() {
     return journal.entries.filter(e => isLettrageAccount(e.account))
   }, [journal])
 
+  // Build lettrage map from actual entry.lettrage field (from DB)
   const letMap = useMemo(() => {
     const m = new Map<string, string>()
-    for (const l of lettrages) {
-      for (const id of l.entries) m.set(id, l.code)
+    for (const e of candidates) {
+      if (e.lettrage) m.set(e.id, e.lettrage)
     }
     return m
-  }, [lettrages])
+  }, [candidates])
+
+  // Unique lettrage codes currently in use
+  const activeLettrages = useMemo((): Lettrage[] => {
+    const byCode = new Map<string, string[]>()
+    for (const [id, code] of letMap.entries()) {
+      if (!byCode.has(code)) byCode.set(code, [])
+      byCode.get(code)!.push(id)
+    }
+    return [...byCode.entries()].map(([code, entries]) => ({ code, entries }))
+  }, [letMap])
 
   // Filter displayed entries
   const displayed = useMemo(() => {
@@ -174,13 +216,14 @@ export function JournalLettragehPage() {
 
   function handleLetter() {
     if (selected.size < 2) return
-    const code = nextLetterCode(lettrages.map(l => l.code))
-    setLettrages(prev => [...prev, { code, entries: [...selected] }])
-    setSelected(new Set())
+    // Use next available letter code (not already used in this FY)
+    const code = nextLetterCode(activeLettrages.map(l => l.code))
+    doSetLettrage({ entryIds: [...selected], code })
   }
 
   function handleUnletter(code: string) {
-    setLettrages(prev => prev.filter(l => l.code !== code))
+    if (!fyId) return
+    doDeleteLettrage(code)
   }
 
   function clearSelection() {
@@ -205,6 +248,14 @@ export function JournalLettragehPage() {
 
   return (
     <div className="p-6 space-y-5">
+      {/* Error banner */}
+      {lettrageError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center justify-between">
+          <span>⚠️ {lettrageError}</span>
+          <button onClick={() => setLettrageError(null)} className="text-red-500 hover:text-red-700 text-lg leading-none">×</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -265,14 +316,14 @@ export function JournalLettragehPage() {
           </button>
           <button
             onClick={handleLetter}
-            disabled={selected.size < 2}
+            disabled={selected.size < 2 || isLettering}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              selected.size >= 2
+              selected.size >= 2 && !isLettering
                 ? 'bg-green-700 text-white hover:bg-green-800'
                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
             }`}
           >
-            Lettrer la sélection
+            {isLettering ? 'Lettrage…' : 'Lettrer la sélection'}
           </button>
         </div>
       )}
@@ -297,15 +348,16 @@ export function JournalLettragehPage() {
           />
           <span className="text-xs text-gray-600">Masquer les écritures lettrées</span>
         </label>
-        {lettrages.length > 0 && (
-          <div className="flex items-center gap-2 ml-auto">
-            <p className="text-xs text-gray-500">{lettrages.length} lettre{lettrages.length > 1 ? 's' : ''} :</p>
-            {lettrages.map(l => (
+        {activeLettrages.length > 0 && (
+          <div className="flex items-center gap-2 ml-auto flex-wrap">
+            <p className="text-xs text-gray-500">{activeLettrages.length} lettre{activeLettrages.length > 1 ? 's' : ''} :</p>
+            {activeLettrages.map(l => (
               <button
                 key={l.code}
                 onClick={() => handleUnletter(l.code)}
-                title="Délettrer"
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-bold hover:bg-red-100 hover:text-red-700 transition-colors"
+                disabled={isUnlettering}
+                title="Délettrer ce code"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-bold hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
               >
                 {l.code}
                 <span className="text-[10px] opacity-70">×</span>
@@ -331,7 +383,7 @@ export function JournalLettragehPage() {
                 onClick={() => setShowOnlyUnlettered(false)}
                 className="mt-2 text-xs text-forest-600 underline"
               >
-                Afficher les écritures lettrées ({letteredCount})
+                Afficher les {letteredCount} écriture{letteredCount > 1 ? 's' : ''} lettrée{letteredCount > 1 ? 's' : ''}
               </button>
             )}
           </div>
