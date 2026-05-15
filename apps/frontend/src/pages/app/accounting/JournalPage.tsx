@@ -42,6 +42,16 @@ const JOURNAL_COLOR: Record<string, string> = {
   OD:  'bg-purple-100 text-purple-700',
 }
 
+// Couleur de la bordure gauche par journal (identifie visuellement le journal de la pièce)
+const JOURNAL_BORDER: Record<string, string> = {
+  VTE: 'border-l-green-400',
+  ACH: 'border-l-red-400',
+  BQ:  'border-l-blue-400',
+  BNQ: 'border-l-blue-400',
+  CAI: 'border-l-yellow-400',
+  OD:  'border-l-purple-400',
+}
+
 function formatDate(d: string | Date): string {
   const dt = new Date(d)
   return dt.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -425,17 +435,29 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
 
 function groupEntries(entries: import('@/services/accountingApi').JournalEntryRow[]) {
   const groups: { key: string; pieceId: string | null; rows: typeof entries }[] = []
-  const seen = new Map<string, typeof entries>()
+  const seenPiece = new Map<string, typeof entries>()
+  const seenRef   = new Map<string, typeof entries>()
 
   for (const e of entries) {
     if (e.pieceId) {
-      if (!seen.has(e.pieceId)) {
+      // Regroupement prioritaire par pieceId (pièce comptable)
+      if (!seenPiece.has(e.pieceId)) {
         const rows: typeof entries = []
-        seen.set(e.pieceId, rows)
+        seenPiece.set(e.pieceId, rows)
         groups.push({ key: e.pieceId, pieceId: e.pieceId, rows })
       }
-      seen.get(e.pieceId)!.push(e)
+      seenPiece.get(e.pieceId)!.push(e)
+    } else if (e.reference) {
+      // Fallback : regroupement par référence + date (même écriture sans pieceId)
+      const refKey = `${e.date.slice(0, 10)}_${e.reference}`
+      if (!seenRef.has(refKey)) {
+        const rows: typeof entries = []
+        seenRef.set(refKey, rows)
+        groups.push({ key: refKey, pieceId: null, rows })
+      }
+      seenRef.get(refKey)!.push(e)
     } else {
+      // Ligne isolée sans référence ni pieceId
       groups.push({ key: e.id, pieceId: null, rows: [e] })
     }
   }
@@ -624,8 +646,10 @@ export function JournalPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left text-xs font-semibold text-gray-500">
+                <th className="px-4 py-3 w-6" />
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Journal</th>
+                <th className="px-4 py-3">Pièce / Réf.</th>
                 <th className="px-4 py-3">Compte</th>
                 <th className="px-4 py-3">Libellé</th>
                 <th className="px-4 py-3 text-right">Débit</th>
@@ -636,57 +660,103 @@ export function JournalPage() {
             <tbody>
               {groups.length === 0 ? (
                 <tr>
-                  <td colSpan={isReadOnly ? 6 : 7} className="px-4 py-10 text-center text-sm text-gray-400">
+                  <td colSpan={isReadOnly ? 8 : 9} className="px-4 py-10 text-center text-sm text-gray-400">
                     Aucune écriture{filter !== 'ALL' ? ` pour le journal ${filter}` : ''} sur cet exercice.
                   </td>
                 </tr>
               ) : (
                 groups.map((group, gi) => {
-                  const isHovered = hoveredKey === group.key
-                  const rowBg = isHovered ? 'bg-blue-50/50' : ''
+                  const isHovered  = hoveredKey === group.key
+                  const isMulti    = group.rows.length > 1
+                  const groupBg    = isHovered
+                    ? 'bg-blue-50/60'
+                    : gi % 2 === 0 ? '' : 'bg-slate-50/60'
+                  const borderCol  = JOURNAL_BORDER[group.rows[0]?.journalCode ?? ''] ?? 'border-l-gray-300'
                   return (
                     <Fragment key={group.key}>
-                      {group.rows.map((e, ri) => (
-                        <tr key={e.id}
-                          onMouseEnter={() => setHoveredKey(group.key)}
-                          onMouseLeave={() => setHoveredKey(null)}
-                          className={`border-t transition-colors ${rowBg} ${ri === 0 && gi > 0 ? 'border-gray-200' : 'border-gray-50'}`}>
-                          <td className="px-4 py-2.5 text-gray-500">{formatDate(e.date)}</td>
-                          <td className="px-4 py-2.5">
-                            <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${JOURNAL_COLOR[e.journalCode] ?? 'bg-gray-100 text-gray-600'}`}>
-                              {e.journalCode}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2.5 font-mono text-xs text-gray-600">{e.account}</td>
-                          <td className="px-4 py-2.5 text-gray-700">{e.label}</td>
-                          <td className="px-4 py-2.5 text-right font-medium text-gray-900">{fmt(e.debit)}</td>
-                          <td className="px-4 py-2.5 text-right font-medium text-gray-900">{fmt(e.credit)}</td>
-                          {!isReadOnly && (
-                            <td className="px-2 py-2.5 w-16">
-                              {ri === 0 && (
-                                <div className={`flex items-center justify-end gap-1 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
-                                  {group.pieceId && (
-                                    <button
-                                      onClick={() => openEditModal(group)}
-                                      title="Modifier l'écriture"
-                                      className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 hover:border-forest-900/40 hover:text-forest-900 hover:bg-forest-50 transition-colors text-sm shadow-sm"
-                                    >
-                                      ✎
-                                    </button>
+                      {group.rows.map((e, ri) => {
+                        const isFirstRow = ri === 0
+                        const isLastRow  = ri === group.rows.length - 1
+                        return (
+                          <tr key={e.id}
+                            onMouseEnter={() => setHoveredKey(group.key)}
+                            onMouseLeave={() => setHoveredKey(null)}
+                            className={`transition-colors ${groupBg} ${
+                              isFirstRow && gi > 0 ? 'border-t-2 border-gray-200' : 'border-t border-gray-100'
+                            }`}>
+
+                            {/* Colonne indicateur : bordure colorée (première ligne) + trait de continuation */}
+                            <td className="w-1.5 p-0">
+                              {isFirstRow ? (
+                                <div className={`h-full w-1.5 border-l-4 ${borderCol} ${isMulti ? 'rounded-tl' : 'rounded-l'}`} />
+                              ) : (
+                                <div className={`h-full w-1.5 border-l-4 ${borderCol} opacity-30 ${isLastRow ? 'rounded-bl' : ''}`} />
+                              )}
+                            </td>
+
+                            <td className="px-4 py-2 text-gray-500 text-xs whitespace-nowrap">
+                              {isFirstRow ? formatDate(e.date) : ''}
+                            </td>
+                            <td className="px-4 py-2">
+                              {isFirstRow && (
+                                <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${JOURNAL_COLOR[e.journalCode] ?? 'bg-gray-100 text-gray-600'}`}>
+                                  {e.journalCode}
+                                </span>
+                              )}
+                            </td>
+                            {/* Pièce / Référence : uniquement sur première ligne + badge nb lignes */}
+                            <td className="px-4 py-2">
+                              {isFirstRow && (
+                                <div className="flex items-center gap-1.5">
+                                  {e.reference && (
+                                    <span className="font-mono text-xs text-gray-500 truncate max-w-[110px]" title={e.reference}>
+                                      {e.reference}
+                                    </span>
                                   )}
-                                  <button
-                                    onClick={() => setDeleteTarget({ key: group.key, pieceId: group.pieceId, lineCount: group.rows.length })}
-                                    title="Supprimer"
-                                    className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-colors text-sm shadow-sm"
-                                  >
-                                    ✕
-                                  </button>
+                                  {isMulti && (
+                                    <span className="inline-flex items-center rounded-full bg-[#1b4332]/10 text-[#1b4332] text-[10px] font-semibold px-1.5 py-0.5 leading-none whitespace-nowrap">
+                                      {group.rows.length} L
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </td>
-                          )}
-                        </tr>
-                      ))}
+
+                            <td className="px-4 py-2 font-mono text-xs text-gray-600">{e.account}</td>
+                            <td className="px-4 py-2 text-gray-700 text-sm">{e.label}</td>
+                            <td className="px-4 py-2 text-right font-medium text-gray-900 text-sm tabular-nums">
+                              {e.debit > 0 ? fmt(e.debit) : <span className="text-gray-300">—</span>}
+                            </td>
+                            <td className="px-4 py-2 text-right font-medium text-gray-900 text-sm tabular-nums">
+                              {e.credit > 0 ? fmt(e.credit) : <span className="text-gray-300">—</span>}
+                            </td>
+                            {!isReadOnly && (
+                              <td className="px-2 py-2 w-16">
+                                {isFirstRow && (
+                                  <div className={`flex items-center justify-end gap-1 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+                                    {group.pieceId && (
+                                      <button
+                                        onClick={() => openEditModal(group)}
+                                        title="Modifier l'écriture"
+                                        className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 hover:border-[#1b4332]/40 hover:text-[#1b4332] hover:bg-[#1b4332]/5 transition-colors text-sm shadow-sm"
+                                      >
+                                        ✎
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => setDeleteTarget({ key: group.key, pieceId: group.pieceId, lineCount: group.rows.length })}
+                                      title="Supprimer"
+                                      className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-colors text-sm shadow-sm"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        )
+                      })}
                     </Fragment>
                   )
                 })
@@ -695,9 +765,9 @@ export function JournalPage() {
             {visible.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
-                  <td colSpan={isReadOnly ? 4 : 4} className="px-4 py-2.5 text-gray-700">TOTAUX</td>
-                  <td className="px-4 py-2.5 text-right text-gray-900">{fmtAmount(totalDebit)}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-900">{fmtAmount(totalCredit)}</td>
+                  <td colSpan={isReadOnly ? 6 : 6} className="px-4 py-2.5 text-gray-700">TOTAUX</td>
+                  <td className="px-4 py-2.5 text-right text-gray-900 tabular-nums">{fmtAmount(totalDebit)}</td>
+                  <td className="px-4 py-2.5 text-right text-gray-900 tabular-nums">{fmtAmount(totalCredit)}</td>
                   {!isReadOnly && <td />}
                 </tr>
               </tfoot>
