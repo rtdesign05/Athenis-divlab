@@ -9,13 +9,14 @@ import type { BalanceRow } from '@/services/accountingApi'
 
 // ── Tab types ─────────────────────────────────────────────────────────────────
 
-type BalanceTab = 'generale' | 'clients' | 'fournisseurs' | 'agee'
+type BalanceTab = 'generale' | 'clients' | 'fournisseurs' | 'agee-clients' | 'agee-fournisseurs'
 
-const TABS: { id: BalanceTab; label: string }[] = [
-  { id: 'generale',     label: 'Balance générale' },
-  { id: 'clients',      label: 'Balance clients' },
-  { id: 'fournisseurs', label: 'Balance fournisseurs' },
-  { id: 'agee',         label: 'Balance âgée' },
+const TABS: { id: BalanceTab; label: string; icon: string }[] = [
+  { id: 'generale',          label: 'Balance générale',       icon: '📊' },
+  { id: 'clients',           label: 'Balance clients',         icon: '👤' },
+  { id: 'fournisseurs',      label: 'Balance fournisseurs',    icon: '🏭' },
+  { id: 'agee-clients',      label: 'Âgée clients',            icon: '⏱' },
+  { id: 'agee-fournisseurs', label: 'Âgée fournisseurs',       icon: '⏱' },
 ]
 
 type AgingBucket = 'courant' | '0-30' | '31-60' | '61-90' | '91+'
@@ -34,6 +35,13 @@ const AGING_COLORS: Record<AgingBucket, string> = {
   '31-60':   'text-amber-600',
   '61-90':   'text-orange-600',
   '91+':     'text-red-700',
+}
+const AGING_BG: Record<AgingBucket, string> = {
+  'courant': 'bg-green-50',
+  '0-30':    'bg-blue-50',
+  '31-60':   'bg-amber-50',
+  '61-90':   'bg-orange-50',
+  '91+':     'bg-red-50',
 }
 
 function getAgingBucket(ageDays: number): AgingBucket {
@@ -77,7 +85,7 @@ const CLASSE_LABEL: Record<string, string> = {
   '8': 'Classe 8 — Spéciaux',
 }
 
-// ── Print ─────────────────────────────────────────────────────────────────────
+// ── Print — Balance générale/clients/fournisseurs ─────────────────────────────
 
 interface PrintInfo {
   companyName: string
@@ -233,6 +241,152 @@ tfoot td{font-size:8.5pt;font-weight:bold;padding:4px 6px;border:.5px solid #ccc
   setTimeout(() => win.print(), 400)
 }
 
+// ── Print — Balance âgée ──────────────────────────────────────────────────────
+
+interface AgedRow {
+  account: string
+  label:   string
+  type:    'client' | 'fournisseur' | 'tiers'
+  buckets: Record<AgingBucket, number>
+  total:   number
+}
+
+function openAgedPrint(
+  info: PrintInfo,
+  refDate: string,
+  rows: AgedRow[],
+  fmtAmt: (v: number) => string,
+  coveredYears: number[],
+  tabLabel: string,
+) {
+  const today   = new Date().toLocaleDateString('fr-FR')
+  const isOHADA = !['FR', 'BE', 'CH', 'LU'].includes(info.country)
+  const idLabel = isOHADA ? 'NUI / RCCM' : 'SIRET'
+  const idValue = isOHADA ? (info.vatNumber ?? '—') : (info.siret ?? info.siren ?? '—')
+
+  const totalByBucket = AGING_BUCKETS.map(b => rows.reduce((s, r) => s + Math.abs(r.buckets[b]), 0))
+  const grandTotal    = rows.reduce((s, r) => s + Math.abs(r.total), 0)
+
+  const BUCKET_COLORS_PRINT: Record<AgingBucket, string> = {
+    'courant': '#166534',
+    '0-30':    '#1d4ed8',
+    '31-60':   '#b45309',
+    '61-90':   '#c2410c',
+    '91+':     '#991b1b',
+  }
+
+  const tableRows = rows.map((r, i) => {
+    const cells = AGING_BUCKETS.map(b => {
+      const v = Math.abs(r.buckets[b])
+      return `<td class="num" style="color:${v > 0.01 ? BUCKET_COLORS_PRINT[b] : '#ccc'}">${v > 0.01 ? fmtAmt(v) : '—'}</td>`
+    }).join('')
+    return `<tr class="${i % 2 === 0 ? '' : 'alt'}">
+      <td class="mono">${r.account}</td>
+      <td>${r.label}</td>
+      ${cells}
+      <td class="num bold">${fmtAmt(Math.abs(r.total))}</td>
+    </tr>`
+  }).join('')
+
+  const totCells = AGING_BUCKETS.map((b, i) => {
+    const v = totalByBucket[i] ?? 0
+    return `<td class="num" style="color:${v > 0.01 ? BUCKET_COLORS_PRINT[b] : '#ccc'}">${v > 0.01 ? fmtAmt(v) : '—'}</td>`
+  }).join('')
+
+  const html = `<!DOCTYPE html>
+<html lang="fr"><head><meta charset="UTF-8"/>
+<title>${tabLabel} — ${coveredYears.join('/')}</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,sans-serif;font-size:9pt;color:#111;background:#fff}
+.doc{padding:10mm 12mm}
+.header{border-bottom:2px solid #1b4332;padding-bottom:7px;margin-bottom:9px}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start}
+.company-name{font-size:12pt;font-weight:bold;color:#1b4332}
+.company-sub{font-size:7.5pt;color:#555;margin-top:2px}
+.doc-title{font-size:10.5pt;font-weight:bold;color:#1b4332;text-align:right}
+.doc-meta{font-size:7.5pt;color:#666;margin-top:2px;text-align:right}
+.info-row{display:flex;gap:16px;margin-top:5px;font-size:7.5pt;color:#444}
+.info-label{font-weight:bold}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+thead th{background:#1b4332;color:#fff;font-size:8pt;font-weight:bold;padding:4px 5px;border:.5px solid #0f2e21;text-align:right}
+thead th.left{text-align:left}
+tbody td{font-size:8pt;padding:2.5px 5px;border:.5px solid #e0e0e0;vertical-align:middle}
+tbody tr.alt td{background:#f7faf7}
+tfoot td{font-size:8.5pt;font-weight:bold;padding:4px 5px;border:.5px solid #ccc;background:#e8efea;border-top:2px solid #1b4332;text-align:right}
+tfoot td.left{text-align:left}
+.num{text-align:right;font-family:monospace}
+.mono{font-family:monospace;font-size:7.5pt}
+.bold{font-weight:bold}
+.info-box{background:#f0f9ff;border:1px solid #bae6fd;border-radius:3px;padding:4px 8px;font-size:7.5pt;color:#0369a1;margin-bottom:7px}
+.footer{margin-top:12px;border-top:1px solid #ccc;padding-top:5px;font-size:7pt;color:#888;display:flex;justify-content:space-between}
+@page{size:A4 landscape;margin:12mm 10mm}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body><div class="doc">
+  <div class="header">
+    <div class="header-top">
+      <div>
+        <div class="company-name">${info.companyName}</div>
+        <div class="company-sub">${[info.legalForm, info.address, info.city].filter(Boolean).join(' · ')}</div>
+        <div class="info-row">
+          <span><span class="info-label">${idLabel} :</span> ${idValue}</span>
+        </div>
+      </div>
+      <div>
+        <div class="doc-title">${tabLabel.toUpperCase()}</div>
+        <div class="doc-meta">Ancienneté au : ${fmtDate(refDate)}</div>
+        <div class="doc-meta">Exercice(s) : ${coveredYears.join(', ')}</div>
+        <div class="doc-meta">Édité le ${today}</div>
+      </div>
+    </div>
+  </div>
+  <div class="info-box">
+    💡 Seules les écritures <strong>non lettrées</strong> des comptes de tiers sont prises en compte.
+    L'ancienneté est calculée depuis la date de l'écriture jusqu'au ${fmtDate(refDate)}.
+  </div>
+  <table>
+    <colgroup>
+      <col style="width:8%"/>
+      <col style="width:22%"/>
+      <col style="width:13%"/><col style="width:13%"/>
+      <col style="width:13%"/><col style="width:13%"/><col style="width:13%"/>
+      <col style="width:13%"/>
+    </colgroup>
+    <thead>
+      <tr>
+        <th class="left">Compte</th>
+        <th class="left">Intitulé</th>
+        <th>Non échu</th>
+        <th>0 – 30 j</th>
+        <th>31 – 60 j</th>
+        <th>61 – 90 j</th>
+        <th>&gt; 90 j</th>
+        <th>Total ouvert</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+    <tfoot>
+      <tr>
+        <td class="left" colspan="2">TOTAL GÉNÉRAL (${rows.length} compte${rows.length > 1 ? 's' : ''})</td>
+        ${totCells}
+        <td>${fmtAmt(grandTotal)}</td>
+      </tr>
+    </tfoot>
+  </table>
+  <div class="footer">
+    <span>Balance âgée — ${tabLabel}</span>
+    <span>Édité le ${today} — ${info.companyName}</span>
+  </div>
+</div></body></html>`
+
+  const win = window.open('', '_blank', 'width=1100,height=800')
+  if (!win) { alert('Autorisez les popups pour imprimer.'); return }
+  win.document.write(html)
+  win.document.close()
+  win.focus()
+  setTimeout(() => win.print(), 400)
+}
+
 // ── Ligne de balance ──────────────────────────────────────────────────────────
 
 function BalanceRowUI({ r, fmt, onClick }: { r: BalanceRow; fmt: (v: number) => string; onClick: () => void }) {
@@ -361,73 +515,19 @@ function BalanceTable({ rows, groupByClass, totalD, totalC, equilibre, hasClosed
   )
 }
 
-// ── Balance âgée table ────────────────────────────────────────────────────────
+// ── Balance âgée — table ──────────────────────────────────────────────────────
 
-interface AgedRow {
-  account: string
-  label:   string
-  type:    'client' | 'fournisseur' | 'tiers'
-  buckets: Record<AgingBucket, number>
-  total:   number
-}
-
-function AgedBalanceTable({ rows, fmt }: { rows: AgedRow[]; fmt: (v: number) => string }) {
-  const clientRows    = rows.filter(r => r.type === 'client')
-  const supplierRows  = rows.filter(r => r.type === 'fournisseur')
-  const otherRows     = rows.filter(r => r.type === 'tiers')
-
-  function sectionTotal(sRows: AgedRow[], bucket: AgingBucket) {
-    return sRows.reduce((s, r) => s + r.buckets[bucket], 0)
-  }
-
-  function renderSection(title: string, sRows: AgedRow[], colorClass: string) {
-    if (sRows.length === 0) return null
-    return (
-      <>
-        <tr>
-          <td colSpan={7} className={`px-4 py-2 text-xs font-semibold uppercase tracking-wide ${colorClass} bg-opacity-10`}>
-            {title}
-          </td>
-        </tr>
-        {sRows.map(r => (
-          <tr key={r.account} className="hover:bg-gray-50 transition-colors">
-            <td className="px-4 py-2.5 font-mono text-xs text-[#1b4332]">{r.account}</td>
-            <td className="px-4 py-2.5 text-xs text-gray-700 max-w-[180px] truncate">{r.label}</td>
-            {AGING_BUCKETS.map(b => (
-              <td key={b} className={`px-4 py-2.5 text-right text-xs font-medium ${Math.abs(r.buckets[b]) > 0.01 ? AGING_COLORS[b] : 'text-gray-300'}`}>
-                {Math.abs(r.buckets[b]) > 0.01 ? fmt(Math.abs(r.buckets[b])) : '—'}
-              </td>
-            ))}
-            <td className="px-4 py-2.5 text-right text-xs font-bold text-gray-800">
-              {fmt(Math.abs(r.total))}
-            </td>
-          </tr>
-        ))}
-        <tr className="bg-gray-50 border-t border-gray-200 font-semibold text-xs">
-          <td colSpan={2} className="px-4 py-2 text-gray-500 italic">Sous-total {title}</td>
-          {AGING_BUCKETS.map(b => {
-            const v = sectionTotal(sRows, b)
-            return (
-              <td key={b} className={`px-4 py-2 text-right ${Math.abs(v) > 0.01 ? AGING_COLORS[b] : 'text-gray-300'}`}>
-                {Math.abs(v) > 0.01 ? fmt(Math.abs(v)) : '—'}
-              </td>
-            )
-          })}
-          <td className="px-4 py-2 text-right text-gray-800">
-            {fmt(Math.abs(sRows.reduce((s, r) => s + r.total, 0)))}
-          </td>
-        </tr>
-      </>
-    )
-  }
-
+function AgedTable({ rows, fmt }: { rows: AgedRow[]; fmt: (v: number) => string }) {
   if (rows.length === 0) return (
     <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
       <p className="text-2xl">✅</p>
-      <p className="text-sm font-medium">Aucune écriture non lettrée dans cette période</p>
-      <p className="text-xs text-gray-400">Toutes les écritures de tiers sont lettrées, ou aucune écriture n'existe.</p>
+      <p className="text-sm font-medium">Aucune écriture non lettrée</p>
+      <p className="text-xs text-gray-400">Toutes les écritures sont lettrées, ou aucune écriture n'existe pour cette période.</p>
     </div>
   )
+
+  const totalByBucket = AGING_BUCKETS.map(b => rows.reduce((s, r) => s + Math.abs(r.buckets[b]), 0))
+  const grandTotal    = rows.reduce((s, r) => s + Math.abs(r.total), 0)
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
@@ -444,30 +544,46 @@ function AgedBalanceTable({ rows, fmt }: { rows: AgedRow[]; fmt: (v: number) => 
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {renderSection('Clients (41x)', clientRows, 'text-blue-800 bg-blue-50')}
-            {renderSection('Fournisseurs (40x)', supplierRows, 'text-orange-800 bg-orange-50')}
-            {renderSection('Autres tiers (4x)', otherRows, 'text-gray-800 bg-gray-50')}
+            {rows.map((r, i) => (
+              <tr key={r.account} className={`hover:bg-gray-50 transition-colors ${i % 2 === 1 ? 'bg-gray-50/40' : ''}`}>
+                <td className="px-4 py-2.5 font-mono text-xs text-[#1b4332]">{r.account}</td>
+                <td className="px-4 py-2.5 text-xs text-gray-700 max-w-[220px] truncate">{r.label}</td>
+                {AGING_BUCKETS.map(b => {
+                  const v = Math.abs(r.buckets[b])
+                  return (
+                    <td key={b} className={`px-4 py-2.5 text-right text-xs font-medium ${v > 0.01 ? AGING_COLORS[b] : 'text-gray-300'}`}>
+                      {v > 0.01
+                        ? <span className={`inline-block rounded px-1.5 py-0.5 ${AGING_BG[b]}`}>{fmt(v)}</span>
+                        : '—'}
+                    </td>
+                  )
+                })}
+                <td className="px-4 py-2.5 text-right text-xs font-bold text-gray-900">
+                  {fmt(Math.abs(r.total))}
+                </td>
+              </tr>
+            ))}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-[#1b4332] bg-[#1b4332]/10 font-bold text-xs">
-              <td colSpan={2} className="px-4 py-3 text-gray-900">TOTAL GÉNÉRAL</td>
-              {AGING_BUCKETS.map(b => {
-                const v = rows.reduce((s, r) => s + r.buckets[b], 0)
+              <td colSpan={2} className="px-4 py-3 text-gray-900">
+                TOTAL — {rows.length} compte{rows.length > 1 ? 's' : ''}
+              </td>
+              {AGING_BUCKETS.map((b, i) => {
+                const v = totalByBucket[i] ?? 0
                 return (
-                  <td key={b} className={`px-4 py-3 text-right ${Math.abs(v) > 0.01 ? AGING_COLORS[b] : 'text-gray-400'}`}>
-                    {Math.abs(v) > 0.01 ? fmt(Math.abs(v)) : '—'}
+                  <td key={b} className={`px-4 py-3 text-right ${v > 0.01 ? AGING_COLORS[b] : 'text-gray-400'}`}>
+                    {v > 0.01 ? fmt(v) : '—'}
                   </td>
                 )
               })}
-              <td className="px-4 py-3 text-right text-gray-900">
-                {fmt(Math.abs(rows.reduce((s, r) => s + r.total, 0)))}
-              </td>
+              <td className="px-4 py-3 text-right text-gray-900">{fmt(grandTotal)}</td>
             </tr>
           </tfoot>
         </table>
       </div>
       <div className="px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs text-gray-500">
-        💡 Seules les écritures <strong>non lettrées</strong> des comptes de tiers (classe 4) sont affichées.
+        💡 Seules les écritures <strong>non lettrées</strong> sont affichées.
         L'ancienneté est calculée depuis la date de l'écriture jusqu'à la date de fin de période sélectionnée.
       </div>
     </div>
@@ -486,6 +602,21 @@ function KpiCard({ label, value, sub, color }: { label: string; value: string; s
   )
 }
 
+// ── Aging legend strip ────────────────────────────────────────────────────────
+
+function AgingLegend() {
+  return (
+    <div className="flex items-center gap-4 flex-wrap px-1">
+      {AGING_BUCKETS.map(b => (
+        <span key={b} className={`inline-flex items-center gap-1.5 text-xs font-medium ${AGING_COLORS[b]}`}>
+          <span className={`inline-block w-2.5 h-2.5 rounded-full ${AGING_BG[b]} border border-current/30`} />
+          {AGING_LABELS[b]}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function BalancePage() {
@@ -497,9 +628,9 @@ export function BalancePage() {
 
   // ── Tab ───────────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<BalanceTab>('generale')
+  const isAgeeTab = activeTab === 'agee-clients' || activeTab === 'agee-fournisseurs'
 
   // ── Accounting zone (from company settings) ───────────────────────────────
-  // Zone already read from company settings context; used for print header & labels
   const isOHADA = !['FR', 'BE', 'CH', 'LU'].includes(country)
 
   // ── Dates initiales ───────────────────────────────────────────────────────
@@ -535,19 +666,19 @@ export function BalancePage() {
     })),
   })
 
-  // ── Journal queries (tab 4 — balance âgée) ────────────────────────────────
+  // ── Journal queries (tabs âgée clients / âgée fournisseurs) ──────────────
   const journalQueries = useQueries({
     queries: coveredFYs.map(fy => ({
       queryKey:  ['journal', fy.id],
       queryFn:   () => accountingApi.getJournal(fy.id),
       staleTime: 30_000,
-      enabled:   activeTab === 'agee' && coveredFYs.length > 0,
+      enabled:   isAgeeTab && coveredFYs.length > 0,
     })),
   })
 
   const isLoadingBalance  = yearsLoading || fyQueries.some(q => q.isLoading)
   const isLoadingJournal  = journalQueries.some(q => q.isLoading)
-  const isLoading         = isLoadingBalance || (activeTab === 'agee' && isLoadingJournal)
+  const isLoading         = isLoadingBalance || (isAgeeTab && isLoadingJournal)
   const isError           = fyQueries.some(q => q.isError)
 
   // ── Fusion des balances (cumul par compte) ────────────────────────────────
@@ -596,25 +727,22 @@ export function BalancePage() {
   const activeTotalC  = activeRows.reduce((s, r) => s + r.totalCredit, 0)
   const activeEq      = Math.abs(activeTotalD - activeTotalC) < 0.01
 
-  // ── Balance âgée ─────────────────────────────────────────────────────────
-  const agedRows = useMemo((): AgedRow[] => {
-    if (activeTab !== 'agee') return []
+  // ── Balance âgée — tous tiers (calculé quand onglet âgée actif) ───────────
+  const allAgedRows = useMemo((): AgedRow[] => {
+    if (!isAgeeTab) return []
     const refDate = new Date(dateTo)
     const accMap  = new Map<string, { label: string; type: AgedRow['type']; buckets: Record<AgingBucket, number> }>()
 
     for (const q of journalQueries) {
       if (!q.data) continue
       for (const entry of q.data.entries) {
-        // Only class-4 accounts
         if (!entry.account.startsWith('4')) continue
-        // Only unlettred entries (open/pending)
         if (entry.lettrage) continue
 
         const ageDays = Math.floor(
           (refDate.getTime() - new Date(entry.date).getTime()) / (1000 * 60 * 60 * 24)
         )
         const bucket = getAgingBucket(ageDays)
-        // net contribution: debit - credit (positive = debit solde for the account)
         const net = entry.debit - entry.credit
 
         if (!accMap.has(entry.account)) {
@@ -648,7 +776,55 @@ export function BalancePage() {
       }))
       .filter(r => Math.abs(r.total) > 0.01)
       .sort((a, b) => a.account.localeCompare(b.account))
-  }, [activeTab, journalQueries, mergedRows, dateTo])
+  }, [isAgeeTab, journalQueries, mergedRows, dateTo])
+
+  // ── Split âgée par type ───────────────────────────────────────────────────
+  const agedClientRows     = useMemo(() => allAgedRows.filter(r => r.type === 'client'),      [allAgedRows])
+  const agedSupplierRows   = useMemo(() => allAgedRows.filter(r => r.type === 'fournisseur'), [allAgedRows])
+  const agedOtherRows      = useMemo(() => allAgedRows.filter(r => r.type === 'tiers'),       [allAgedRows])
+
+  // Rows displayed for each aged tab (clients + autres tiers / fournisseurs only)
+  const displayedAgedRows = useMemo(() => {
+    if (activeTab === 'agee-clients')     return [...agedClientRows, ...agedOtherRows]
+    if (activeTab === 'agee-fournisseurs') return agedSupplierRows
+    return []
+  }, [activeTab, agedClientRows, agedSupplierRows, agedOtherRows])
+
+  // ── KPIs clients standard ─────────────────────────────────────────────────
+  const clientKpis = useMemo(() => {
+    const totalCreances  = clientRows.reduce((s, r) => s + r.soldeDebiteur,  0)
+    const totalRecouvres = clientRows.reduce((s, r) => s + r.soldeCrediteur, 0)
+    return { totalCreances, totalRecouvres, netARecouvrer: totalCreances - totalRecouvres }
+  }, [clientRows])
+
+  // ── KPIs fournisseurs standard ────────────────────────────────────────────
+  const supplierKpis = useMemo(() => {
+    const totalDettes  = fournisseurRows.reduce((s, r) => s + r.soldeCrediteur, 0)
+    const avances      = fournisseurRows.reduce((s, r) => s + r.soldeDebiteur,  0)
+    return { totalDettes, avances, netARegler: totalDettes - avances }
+  }, [fournisseurRows])
+
+  // ── KPIs âgée clients ─────────────────────────────────────────────────────
+  const agedClientKpis = useMemo(() => {
+    const rows    = agedClientRows
+    const total   = rows.reduce((s, r) => s + Math.abs(r.total), 0)
+    const courant = rows.reduce((s, r) => s + Math.abs(r.buckets['courant']), 0)
+    const late30  = rows.reduce((s, r) => s + Math.abs(r.buckets['31-60']) + Math.abs(r.buckets['61-90']) + Math.abs(r.buckets['91+']), 0)
+    const crit90  = rows.reduce((s, r) => s + Math.abs(r.buckets['91+']), 0)
+    const tauxRetard = total > 0 ? (late30 / total) * 100 : 0
+    return { total, courant, late30, crit90, tauxRetard }
+  }, [agedClientRows])
+
+  // ── KPIs âgée fournisseurs ────────────────────────────────────────────────
+  const agedSupplierKpis = useMemo(() => {
+    const rows   = agedSupplierRows
+    const total  = rows.reduce((s, r) => s + Math.abs(r.total), 0)
+    const courant = rows.reduce((s, r) => s + Math.abs(r.buckets['courant']), 0)
+    const echu30 = rows.reduce((s, r) => s + Math.abs(r.buckets['31-60']) + Math.abs(r.buckets['61-90']) + Math.abs(r.buckets['91+']), 0)
+    const urg90  = rows.reduce((s, r) => s + Math.abs(r.buckets['91+']), 0)
+    const tauxEchu = total > 0 ? (echu30 / total) * 100 : 0
+    return { total, courant, echu30, urg90, tauxEchu }
+  }, [agedSupplierRows])
 
   // ── Print ─────────────────────────────────────────────────────────────────
   function handlePrint() {
@@ -662,6 +838,13 @@ export function BalancePage() {
       city:        company?.city ?? null,
       country,
     }
+
+    if (isAgeeTab) {
+      const tabLabel = TABS.find(t => t.id === activeTab)?.label ?? 'Balance âgée'
+      openAgedPrint(info, dateTo, displayedAgedRows, fmt, coveredYears, tabLabel)
+      return
+    }
+
     const tabLabel = TABS.find(t => t.id === activeTab)?.label ?? 'Balance'
     openBalancePrint(
       info, dateFrom, dateTo, activeRows,
@@ -675,19 +858,9 @@ export function BalancePage() {
   function applyPreset(from: string, to: string) { setDateFrom(from); setDateTo(to) }
   const fyYear = globalFY?.year ?? new Date().getFullYear()
 
-  // ── KPIs clients ──────────────────────────────────────────────────────────
-  const clientKpis = useMemo(() => {
-    const totalCreances  = clientRows.reduce((s, r) => s + r.soldeDebiteur,  0)
-    const totalRecouvres = clientRows.reduce((s, r) => s + r.soldeCrediteur, 0)
-    return { totalCreances, totalRecouvres, netARecouvrer: totalCreances - totalRecouvres }
-  }, [clientRows])
-
-  // ── KPIs fournisseurs ─────────────────────────────────────────────────────
-  const supplierKpis = useMemo(() => {
-    const totalDettes  = fournisseurRows.reduce((s, r) => s + r.soldeCrediteur, 0)
-    const avances      = fournisseurRows.reduce((s, r) => s + r.soldeDebiteur,  0)
-    return { totalDettes, avances, netARegler: totalDettes - avances }
-  }, [fournisseurRows])
+  const printDisabled = isAgeeTab
+    ? displayedAgedRows.length === 0
+    : activeRows.length === 0
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -703,7 +876,7 @@ export function BalancePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {mergedRows.length > 0 && activeTab !== 'agee' && (
+          {mergedRows.length > 0 && !isAgeeTab && (
             <span className={`rounded-full px-3 py-1 text-xs font-medium
               ${activeEq ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
               {activeEq ? '✓ Équilibrée' : '✗ Déséquilibrée'}
@@ -711,7 +884,7 @@ export function BalancePage() {
           )}
           <button
             onClick={handlePrint}
-            disabled={activeTab !== 'agee' ? activeRows.length === 0 : agedRows.length === 0}
+            disabled={printDisabled}
             className="flex items-center gap-2 rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-white
                        hover:bg-[#2d6a4f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
@@ -722,19 +895,25 @@ export function BalancePage() {
 
       {/* ── Tab bar ── */}
       <div className="flex border-b border-gray-200 bg-white rounded-t-xl overflow-hidden">
-        {TABS.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-              activeTab === tab.id
-                ? 'border-[#1b4332] text-[#1b4332] bg-[#1b4332]/5'
-                : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {TABS.map(tab => {
+          const isAgeGroup = tab.id.startsWith('agee') && activeTab.startsWith('agee')
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 px-3 py-3 text-xs font-medium transition-colors border-b-2 flex items-center justify-center gap-1.5 ${
+                activeTab === tab.id
+                  ? 'border-[#1b4332] text-[#1b4332] bg-[#1b4332]/5'
+                  : isAgeGroup
+                  ? 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'
+              }`}
+            >
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+            </button>
+          )
+        })}
       </div>
 
       {/* Bannière lecture seule */}
@@ -820,8 +999,8 @@ export function BalancePage() {
         </div>
 
         <div className="flex flex-wrap gap-3 items-end pt-2 border-t border-gray-100">
-          {/* Recherche (hidden for agee tab) */}
-          {activeTab !== 'agee' && (
+          {/* Recherche (masquée pour onglets âgée) */}
+          {!isAgeeTab && (
             <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
               <label className="text-xs font-medium text-gray-500">Rechercher un compte</label>
               <div className="relative">
@@ -904,7 +1083,6 @@ export function BalancePage() {
           {/* ── Balance clients ── */}
           {activeTab === 'clients' && (
             <>
-              {/* KPIs */}
               <div className="grid grid-cols-3 gap-3">
                 <KpiCard
                   label="Total créances clients"
@@ -941,7 +1119,6 @@ export function BalancePage() {
           {/* ── Balance fournisseurs ── */}
           {activeTab === 'fournisseurs' && (
             <>
-              {/* KPIs */}
               <div className="grid grid-cols-3 gap-3">
                 <KpiCard
                   label="Total dettes fournisseurs"
@@ -975,27 +1152,93 @@ export function BalancePage() {
             </>
           )}
 
-          {/* ── Balance âgée ── */}
-          {activeTab === 'agee' && (
+          {/* ── Balance âgée clients ── */}
+          {activeTab === 'agee-clients' && (
             <>
-              {/* Info banner */}
+              {/* Banner */}
               <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                <strong>Balance âgée</strong> — Écritures non lettrées des comptes de tiers (classe 4),
-                vieillies par rapport au <strong>{fmtDate(dateTo)}</strong>.
+                <strong>Balance âgée clients</strong> — Créances non lettrées (comptes 41x) vieillies au{' '}
+                <strong>{fmtDate(dateTo)}</strong>.
                 Paramétrez le lettrage dans l'onglet <em>Lettrage</em> pour maintenir cette vue à jour.
               </div>
 
-              {/* Aging legend */}
-              <div className="flex items-center gap-4 flex-wrap px-1">
-                {AGING_BUCKETS.map(b => (
-                  <span key={b} className={`inline-flex items-center gap-1.5 text-xs font-medium ${AGING_COLORS[b]}`}>
-                    <span className="inline-block w-2.5 h-2.5 rounded-full bg-current opacity-60" />
-                    {AGING_LABELS[b]}
-                  </span>
-                ))}
+              {/* KPIs âgée clients */}
+              {agedClientRows.length > 0 && (
+                <div className="grid grid-cols-4 gap-3">
+                  <KpiCard
+                    label="Total encours clients"
+                    value={fmt(agedClientKpis.total)}
+                    sub={`${agedClientRows.length} compte(s) ouverts`}
+                    color="border-blue-200 bg-blue-50 text-blue-900"
+                  />
+                  <KpiCard
+                    label="Non échu"
+                    value={fmt(agedClientKpis.courant)}
+                    sub="Créances dans les délais"
+                    color="border-green-200 bg-green-50 text-green-900"
+                  />
+                  <KpiCard
+                    label="En retard > 30 j"
+                    value={fmt(agedClientKpis.late30)}
+                    sub={`${agedClientKpis.tauxRetard.toFixed(1)}% du total encours`}
+                    color={agedClientKpis.late30 > 0 ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-800'}
+                  />
+                  <KpiCard
+                    label="Critique > 90 j"
+                    value={fmt(agedClientKpis.crit90)}
+                    sub="À relancer en priorité"
+                    color={agedClientKpis.crit90 > 0 ? 'border-red-200 bg-red-50 text-red-900' : 'border-gray-200 bg-gray-50 text-gray-800'}
+                  />
+                </div>
+              )}
+
+              <AgingLegend />
+              {isLoadingJournal ? <Spinner /> : <AgedTable rows={displayedAgedRows} fmt={fmt} />}
+            </>
+          )}
+
+          {/* ── Balance âgée fournisseurs ── */}
+          {activeTab === 'agee-fournisseurs' && (
+            <>
+              {/* Banner */}
+              <div className="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-800">
+                <strong>Balance âgée fournisseurs</strong> — Dettes non lettrées (comptes 40x) vieillies au{' '}
+                <strong>{fmtDate(dateTo)}</strong>.
+                Paramétrez le lettrage dans l'onglet <em>Lettrage</em> pour maintenir cette vue à jour.
               </div>
 
-              {isLoadingJournal ? <Spinner /> : <AgedBalanceTable rows={agedRows} fmt={fmt} />}
+              {/* KPIs âgée fournisseurs */}
+              {agedSupplierRows.length > 0 && (
+                <div className="grid grid-cols-4 gap-3">
+                  <KpiCard
+                    label="Total dettes fournisseurs"
+                    value={fmt(agedSupplierKpis.total)}
+                    sub={`${agedSupplierRows.length} compte(s) ouverts`}
+                    color="border-orange-200 bg-orange-50 text-orange-900"
+                  />
+                  <KpiCard
+                    label="Non échu"
+                    value={fmt(agedSupplierKpis.courant)}
+                    sub="Dettes dans les délais"
+                    color="border-green-200 bg-green-50 text-green-900"
+                  />
+                  <KpiCard
+                    label="Échu > 30 j"
+                    value={fmt(agedSupplierKpis.echu30)}
+                    sub={`${agedSupplierKpis.tauxEchu.toFixed(1)}% du total dettes`}
+                    color={agedSupplierKpis.echu30 > 0 ? 'border-red-200 bg-red-50 text-red-900' : 'border-gray-200 bg-gray-50 text-gray-800'}
+                  />
+                  <KpiCard
+                    label="Urgent > 90 j"
+                    value={fmt(agedSupplierKpis.urg90)}
+                    sub="Paiement en retard critique"
+                    color={agedSupplierKpis.urg90 > 0 ? 'border-red-300 bg-red-100 text-red-900' : 'border-gray-200 bg-gray-50 text-gray-800'}
+                  />
+                </div>
+              )}
+
+              <AgingLegend />
+              {isLoadingJournal ? <Spinner /> : <AgedTable rows={displayedAgedRows} fmt={fmt} />}
             </>
           )}
         </>
