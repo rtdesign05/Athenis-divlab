@@ -1,26 +1,11 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
+import { getAgenceFilter } from '../../middleware/agenceFilter.js'
+import type { JwtPayload } from '@athenis/shared-types'
 import type { ImportBankInput, ReconcileInput, UpdateTxStatusInput, ListBankTxInput } from './bank.dto.js'
 
-// BankTransaction model does not exist in v2 schema — use in-memory store
-interface BankTransaction {
-  id: string
-  companyId: string
-  date: Date
-  label: string
-  amount: number
-  type: 'CREDIT' | 'DEBIT'
-  reference: string | null
-  status: 'UNMATCHED' | 'MATCHED' | 'IGNORED'
-  invoiceId: string | null
-  expenseId: string | null
-  lettrage: string | null
-  createdAt: Date
-}
-
-const txStore = new Map<string, BankTransaction>()
-let txSeq = 0
-function genTxId(): string { return `TX-${++txSeq}-${Date.now()}` }
+// ── Parsers ───────────────────────────────────────────────────────────────────
 
 interface ParsedTx {
   date: Date
@@ -29,8 +14,6 @@ interface ParsedTx {
   type: 'CREDIT' | 'DEBIT'
   reference: string | null
 }
-
-// ── Parsers ───────────────────────────────────────────────────────────────────
 
 function parseCSV(content: string): ParsedTx[] {
   const lines = content.trim().split(/\r?\n/).filter(Boolean)
@@ -145,45 +128,62 @@ export async function previewBankStatement(content: string, format: 'CSV' | 'OFX
   }
 }
 
-export async function importBankStatement(companyId: string, data: ImportBankInput) {
+export async function importBankStatement(companyId: string, data: ImportBankInput, user?: JwtPayload) {
   const parsed = data.format === 'CSV' ? parseCSV(data.content) : parseOFX(data.content)
   if (parsed.length === 0)
     throw new AppError('No valid transactions found in the file', 400, 'NO_TRANSACTIONS')
 
-  const now = new Date()
-  for (const tx of parsed) {
-    const id = genTxId()
-    txStore.set(id, {
-      id, companyId,
+  const agenceId = user?.agenceId ?? null
+
+  await prisma.bankTransaction.createMany({
+    data: parsed.map(tx => ({
+      companyId,
+      agenceId:  agenceId ?? null,
       date:      tx.date,
       label:     tx.label,
-      amount:    tx.amount,
+      amount:    new Prisma.Decimal(tx.amount),
       type:      tx.type,
       reference: tx.reference,
-      status:    'UNMATCHED',
-      invoiceId: null,
-      expenseId: null,
-      lettrage:  null,
-      createdAt: now,
-    })
-  }
+      status:    'UNMATCHED' as const,
+    })),
+  })
 
   return { imported: parsed.length }
 }
 
-export async function listBankTransactions(companyId: string, query: ListBankTxInput) {
-  const { page, limit, status } = query
-  const all = [...txStore.values()]
-    .filter(tx => tx.companyId === companyId && (!status || tx.status === status))
-    .sort((a, b) => b.date.getTime() - a.date.getTime())
+const TX_INCLUDE = {
+  invoice: { select: { id: true, reference: true, amountTTC: true } },
+  expense: { select: { id: true, description: true, amount: true } },
+} as const
 
-  const total = all.length
-  const items = all.slice((page - 1) * limit, page * limit)
+export async function listBankTransactions(companyId: string, query: ListBankTxInput, user?: JwtPayload) {
+  const { page, limit, status } = query
+
+  const where: Prisma.BankTransactionWhereInput = {
+    companyId,
+    ...(user ? getAgenceFilter(user) : {}),
+    ...(status ? { status } : {}),
+  }
+
+  const [items, total] = await Promise.all([
+    prisma.bankTransaction.findMany({
+      where,
+      include: TX_INCLUDE,
+      orderBy: { date: 'desc' },
+      skip:    (page - 1) * limit,
+      take:    limit,
+    }),
+    prisma.bankTransaction.count({ where }),
+  ])
+
   return { items, total, page, limit, pages: Math.ceil(total / limit) }
 }
 
 export async function autoReconcile(companyId: string) {
-  const transactions = [...txStore.values()].filter(tx => tx.companyId === companyId && tx.status === 'UNMATCHED')
+  const transactions = await prisma.bankTransaction.findMany({
+    where: { companyId, status: 'UNMATCHED' },
+  })
+
   const invoices = await prisma.invoice.findMany({
     where: { companyId, status: { in: ['SENT', 'OVERDUE'] } },
     select: { id: true, amountTTC: true, dueAt: true, reference: true },
@@ -193,44 +193,46 @@ export async function autoReconcile(companyId: string) {
     select: { id: true, amount: true, date: true },
   })
 
-  let matched = 0
+  let matched      = 0
+  const usedInvIds = new Set<string>()
+  const usedExpIds = new Set<string>()
 
   for (const tx of transactions) {
-    const txAmount = tx.amount
+    const txAmount = Number(tx.amount)
     const txDate   = new Date(tx.date)
 
     if (tx.type === 'CREDIT') {
       const inv = invoices.find((i) => {
+        if (usedInvIds.has(i.id)) return false
         const diff  = Math.abs(Number(i.amountTTC) - txAmount) / Number(i.amountTTC)
         const days  = Math.abs((i.dueAt ? new Date(i.dueAt).getTime() : txDate.getTime()) - txDate.getTime()) / 86_400_000
         return diff < 0.05 && days <= 15
       })
       if (inv) {
         const lettrage = `L${String(++matched).padStart(4, '0')}`
-        const existing = txStore.get(tx.id)
-        if (existing) {
-          txStore.set(tx.id, { ...existing, status: 'MATCHED', invoiceId: inv.id, lettrage })
-        }
-        const idx = invoices.indexOf(inv)
-        invoices.splice(idx, 1)
+        await prisma.bankTransaction.update({
+          where: { id: tx.id },
+          data:  { status: 'MATCHED', invoiceId: inv.id, lettrage },
+        })
+        usedInvIds.add(inv.id)
         continue
       }
     }
 
     if (tx.type === 'DEBIT') {
       const exp = expenses.find((e) => {
+        if (usedExpIds.has(e.id)) return false
         const diff = Math.abs(Number(e.amount) - txAmount) / Number(e.amount)
         const days = Math.abs(new Date(e.date).getTime() - txDate.getTime()) / 86_400_000
         return diff < 0.05 && days <= 5
       })
       if (exp) {
         const lettrage = `L${String(++matched).padStart(4, '0')}`
-        const existing = txStore.get(tx.id)
-        if (existing) {
-          txStore.set(tx.id, { ...existing, status: 'MATCHED', expenseId: exp.id, lettrage })
-        }
-        const idx = expenses.indexOf(exp)
-        expenses.splice(idx, 1)
+        await prisma.bankTransaction.update({
+          where: { id: tx.id },
+          data:  { status: 'MATCHED', expenseId: exp.id, lettrage },
+        })
+        usedExpIds.add(exp.id)
       }
     }
   }
@@ -239,7 +241,7 @@ export async function autoReconcile(companyId: string) {
 }
 
 export async function reconcileTransaction(companyId: string, data: ReconcileInput) {
-  const tx = txStore.get(data.transactionId)
+  const tx = await prisma.bankTransaction.findUnique({ where: { id: data.transactionId } })
   if (!tx || tx.companyId !== companyId)
     throw new AppError('Transaction not found', 404, 'NOT_FOUND')
 
@@ -254,18 +256,16 @@ export async function reconcileTransaction(companyId: string, data: ReconcileInp
       throw new AppError('Expense not found', 404, 'NOT_FOUND')
   }
 
-  const count = [...txStore.values()].filter(t => t.companyId === companyId && t.status === 'MATCHED').length
+  const count = await prisma.bankTransaction.count({
+    where: { companyId, status: 'MATCHED' },
+  })
   const lettrage = `L${String(count + 1).padStart(4, '0')}`
 
-  txStore.set(tx.id, {
-    ...tx,
-    status:    'MATCHED',
-    lettrage,
-    invoiceId: data.invoiceId ?? null,
-    expenseId: data.expenseId ?? null,
+  return prisma.bankTransaction.update({
+    where:   { id: tx.id },
+    data:    { status: 'MATCHED', lettrage, invoiceId: data.invoiceId ?? null, expenseId: data.expenseId ?? null },
+    include: TX_INCLUDE,
   })
-
-  return txStore.get(tx.id)!
 }
 
 export async function updateTransactionStatus(
@@ -273,33 +273,41 @@ export async function updateTransactionStatus(
   id: string,
   data: UpdateTxStatusInput,
 ) {
-  const tx = txStore.get(id)
+  const tx = await prisma.bankTransaction.findUnique({ where: { id } })
   if (!tx || tx.companyId !== companyId)
     throw new AppError('Transaction not found', 404, 'NOT_FOUND')
 
-  txStore.set(id, {
-    ...tx,
-    status:    data.status,
-    lettrage:  data.lettrage ?? null,
-    ...(data.status === 'UNMATCHED' ? { invoiceId: null, expenseId: null } : {}),
+  return prisma.bankTransaction.update({
+    where: { id },
+    data:  {
+      status:    data.status,
+      lettrage:  data.lettrage ?? null,
+      ...(data.status === 'UNMATCHED' ? { invoiceId: null, expenseId: null } : {}),
+    },
+    include: TX_INCLUDE,
   })
-
-  return txStore.get(id)!
 }
 
 export async function deleteTransaction(companyId: string, id: string) {
-  const tx = txStore.get(id)
+  const tx = await prisma.bankTransaction.findUnique({ where: { id } })
   if (!tx || tx.companyId !== companyId)
     throw new AppError('Transaction not found', 404, 'NOT_FOUND')
-  txStore.delete(id)
+  await prisma.bankTransaction.delete({ where: { id } })
 }
 
-export async function bankStats(companyId: string) {
-  const all       = [...txStore.values()].filter(t => t.companyId === companyId)
-  const total     = all.length
-  const matched   = all.filter(t => t.status === 'MATCHED').length
-  const unmatched = all.filter(t => t.status === 'UNMATCHED').length
-  const ignored   = all.filter(t => t.status === 'IGNORED').length
-  const rate      = total > 0 ? Math.round((matched / total) * 100) : 0
+export async function bankStats(companyId: string, user?: JwtPayload) {
+  const baseWhere: Prisma.BankTransactionWhereInput = {
+    companyId,
+    ...(user ? getAgenceFilter(user) : {}),
+  }
+
+  const [total, matched, unmatched, ignored] = await Promise.all([
+    prisma.bankTransaction.count({ where: baseWhere }),
+    prisma.bankTransaction.count({ where: { ...baseWhere, status: 'MATCHED' } }),
+    prisma.bankTransaction.count({ where: { ...baseWhere, status: 'UNMATCHED' } }),
+    prisma.bankTransaction.count({ where: { ...baseWhere, status: 'IGNORED' } }),
+  ])
+
+  const rate = total > 0 ? Math.round((matched / total) * 100) : 0
   return { total, matched, unmatched, ignored, reconciliationRate: rate }
 }

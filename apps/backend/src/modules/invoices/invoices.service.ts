@@ -1,6 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
+import { getAgenceFilter } from '../../middleware/agenceFilter.js'
+import type { JwtPayload } from '@athenis/shared-types'
 import type {
   CreateInvoiceInput,
   UpdateInvoiceInput,
@@ -8,6 +10,7 @@ import type {
 } from './invoices.dto.js'
 
 const CLIENT_SELECT = { id: true, nom: true, email: true }
+const LINES_INCLUDE = { lines: { orderBy: { description: 'asc' as const } }, client: { select: CLIENT_SELECT }, agence: { select: { nom: true } } } as const
 
 export async function nextInvoiceReference(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
   const year = new Date().getFullYear()
@@ -23,17 +26,18 @@ export async function nextInvoiceReference(companyId: string, tx?: Prisma.Transa
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
-export async function listInvoices(companyId: string, query: ListInvoicesInput) {
+export async function listInvoices(companyId: string, query: ListInvoicesInput, user?: JwtPayload) {
   const { page, limit, status, clientId } = query
   const where: Prisma.InvoiceWhereInput = {
     companyId,
+    ...(user ? getAgenceFilter(user) : {}),
     ...(status   ? { status }   : {}),
     ...(clientId ? { clientId } : {}),
   }
   const [items, total] = await Promise.all([
     prisma.invoice.findMany({
       where,
-      include: { client: { select: CLIENT_SELECT } },
+      include: LINES_INCLUDE,
       orderBy: { issuedAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,
@@ -43,17 +47,25 @@ export async function listInvoices(companyId: string, query: ListInvoicesInput) 
   return { items, total, page, limit, pages: Math.ceil(total / limit) }
 }
 
-export async function getInvoice(companyId: string, id: string) {
+export async function getInvoice(companyId: string, id: string, user?: JwtPayload) {
   const invoice = await prisma.invoice.findUnique({
-    where: { id },
-    include: { client: { select: CLIENT_SELECT } },
+    where:   { id },
+    include: LINES_INCLUDE,
   })
   if (!invoice || invoice.companyId !== companyId)
     throw new AppError('Invoice not found', 404, 'NOT_FOUND')
+
+  // Enforce agence isolation: a restricted user cannot access invoices of other agences
+  if (user?.isRestricted && user.agenceIds.length > 0) {
+    if (!invoice.agenceId || !user.agenceIds.includes(invoice.agenceId)) {
+      throw new AppError('Invoice not found', 404, 'NOT_FOUND')
+    }
+  }
+
   return invoice
 }
 
-export async function createInvoice(companyId: string, data: CreateInvoiceInput, _createdBy: string) {
+export async function createInvoice(companyId: string, data: CreateInvoiceInput, _createdBy: string, user?: JwtPayload) {
   return prisma.$transaction(async (tx) => {
     const client = await tx.client.findUnique({ where: { id: data.clientId } })
     if (!client || client.companyId !== companyId)
@@ -65,21 +77,37 @@ export async function createInvoice(companyId: string, data: CreateInvoiceInput,
     const amountTTC = amountHT.add(taxAmount).toDecimalPlaces(2)
     const reference = await nextInvoiceReference(companyId, tx)
 
+    // Tag with the user's primary agenceId so it is only visible to that agence
+    const agenceId = user?.agenceId ?? null
+
     return tx.invoice.create({
       data: {
         companyId,
-        clientId:    data.clientId,
+        clientId:           data.clientId,
+        modele:             data.modele ?? 'standard',
         reference,
-        issuedAt:    data.issueDate ?? new Date(),
-        dueAt:       data.dueDate ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        issuedAt:           data.issueDate ?? new Date(),
+        dueAt:              data.dueDate ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         amountHT,
-        vatRate:     vatRatePct,
+        vatRate:            vatRatePct,
         taxAmount,
         amountTTC,
-        description: data.notes ?? null,
-        status:      'DRAFT',
+        description:        data.notes ?? null,
+        conditionsPaiement: data.conditionsPaiement ?? null,
+        status:             'DRAFT',
+        ...(agenceId ? { agenceId } : {}),
+        lines: {
+          create: (data.lines ?? []).map(l => ({
+            description:    l.description,
+            quantite:       new Prisma.Decimal(l.quantite),
+            unite:          l.unite,
+            prixUnitaireHT: new Prisma.Decimal(l.prixUnitaireHT),
+            tvaRate:        new Prisma.Decimal(l.tvaRate),
+            montantHT:      new Prisma.Decimal(l.montantHT),
+          })),
+        },
       },
-      include: { client: { select: CLIENT_SELECT } },
+      include: LINES_INCLUDE,
     })
   })
 }
@@ -100,10 +128,25 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
       ...(data.clientId  ? { clientId: data.clientId }             : {}),
       ...(data.issueDate ? { issuedAt: data.issueDate }            : {}),
       ...(data.dueDate   ? { dueAt: data.dueDate }                 : {}),
-      ...(data.notes !== undefined ? { description: data.notes }   : {}),
+      ...(data.notes !== undefined ? { description: data.notes }         : {}),
+      ...(data.conditionsPaiement !== undefined ? { conditionsPaiement: data.conditionsPaiement ?? null } : {}),
+      ...(data.modele    ? { modele: data.modele }                  : {}),
       amountHT, vatRate: vatRatePct, taxAmount, amountTTC,
+      ...(data.lines ? {
+        lines: {
+          deleteMany: {},
+          create: data.lines.map(l => ({
+            description:    l.description,
+            quantite:       new Prisma.Decimal(l.quantite),
+            unite:          l.unite,
+            prixUnitaireHT: new Prisma.Decimal(l.prixUnitaireHT),
+            tvaRate:        new Prisma.Decimal(l.tvaRate),
+            montantHT:      new Prisma.Decimal(l.montantHT),
+          })),
+        },
+      } : {}),
     },
-    include: { client: { select: CLIENT_SELECT } },
+    include: LINES_INCLUDE,
   })
 }
 
@@ -126,16 +169,17 @@ export async function deleteInvoice(companyId: string, id: string) {
   await prisma.invoice.delete({ where: { id } })
 }
 
-export async function invoiceStats(companyId: string) {
+export async function invoiceStats(companyId: string, user?: JwtPayload) {
+  const af = user ? getAgenceFilter(user) : {}
   const [byStatus, totals] = await Promise.all([
     prisma.invoice.groupBy({
       by: ['status'],
-      where: { companyId },
+      where: { companyId, ...af },
       _count: true,
       _sum: { amountTTC: true },
     }),
     prisma.invoice.aggregate({
-      where: { companyId },
+      where: { companyId, ...af },
       _sum: { amountHT: true, amountTTC: true },
       _count: true,
     }),
@@ -148,6 +192,7 @@ export async function invoiceStats(companyId: string) {
 export async function dashboardStats(
   companyId: string,
   opts: { from?: Date; to?: Date } = {},
+  user?: JwtPayload,
 ) {
   const now  = new Date()
   const y    = now.getFullYear()
@@ -161,30 +206,32 @@ export async function dashboardStats(
   const prevFrom = new Date(from.getFullYear() - 1, from.getMonth(), from.getDate())
   const prevTo   = new Date(to.getFullYear()   - 1, to.getMonth(),   to.getDate(), 23, 59, 59, 999)
 
+  const af = user ? getAgenceFilter(user) : {}
+
   const [paidCurr, paidPrev, expenses, paidInvoicesForDSO, pending, overdue] = await Promise.all([
     prisma.invoice.aggregate({
-      where: { companyId, status: 'PAID', paidAt: { gte: from, lte: to } },
+      where: { companyId, ...af, status: 'PAID', paidAt: { gte: from, lte: to } },
       _sum: { amountTTC: true, amountHT: true },
     }),
     prisma.invoice.aggregate({
-      where: { companyId, status: 'PAID', paidAt: { gte: prevFrom, lte: prevTo } },
+      where: { companyId, ...af, status: 'PAID', paidAt: { gte: prevFrom, lte: prevTo } },
       _sum: { amountTTC: true },
     }),
     prisma.expense.aggregate({
-      where: { companyId, date: { gte: from, lte: to } },
+      where: { companyId, ...af, date: { gte: from, lte: to } },
       _sum: { amount: true },
     }),
     prisma.invoice.findMany({
-      where: { companyId, status: 'PAID', paidAt: { not: null }, issuedAt: { gte: from, lte: to } },
+      where: { companyId, ...af, status: 'PAID', paidAt: { not: null }, issuedAt: { gte: from, lte: to } },
       select: { issuedAt: true, paidAt: true },
     }),
     prisma.invoice.aggregate({
-      where: { companyId, status: { in: ['SENT', 'OVERDUE'] } },
+      where: { companyId, ...af, status: { in: ['SENT', 'OVERDUE'] } },
       _sum: { amountTTC: true },
       _count: true,
     }),
     prisma.invoice.aggregate({
-      where: { companyId, status: 'OVERDUE' },
+      where: { companyId, ...af, status: 'OVERDUE' },
       _sum: { amountTTC: true },
       _count: true,
     }),
@@ -219,11 +266,13 @@ export async function dashboardStats(
 
 // ── Reminders ─────────────────────────────────────────────────────────────────
 
-export async function getReminders(companyId: string) {
+export async function getReminders(companyId: string, user?: JwtPayload) {
   const now = new Date()
+  const af  = user ? getAgenceFilter(user) : {}
   const invoices = await prisma.invoice.findMany({
     where: {
       companyId,
+      ...af,
       status: { in: ['SENT', 'OVERDUE'] },
     },
     include: { client: { select: CLIENT_SELECT } },
@@ -244,21 +293,23 @@ export async function getReminders(companyId: string) {
 
 // ── Cash Flow Forecast (90 days) ──────────────────────────────────────────────
 
-export async function cashFlowForecast(companyId: string) {
+export async function cashFlowForecast(companyId: string, user?: JwtPayload) {
   const now    = new Date()
   const end90  = new Date(now.getTime() + 90 * 86_400_000)
+  const af     = user ? getAgenceFilter(user) : {}
 
   const [pendingInvoices, recentExpenses] = await Promise.all([
     prisma.invoice.findMany({
       where: {
         companyId,
+        ...af,
         status: { in: ['SENT', 'OVERDUE'] },
         dueAt: { lte: end90 },
       },
       select: { dueAt: true, amountTTC: true },
     }),
     prisma.expense.findMany({
-      where: { companyId, date: { gte: new Date(now.getTime() - 90 * 86_400_000) } },
+      where: { companyId, ...af, date: { gte: new Date(now.getTime() - 90 * 86_400_000) } },
       select: { amount: true },
     }),
   ])

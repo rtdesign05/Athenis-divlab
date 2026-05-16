@@ -58,7 +58,7 @@ accountingRouter.get(
   async (req, res, next) => {
     try {
       const { year } = req.query as { year: string }
-      const data = await svc.getCompteDeResultat(getCompanyId(req), Number(year))
+      const data = await svc.getCompteDeResultat(getCompanyId(req), Number(year), req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -71,7 +71,7 @@ accountingRouter.get(
   async (req, res, next) => {
     try {
       const { year } = req.query as { year: string }
-      const data = await svc.getBilan(getCompanyId(req), Number(year))
+      const data = await svc.getBilan(getCompanyId(req), Number(year), req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -97,7 +97,7 @@ accountingRouter.get(
   async (req, res, next) => {
     try {
       const { year } = req.query as { year: string }
-      const data = await svc.getGrandLivre(getCompanyId(req), Number(year))
+      const data = await svc.getGrandLivre(getCompanyId(req), Number(year), req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -110,7 +110,7 @@ accountingRouter.get(
   async (req, res, next) => {
     try {
       const { year } = req.query as { year: string }
-      const data = await svc.getTvaTrimestrielle(getCompanyId(req), Number(year))
+      const data = await svc.getTvaTrimestrielle(getCompanyId(req), Number(year), req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },

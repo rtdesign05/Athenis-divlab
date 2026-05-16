@@ -1,4 +1,7 @@
-import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
+import * as purchasesApi from '@/services/purchasesApi'
+import * as invoicesApi  from '@/services/invoicesApi'
+import { clientsApi }    from '@/services/clientsApi'
 import { loadInvoiceConfig, buildDocNumber } from '@/lib/invoiceConfig'
 
 // ── Helpers ventes récurrentes ────────────────────────────────────────────────
@@ -430,6 +433,115 @@ const INIT_ACHATS: Achat[] = [
   },
 ]
 
+// ── Adaptateurs API achats ────────────────────────────────────────────────────
+
+function apiOrderToAchat(o: purchasesApi.ApiPurchaseOrder): Achat {
+  return {
+    id:                 o.reference,
+    fournisseur:        o.fournisseur,
+    agence:             o.agence?.nom ?? 'Siège',
+    date:               o.date.slice(0, 10),
+    montant:            Number(o.montantTTC),
+    statut:             (purchasesApi.STATUS_TO_STATUT[o.status] ?? 'En cours') as AchatStatut,
+    reception:          o.receptionAt ? o.receptionAt.slice(0, 10) : null,
+    objet:              o.objet,
+    notes:              o.notes ?? '',
+    conditionsPaiement: o.conditionsPaiement ?? '',
+    lignes:             o.lines.map(l => ({
+      id:             l.id,
+      reference:      l.reference ?? '',
+      designation:    l.designation,
+      quantite:       Number(l.quantite),
+      unite:          l.unite,
+      prixUnitaireHT: Number(l.prixUnitaireHT),
+      montantHT:      Number(l.montantHT),
+    })),
+  }
+}
+
+function achatToCreatePayload(a: Omit<Achat, 'id'>): purchasesApi.CreateOrderPayload {
+  const totalHT = a.lignes.reduce((s, l) => s + l.montantHT, 0)
+  return {
+    fournisseur:        a.fournisseur,
+    objet:              a.objet,
+    date:               a.date,
+    receptionAt:        a.reception ?? null,
+    montantHT:          totalHT,
+    vatRate:            19.25,
+    montantTTC:         a.montant,
+    conditionsPaiement: a.conditionsPaiement,
+    notes:              a.notes,
+    lines: a.lignes.map(l => ({
+      ...(l.reference ? { reference: l.reference } : {}),
+      designation:    l.designation,
+      quantite:       l.quantite,
+      unite:          l.unite,
+      prixUnitaireHT: l.prixUnitaireHT,
+      montantHT:      l.montantHT,
+    })),
+  }
+}
+
+function achatPatchToApi(patch: Partial<Omit<Achat, 'id'>>): purchasesApi.UpdateOrderPayload {
+  const out: purchasesApi.UpdateOrderPayload = {}
+  if (patch.fournisseur        !== undefined) out.fournisseur        = patch.fournisseur
+  if (patch.objet              !== undefined) out.objet              = patch.objet
+  if (patch.date               !== undefined) out.date               = patch.date
+  if ('reception'    in patch)               out.receptionAt        = patch.reception ?? null
+  if (patch.conditionsPaiement !== undefined) out.conditionsPaiement = patch.conditionsPaiement
+  if (patch.notes              !== undefined) out.notes              = patch.notes
+  if (patch.statut             !== undefined) {
+    const status = purchasesApi.STATUT_TO_STATUS[patch.statut]
+    if (status !== undefined) out.status = status
+  }
+  if (patch.lignes             !== undefined) {
+    const totalHT  = patch.lignes.reduce((s, l) => s + l.montantHT, 0)
+    out.montantHT  = totalHT
+    out.vatRate    = 19.25
+    out.montantTTC = patch.montant ?? totalHT * 1.1925
+    out.lines      = patch.lignes.map(l => ({
+      ...(l.reference ? { reference: l.reference } : {}),
+      designation:    l.designation,
+      quantite:       l.quantite,
+      unite:          l.unite,
+      prixUnitaireHT: l.prixUnitaireHT,
+      montantHT:      l.montantHT,
+    }))
+  } else if (patch.montant !== undefined) {
+    out.montantTTC = patch.montant
+  }
+  return out
+}
+
+// ── Adaptateurs API factures ventes ──────────────────────────────────────────
+
+function apiInvoiceToFactureVente(inv: invoicesApi.ApiInvoice): FactureVente {
+  return {
+    id:                 inv.reference,
+    modele:             (inv.modele as ModeleFacture) ?? 'standard',
+    commande:           '',
+    client:             inv.client.nom,
+    agence:             inv.agence?.nom ?? 'Siège',
+    date:               inv.issuedAt.slice(0, 10),
+    echeance:           inv.dueAt.slice(0, 10),
+    montantHT:          Number(inv.amountHT),
+    tva:                Number(inv.vatRate),
+    montantTTC:         Number(inv.amountTTC),
+    statut:             (invoicesApi.STATUS_TO_STATUT[inv.status] ?? 'Brouillon') as FactureVenteStatut,
+    lignes:             inv.lines.map(l => ({
+      id:             l.id,
+      description:    l.description,
+      quantite:       Number(l.quantite),
+      unite:          l.unite,
+      prixUnitaireHT: Number(l.prixUnitaireHT),
+      tvaRate:        Number(l.tvaRate),
+      montantHT:      Number(l.montantHT),
+    })),
+    notes:              inv.description ?? '',
+    conditionsPaiement: inv.conditionsPaiement ?? '',
+  }
+}
+
 // ── Données canoniques — clients ──────────────────────────────────────────────
 
 const INIT_CLIENTS: Client[] = [
@@ -536,9 +648,10 @@ const INIT_FOURNISSEURS: Fournisseur[] = [
   },
 ]
 
-// ── Données canoniques — factures ventes ─────────────────────────────────────
-
-const INIT_FACTURES_VENTES: FactureVente[] = [
+// ── Données canoniques — factures ventes (conservées comme référence uniquement) ─
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// @ts-ignore — retained for reference, not used in production code
+const _INIT_FACTURES_VENTES: FactureVente[] = [
   {
     id: 'FAV-0010', modele: 'standard', commande: 'CMD-0050', client: 'TechX Sarl',
     agence: 'Agence Douala — Akwa', date: '2026-04-24', echeance: '2026-05-24',
@@ -1030,8 +1143,8 @@ interface GestionContextValue {
   updateArticle(id: string, patch: Partial<Omit<Article, 'id' | 'createdAt'>>): void
   deleteArticle(id: string): void
   addCommande(c: Omit<Commande, 'id'>): Commande
-  addAchat(a: Omit<Achat, 'id'>): Achat
-  addFactureVente(f: Omit<FactureVente, 'id'>): FactureVente
+  addAchat(a: Omit<Achat, 'id'>): Promise<Achat>
+  addFactureVente(f: Omit<FactureVente, 'id'>): Promise<FactureVente>
   addClient(c: Omit<Client, 'id' | 'createdAt'>): Client
   updateClient(id: string, patch: Partial<Omit<Client, 'id' | 'createdAt'>>): void
   deleteClient(id: string): void
@@ -1059,49 +1172,62 @@ const GestionContext = createContext<GestionContextValue | null>(null)
 
 export function GestionProvider({ children }: { children: ReactNode }) {
   const [commandes,      setCommandes]      = useState<Commande[]>(INIT_COMMANDES)
-  const [achats,         setAchats]         = useState<Achat[]>(INIT_ACHATS)
+  // achats chargés depuis l'API ; INIT_ACHATS sert de fallback si la requête échoue
+  const [achats,         setAchats]         = useState<Achat[]>([])
+  // Map interne reference → UUID (pour les mutations API sans changer l'interface)
+  const achatDbIds   = useRef<Record<string, string>>({})
+  // Map interne reference → UUID pour les factures ventes
+  const invoiceDbIds = useRef<Record<string, string>>({})
+  // Map nom client (lowercase) → UUID en base
+  const clientNomToId = useRef<Record<string, string>>({})
+
+  useEffect(() => {
+    purchasesApi.listOrders({ limit: 200 })
+      .then(({ items }) => {
+        const idMap: Record<string, string> = {}
+        const list = items.map(o => {
+          idMap[o.reference] = o.id
+          return apiOrderToAchat(o)
+        })
+        achatDbIds.current = idMap
+        setAchats(list)
+      })
+      .catch(() => {
+        // Fallback sur les données démo si l'API est inaccessible
+        setAchats(INIT_ACHATS)
+      })
+  }, [])
+
+  // Factures ventes + clients DB (pour le lookup clientId)
+  useEffect(() => {
+    // Charger les clients en base pour la résolution nom → UUID
+    clientsApi.list().then(list => {
+      const map: Record<string, string> = {}
+      list.forEach(c => { map[c.name.toLowerCase()] = c.id })
+      clientNomToId.current = map
+    }).catch(() => { /* non bloquant */ })
+
+    // Charger les factures depuis l'API
+    invoicesApi.listInvoices({ limit: 200 })
+      .then(({ items }) => {
+        const idMap: Record<string, string> = {}
+        const list = items.map(inv => {
+          idMap[inv.reference] = inv.id
+          return apiInvoiceToFactureVente(inv)
+        })
+        invoiceDbIds.current = idMap
+        setFacturesVentes(list)
+      })
+      .catch(() => setFacturesVentes([]))
+  }, [])
+
   // Clients & fournisseurs : comptes comptables persistés en localStorage
   // Utiliser la forme fonctionnelle de useState pour ne lire localStorage qu'une seule fois
   const [clients,        setClients]        = useState<Client[]>(() => applyComptes(INIT_CLIENTS, loadComptesFromLS()))
   const [fournisseurs,   setFournisseurs]   = useState<Fournisseur[]>(() => applyComptes(INIT_FOURNISSEURS, loadComptesFromLS()))
   const [articles,       setArticles]       = useState<Article[]>(INIT_ARTICLES)
-  // ── Auto-génération des factures récurrentes au premier chargement ───────────
-  // Utilise l'initialiseur lazy de useState : s'exécute une seule fois, sans
-  // useEffect, ce qui évite les problèmes avec StrictMode / HMR.
-  const [facturesVentes, setFacturesVentes] = useState<FactureVente[]>(() => {
-    const todayStr  = new Date().toISOString().slice(0, 10)
-    const autoList: FactureVente[] = []
-    let nextNum = parseInt(
-      (INIT_FACTURES_VENTES[0]?.id ?? 'FAV-0000').replace('FAV-', ''), 10
-    )
-    INIT_VENTES_RECURRENTES.forEach(vr => {
-      if (vr.statut !== 'Actif') return
-      let echeance = vr.prochaineEcheance
-      while (echeance <= todayStr) {
-        if (vr.dateFin && echeance > vr.dateFin) break
-        nextNum++
-        autoList.push({
-          id:                 `FAV-${String(nextNum).padStart(4, '0')}`,
-          modele:             'standard',
-          commande:           '',
-          client:             vr.client,
-          agence:             vr.agence,
-          date:               echeance,
-          echeance:           addMonthsISO(echeance, 1),
-          montantHT:          vr.montantHT,
-          tva:                vr.tvaRate,
-          montantTTC:         vr.montantTTC,
-          statut:             'Envoyée',
-          lignes:             vr.lignes,
-          notes:              `Facture récurrente — ${vr.description}`,
-          conditionsPaiement: vr.conditionsPaiement,
-        })
-        echeance = addMonthsISO(echeance, FREQ_MOIS_INIT[vr.frequence] ?? 1)
-      }
-    })
-    // Ordre : plus récent en premier — puis factures initiales
-    return [...autoList.reverse(), ...INIT_FACTURES_VENTES]
-  })
+  // Factures ventes : chargées depuis l'API (fallback sur données démo)
+  const [facturesVentes, setFacturesVentes] = useState<FactureVente[]>([])
 
   const [ventesRecurrentes, setVentesRecurrentes] = useState<VenteRecurrente[]>(() => {
     const todayStr = new Date().toISOString().slice(0, 10)
@@ -1216,23 +1342,77 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     return next
   }
 
-  function addAchat(a: Omit<Achat, 'id'>): Achat {
-    const last = achats[0]?.id ?? 'ACH-0000'
-    const num  = parseInt(last.replace('ACH-', ''), 10) + 1
-    const id   = `ACH-${String(num).padStart(4, '0')}`
-    const next: Achat = { id, ...a }
-    setAchats(prev => [next, ...prev])
-    return next
+  async function addAchat(a: Omit<Achat, 'id'>): Promise<Achat> {
+    try {
+      const order = await purchasesApi.createOrder(achatToCreatePayload(a))
+      const achat = apiOrderToAchat(order)
+      achatDbIds.current[achat.id] = order.id
+      setAchats(prev => [achat, ...prev])
+      return achat
+    } catch (err) {
+      console.error('addAchat API error', err)
+      // Fallback local (non persisté)
+      const id   = `BC-LOCAL-${Date.now()}`
+      const next: Achat = { id, ...a }
+      setAchats(prev => [next, ...prev])
+      return next
+    }
   }
 
-  function addFactureVente(f: Omit<FactureVente, 'id'>): FactureVente {
-    const invoiceCfg = loadInvoiceConfig()
-    const numCfg     = invoiceCfg.numbering['FV']
-    const seq        = numCfg.startNumber + facturesVentes.length
-    const id         = buildDocNumber(numCfg, seq)
-    const next: FactureVente = { id, ...f }
-    setFacturesVentes(prev => [next, ...prev])
-    return next
+  async function addFactureVente(f: Omit<FactureVente, 'id'>): Promise<FactureVente> {
+    // Résoudre le clientId (nom → UUID en base)
+    const clientNom = f.client.trim()
+    let clientId    = clientNomToId.current[clientNom.toLowerCase()]
+
+    if (!clientId) {
+      // Client inconnu : le créer en base à la volée
+      try {
+        const created = await clientsApi.create({ name: clientNom })
+        clientId = created.id
+        clientNomToId.current[clientNom.toLowerCase()] = clientId
+      } catch {
+        // Pas de connexion API → création locale uniquement
+        const localId = `FAV-${Date.now()}`
+        const next: FactureVente = { id: localId, ...f }
+        setFacturesVentes(prev => [next, ...prev])
+        return next
+      }
+    }
+
+    try {
+      const payload: invoicesApi.CreateInvoicePayload = {
+        clientId,
+        modele:   f.modele as invoicesApi.InvoiceModele,
+        issueDate: f.date,
+        dueDate:   f.echeance,
+        subtotal:  f.montantHT,
+        taxRate:   f.tva,
+        ...(f.conditionsPaiement ? { conditionsPaiement: f.conditionsPaiement } : {}),
+        ...(f.notes              ? { notes: f.notes }                           : {}),
+        lines: f.lignes.map(l => ({
+          description:    l.description,
+          quantite:       l.quantite,
+          unite:          l.unite,
+          prixUnitaireHT: l.prixUnitaireHT,
+          tvaRate:        l.tvaRate,
+          montantHT:      l.montantHT,
+        })),
+      }
+      const created = await invoicesApi.createInvoice(payload)
+      invoiceDbIds.current[created.reference] = created.id
+      const next = apiInvoiceToFactureVente(created)
+      setFacturesVentes(prev => [next, ...prev])
+      return next
+    } catch (err) {
+      // Fallback local si l'API échoue
+      console.error('[invoices] addFactureVente API error', err)
+      const invoiceCfg = loadInvoiceConfig()
+      const numCfg     = invoiceCfg.numbering['FV']
+      const localId    = buildDocNumber(numCfg, numCfg.startNumber + Date.now() % 10000)
+      const next: FactureVente = { id: localId, ...f }
+      setFacturesVentes(prev => [next, ...prev])
+      return next
+    }
   }
 
   function addVenteRecurrente(v: Omit<VenteRecurrente, 'id' | 'facturesGenerees'>): VenteRecurrente {
@@ -1294,12 +1474,26 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     setCommandes(prev => prev.map(c => c.id === id ? { ...c, statut } : c))
   }
 
-  function updateAchatStatut(id: string, statut: AchatStatut) {
-    setAchats(prev => prev.map(a => a.id === id ? { ...a, statut } : a))
+  function updateAchatStatut(reference: string, statut: AchatStatut) {
+    setAchats(prev => prev.map(a => a.id === reference ? { ...a, statut } : a))
+    const dbId  = achatDbIds.current[reference]
+    const status = purchasesApi.STATUT_TO_STATUS[statut]
+    if (dbId && status) {
+      purchasesApi.updateOrder(dbId, { status }).catch(err =>
+        console.error('updateAchatStatut API error', err),
+      )
+    }
   }
 
   function updateFactureVenteStatut(id: string, statut: FactureVenteStatut) {
     setFacturesVentes(prev => prev.map(f => f.id === id ? { ...f, statut } : f))
+    const dbId  = invoiceDbIds.current[id]
+    const status = invoicesApi.STATUT_TO_STATUS[statut]
+    if (dbId && status) {
+      invoicesApi.updateInvoiceStatus(dbId, status).catch(err =>
+        console.error('[invoices] updateFactureVenteStatut API error', err),
+      )
+    }
   }
 
   function updateBLStatut(id: string, statut: BLStatut) {
@@ -1326,12 +1520,25 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     setBonsReception(prev => prev.filter(b => b.id !== id))
   }
 
-  function updateAchat(id: string, patch: Partial<Omit<Achat, 'id'>>) {
-    setAchats(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
+  function updateAchat(reference: string, patch: Partial<Omit<Achat, 'id'>>) {
+    setAchats(prev => prev.map(a => a.id === reference ? { ...a, ...patch } : a))
+    const dbId = achatDbIds.current[reference]
+    if (dbId) {
+      purchasesApi.updateOrder(dbId, achatPatchToApi(patch)).catch(err =>
+        console.error('updateAchat API error', err),
+      )
+    }
   }
 
-  function deleteAchat(id: string) {
-    setAchats(prev => prev.filter(a => a.id !== id))
+  function deleteAchat(reference: string) {
+    setAchats(prev => prev.filter(a => a.id !== reference))
+    const dbId = achatDbIds.current[reference]
+    if (dbId) {
+      delete achatDbIds.current[reference]
+      purchasesApi.deleteOrder(dbId).catch(err =>
+        console.error('deleteAchat API error', err),
+      )
+    }
   }
 
   function updateFactureAchat(id: string, patch: Partial<Omit<FactureAchat, 'id'>>) {

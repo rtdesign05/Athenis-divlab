@@ -25,7 +25,7 @@ invoicesRouter.get(
       const opts: { from?: Date; to?: Date } = {}
       if (req.query.from) opts.from = new Date(req.query.from as string)
       if (req.query.to)   opts.to   = new Date(req.query.to   as string)
-      const data = await svc.dashboardStats(getCompanyId(req), opts)
+      const data = await svc.dashboardStats(getCompanyId(req), opts, req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -36,7 +36,7 @@ invoicesRouter.get(
   checkModule('gestion', 'read'),
   async (req, res, next) => {
     try {
-      const data = await svc.cashFlowForecast(getCompanyId(req))
+      const data = await svc.cashFlowForecast(getCompanyId(req), req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -47,7 +47,7 @@ invoicesRouter.get(
   checkModule('gestion', 'read'),
   async (req, res, next) => {
     try {
-      const data = await svc.getReminders(getCompanyId(req))
+      const data = await svc.getReminders(getCompanyId(req), req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -58,7 +58,7 @@ invoicesRouter.get(
   checkModule('gestion', 'read'),
   async (req, res, next) => {
     try {
-      const data = await svc.invoiceStats(getCompanyId(req))
+      const data = await svc.invoiceStats(getCompanyId(req), req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -72,7 +72,7 @@ invoicesRouter.get(
   validateRequest({ query: ListInvoicesDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.listInvoices(getCompanyId(req), req.query as never)
+      const data = await svc.listInvoices(getCompanyId(req), req.query as never, req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -83,7 +83,7 @@ invoicesRouter.get(
   checkModule('gestion', 'read'),
   async (req, res, next) => {
     try {
-      const data = await svc.getInvoice(getCompanyId(req), req.params.id!)
+      const data = await svc.getInvoice(getCompanyId(req), req.params.id!, req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -95,7 +95,7 @@ invoicesRouter.post(
   validateRequest({ body: CreateInvoiceDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.createInvoice(getCompanyId(req), req.body, req.user?.sub ?? 'unknown')
+      const data = await svc.createInvoice(getCompanyId(req), req.body, req.user?.sub ?? 'unknown', req.user)
       res.status(201).json({ success: true, data })
     } catch (e) { next(e) }
   },

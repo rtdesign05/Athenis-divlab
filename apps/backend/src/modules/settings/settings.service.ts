@@ -156,6 +156,9 @@ export async function listUsers(companyId: string) {
             role: true,
           },
         },
+        agenceMembers: {
+          include: { agence: { select: { id: true, nom: true } } },
+        },
       },
     }),
     prisma.invitation.findMany({
@@ -165,16 +168,20 @@ export async function listUsers(companyId: string) {
         expiresAt: { gt: new Date() },
       },
       select: {
-        id: true,
-        email: true,
-        roleId: true,
-        createdAt: true,
+        id:           true,
+        email:        true,
+        roleId:       true,
+        createdAt:    true,
+        agenceIds:    true,
+        isRestricted: true,
       },
     }),
   ])
 
   const userEntries = members.map(member => {
-    const user = member.user
+    const user         = member.user
+    const agenceIds    = member.agenceMembers.map(am => am.agence.id)
+    const isRestricted = member.agenceMembers.some(am => am.isRestricted)
     return {
       id:              user.id,
       email:           user.email,
@@ -188,6 +195,8 @@ export async function listUsers(companyId: string) {
       lastLoginAt:     user.lastLoginAt?.toISOString() ?? null,
       invitedAt:       member.invitedAt?.toISOString() ?? null,
       isInvitation:    false as const,
+      agenceIds,
+      isRestricted,
     }
   })
 
@@ -204,6 +213,8 @@ export async function listUsers(companyId: string) {
     lastLoginAt:     null as null,
     invitedAt:       inv.createdAt.toISOString(),
     isInvitation:    true as const,
+    agenceIds:       inv.agenceIds,
+    isRestricted:    inv.isRestricted,
   }))
 
   return [...userEntries, ...invitationEntries]
@@ -275,16 +286,70 @@ export async function inviteUser(
     throw new AppError('Une invitation est déjà en attente pour cette adresse email', 409, 'INVITATION_ALREADY_EXISTS')
   }
 
+  // Validate that all agenceIds belong to this company (prevents cross-company injection)
+  if (data.agenceIds.length > 0) {
+    const validCount = await prisma.agence.count({
+      where: { id: { in: data.agenceIds }, companyId },
+    })
+    if (validCount !== data.agenceIds.length) {
+      throw new AppError('Une ou plusieurs agences sont invalides ou appartiennent à une autre entreprise', 400, 'INVALID_AGENCE')
+    }
+  }
+
   return prisma.invitation.create({
     data: {
       companyId,
-      email:     data.email,
-      roleId:    data.role,
-      token:     crypto.randomBytes(32).toString('hex'),
-      expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1000),
-      createdBy: invitedBy,
+      email:        data.email,
+      roleId:       data.role,
+      token:        crypto.randomBytes(32).toString('hex'),
+      expiresAt:    new Date(Date.now() + 48 * 60 * 60 * 1000),
+      createdBy:    invitedBy,
+      agenceIds:    data.agenceIds,
+      isRestricted: data.isRestricted && data.agenceIds.length > 0,
     },
   })
+}
+
+/**
+ * Remplace les AgenceMember d'un utilisateur par la nouvelle liste.
+ * Passer agenceIds=[] pour retirer toutes les assignations (accès global).
+ */
+export async function updateUserAgences(
+  companyId: string,
+  userId: string,
+  agenceIds: string[],
+  isRestricted: boolean,
+) {
+  const member = await prisma.companyMember.findFirst({ where: { companyId, userId } })
+  if (!member) throw new AppError('Utilisateur non trouvé dans cette entreprise', 404, 'NOT_FOUND')
+
+  // Validate that all agenceIds belong to this company (prevents cross-company injection)
+  if (agenceIds.length > 0) {
+    const validCount = await prisma.agence.count({
+      where: { id: { in: agenceIds }, companyId },
+    })
+    if (validCount !== agenceIds.length) {
+      throw new AppError('Une ou plusieurs agences sont invalides ou appartiennent à une autre entreprise', 400, 'INVALID_AGENCE')
+    }
+  }
+
+  await prisma.$transaction([
+    // Supprimer les assignations existantes
+    prisma.agenceMember.deleteMany({ where: { companyMemberId: member.id } }),
+    // Re-créer avec la nouvelle liste (si non vide)
+    ...(agenceIds.length > 0
+      ? [prisma.agenceMember.createMany({
+          data: agenceIds.map(agenceId => ({
+            agenceId,
+            companyMemberId: member.id,
+            isRestricted:    isRestricted && agenceIds.length > 0,
+          })),
+          skipDuplicates: true,
+        })]
+      : []
+    ),
+  ])
+  return { userId, agenceIds, isRestricted }
 }
 
 export async function updateUserRole(
@@ -464,10 +529,14 @@ export async function updateRole(
 ) {
   const role = await prisma.companyRole.findFirst({ where: { id, companyId } })
   if (!role) throw new AppError('Rôle introuvable', 404, 'NOT_FOUND')
-  if (role.isSystem && data.permissions === undefined && data.name === undefined) {
-    // allow description-only updates on system roles
-  } else if (role.isSystem && (data.name !== undefined)) {
-    throw new AppError('Le nom des rôles système ne peut pas être modifié', 403, 'SYSTEM_ROLE')
+  if (role.isSystem) {
+    if (data.name !== undefined) {
+      throw new AppError('Le nom des rôles système ne peut pas être modifié', 403, 'SYSTEM_ROLE')
+    }
+    if (data.permissions !== undefined) {
+      throw new AppError('Les permissions des rôles système ne peuvent pas être modifiées', 403, 'SYSTEM_ROLE')
+    }
+    // Only description updates are allowed on system roles
   }
 
   return prisma.companyRole.update({

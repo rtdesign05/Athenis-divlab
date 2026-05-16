@@ -3,12 +3,16 @@ import { AppError } from './errorHandler.js'
 
 /**
  * Returns a Prisma `where` clause fragment filtering by agenceId.
- * If the user is unrestricted (no assigned agences), returns {} (no filter).
+ * If the user is unrestricted, returns {} (no filter).
+ * If the user is restricted with an empty agenceIds list, returns { agenceId: { in: [] } }
+ * which matches NOTHING — preventing accidental global access for restricted users.
  */
 export function getAgenceFilter(user: JwtPayload): { agenceId?: { in: string[] } } {
-  if (!user.isRestricted || user.agenceIds.length === 0) {
+  if (!user.isRestricted) {
     return {}
   }
+  // Always return the in-filter when restricted, even when agenceIds is empty.
+  // An empty `in: []` matches no rows, which is the correct secure default.
   return { agenceId: { in: user.agenceIds } }
 }
 
@@ -28,7 +32,7 @@ export function getAgenceFilterForCompany(
  * No-op for unrestricted users.
  */
 export function checkAgenceAccess(user: JwtPayload, agenceId: string): void {
-  if (!user.isRestricted || user.agenceIds.length === 0) return
+  if (!user.isRestricted) return
   if (!user.agenceIds.includes(agenceId)) {
     throw new AppError('Accès non autorisé à cette agence', 403, 'AGENCE_ACCESS_DENIED')
   }

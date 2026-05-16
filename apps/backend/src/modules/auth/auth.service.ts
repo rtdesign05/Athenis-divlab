@@ -85,13 +85,39 @@ function verifyTotpPendingToken(token: string): string {
 }
 
 /**
- * Agences don't exist in WSL2 DB — always return null.
+ * Resolves the agence(s) a user belongs to within a company.
+ * Returns the primary agenceId/nom, all agenceIds, and isRestricted.
+ * isRestricted = true if the user has at least one AgenceMember entry with isRestricted=true.
  */
 async function getUserAgence(
-  _userId: string,
-  _companyId: string | null,
-): Promise<{ agenceId: string | null; agenceNom: string | null }> {
-  return { agenceId: null, agenceNom: null }
+  userId: string,
+  companyId: string | null,
+): Promise<{ agenceId: string | null; agenceNom: string | null; agenceIds: string[]; isRestricted: boolean }> {
+  if (!companyId) return { agenceId: null, agenceNom: null, agenceIds: [], isRestricted: false }
+
+  try {
+    const member = await prisma.companyMember.findUnique({
+      where: { companyId_userId: { companyId, userId } },
+      include: {
+        agenceMembers: {
+          include: { agence: { select: { id: true, nom: true } } },
+        },
+      },
+    })
+
+    if (!member || member.agenceMembers.length === 0) {
+      return { agenceId: null, agenceNom: null, agenceIds: [], isRestricted: false }
+    }
+
+    const agenceIds    = member.agenceMembers.map(am => am.agence.id)
+    const isRestricted = member.agenceMembers.some(am => am.isRestricted)
+    const primary      = member.agenceMembers[0]!
+
+    return { agenceId: primary.agence.id, agenceNom: primary.agence.nom, agenceIds, isRestricted }
+  } catch (e) {
+    logger.warn('getUserAgence failed', { userId, companyId, error: e })
+    return { agenceId: null, agenceNom: null, agenceIds: [], isRestricted: false }
+  }
 }
 
 // ── Shape accepted by toUserProfile ──────────────────────────────────────────
@@ -422,7 +448,7 @@ export async function login(
   const plan = await getEffectivePlan(user.accountType as AccountType, companyId)
   const modules = await getEffectiveModules(user.accountType as AccountType, companyId)
   const { country: loginCountry, currencySymbol: loginCurrencySymbol } = await resolveLocale(user.accountType, companyId, cabinetId, user.id)
-  const { agenceId, agenceNom } = await getUserAgence(user.id, companyId)
+  const { agenceId, agenceNom, agenceIds, isRestricted } = await getUserAgence(user.id, companyId)
 
   const role = dbRoleToUserRole(user.role)
 
@@ -441,8 +467,8 @@ export async function login(
     atheisNumber: user.atheisNumber ?? null,
     agenceId,
     agenceNom,
-    agenceIds:    [],
-    isRestricted: false,
+    agenceIds,
+    isRestricted,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
@@ -479,6 +505,12 @@ export async function loginVerifyTotp(
 
   if (!user?.twoFAEnabled || !user.twoFASecret) throw new AppError('TOTP non configuré', 400, 'TOTP_NOT_CONFIGURED')
 
+  // Check account is still active — the account may have been deactivated after the tempToken was issued
+  if (!user.isActive) {
+    await audit('LOGIN_FAILED', user.id, user.companyId ?? null, ip, ua, { reason: 'account_inactive' })
+    throw new AppError('Compte désactivé. Contactez votre administrateur.', 403, 'ACCOUNT_INACTIVE')
+  }
+
   if (!authenticator.check(code, decrypt(user.twoFASecret))) {
     await audit('TOTP_FAILED', user.id, user.companyId ?? null, ip, ua)
     throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
@@ -489,7 +521,7 @@ export async function loginVerifyTotp(
   const plan = await getEffectivePlan(user.accountType as AccountType, companyId)
   const modules = await getEffectiveModules(user.accountType as AccountType, companyId)
   const { country: totpCountry, currencySymbol: totpCurrencySymbol } = await resolveLocale(user.accountType, companyId, cabinetId, user.id)
-  const { agenceId, agenceNom } = await getUserAgence(user.id, companyId)
+  const { agenceId, agenceNom, agenceIds: totpAgenceIds, isRestricted: totpIsRestricted } = await getUserAgence(user.id, companyId)
 
   const role = dbRoleToUserRole(user.role)
 
@@ -508,8 +540,8 @@ export async function loginVerifyTotp(
     atheisNumber: user.atheisNumber ?? null,
     agenceId,
     agenceNom,
-    agenceIds:    [],
-    isRestricted: false,
+    agenceIds:    totpAgenceIds,
+    isRestricted: totpIsRestricted,
   })
   const refreshToken = await createRefreshToken(user.id)
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
@@ -573,7 +605,7 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
   const plan = await getEffectivePlan(u.accountType as AccountType, companyId)
   const modules = await getEffectiveModules(u.accountType as AccountType, companyId)
   const { country: refreshCountry, currencySymbol: refreshCurrencySymbol } = await resolveLocale(u.accountType, companyId, cabinetId, u.id)
-  const { agenceId, agenceNom } = await getUserAgence(u.id, companyId)
+  const { agenceId, agenceNom, agenceIds: refreshAgenceIds, isRestricted: refreshIsRestricted } = await getUserAgence(u.id, companyId)
 
   const role = dbRoleToUserRole(u.role)
 
@@ -593,8 +625,8 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
       atheisNumber: u.atheisNumber ?? null,
       agenceId,
       agenceNom,
-      agenceIds:    [],
-      isRestricted: false,
+      agenceIds:    refreshAgenceIds,
+      isRestricted: refreshIsRestricted,
     }),
     refreshToken: newRaw,
   }
@@ -689,6 +721,39 @@ export async function acceptInvitation(
   const existingUser = await prisma.user.findUnique({ where: { email: invitation.email } })
   if (existingUser) throw new AppError('Un compte existe déjà avec cette adresse email', 409, 'EMAIL_ALREADY_EXISTS')
 
+  // Resolve invitation roleId to a real CompanyRole UUID.
+  // The invitation may store either a UUID (already correct) or a role enum string like
+  // "ACCOUNTANT", "HR", etc. that must be mapped to the matching system role.
+  const ROLE_ENUM_TO_NAME: Record<string, string> = {
+    ADMIN:      'Administrateur',
+    MANAGER:    'Gestionnaire',
+    ACCOUNTANT: 'Comptable',
+    HR:         'Responsable RH',
+    SALES:      'Responsable commercial',
+    READONLY:   'Lecture seule',
+    CUSTOM:     'Personnalisé',
+  }
+  let resolvedRoleId = invitation.roleId
+  // Enum strings are all-caps with optional underscores; UUIDs contain lowercase letters
+  if (/^[A-Z_]+$/.test(invitation.roleId)) {
+    const roleName   = ROLE_ENUM_TO_NAME[invitation.roleId]
+    const systemRole = roleName
+      ? await prisma.companyRole.findFirst({
+          where: { companyId: invitation.companyId, name: roleName },
+        })
+      : null
+    if (!systemRole) {
+      // Fallback: try READONLY which every company has
+      const fallback = await prisma.companyRole.findFirst({
+        where: { companyId: invitation.companyId, name: 'Lecture seule' },
+      })
+      if (!fallback) throw new AppError(`Rôle '${invitation.roleId}' introuvable pour cette entreprise`, 404, 'ROLE_NOT_FOUND')
+      resolvedRoleId = fallback.id
+    } else {
+      resolvedRoleId = systemRole.id
+    }
+  }
+
   const passwordHash  = await bcrypt.hash(password, BCRYPT_ROUNDS)
   const atheisNumber  = await generateAtheisNumber('COMPANY')
 
@@ -707,18 +772,30 @@ export async function acceptInvitation(
       },
     })
 
-    // Create CompanyMember
-    await tx.companyMember.create({
+    // Create CompanyMember (resolvedRoleId is guaranteed to be a valid CompanyRole UUID)
+    const companyMember = await tx.companyMember.create({
       data: {
         userId:    user.id,
         companyId: invitation.companyId,
-        roleId:    invitation.roleId,
+        roleId:    resolvedRoleId,
         status:    'ACTIVE',
         invitedBy: invitation.createdBy,
         invitedAt: invitation.createdAt,
         joinedAt:  new Date(),
       },
     })
+
+    // Assign agences if the invitation carried agenceIds
+    if (invitation.agenceIds.length > 0) {
+      await tx.agenceMember.createMany({
+        data: invitation.agenceIds.map((agenceId: string) => ({
+          agenceId,
+          companyMemberId: companyMember.id,
+          isRestricted:    invitation.isRestricted,
+        })),
+        skipDuplicates: true,
+      })
+    }
 
     // Mark invitation as accepted
     await tx.invitation.update({

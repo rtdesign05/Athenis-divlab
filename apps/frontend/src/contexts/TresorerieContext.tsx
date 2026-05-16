@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import * as treasuryApi from '@/services/treasuryApi'
 
 // ── Types partagés ─────────────────────────────────────────────────────────────
 
@@ -78,116 +79,6 @@ function mkTx(
   }
 }
 
-// ── Données initiales (synchronisées avec Banques / Caisses / MobileMoney) ────
-
-const INIT_TRANSACTIONS: Transaction[] = [
-  // ── Banque BICEC ─────────────────────────────────────────────────────────────
-  mkTx('b-o1', '2026-04-24', 'Virement reçu — ACME Corp (FAC-0041)',  8_400_000, 'banque', 'BICEC — Compte courant entreprise', 'Siège', 'traite',
-    [{ id:'pj-b1-1', nom:'FAC-0041_ACME_CORP.pdf',       type:'facture',  addedAt:'2026-04-24T09:00:00Z' }],
-    { accountCode:'411100', accountLabel:'Clients — ventes ordinaires',       libelle:'Règlement FAC-0041 ACME Corp',       addedAt:'2026-04-24T10:30:00Z' }),
-
-  mkTx('b-o2', '2026-04-22', 'Prélèvement loyer bureaux avril',      -3_200_000, 'banque', 'BICEC — Compte courant entreprise', 'Siège', 'traite',
-    [{ id:'pj-b2-1', nom:'BAIL_COMMERCIAL_2026.pdf',     type:'contrat',  addedAt:'2026-04-01T08:00:00Z' },
-     { id:'pj-b2-2', nom:'QUITTANCE_LOYER_AVR26.pdf',    type:'recu',     addedAt:'2026-04-22T08:15:00Z' }],
-    { accountCode:'612000', accountLabel:'Locations et charges locatives',    libelle:'Loyer bureaux — avril 2026',         addedAt:'2026-04-22T09:00:00Z' }),
-
-  mkTx('b-o3', '2026-04-20', 'Virement reçu — TechX Sarl (FAC-0038)', 6_100_000, 'banque', 'BICEC — Compte courant entreprise', 'Siège', 'traite',
-    [{ id:'pj-b3-1', nom:'FAC-0038_TECHX.pdf',           type:'facture',  addedAt:'2026-04-20T14:00:00Z' }],
-    { accountCode:'411200', accountLabel:'Clients — prestations de services', libelle:'Règlement FAC-0038 TechX Sarl',      addedAt:'2026-04-20T15:00:00Z' }),
-
-  mkTx('b-o4', '2026-04-18', 'Charges sociales CNPS mars',           -2_850_000, 'banque', 'BICEC — Compte courant entreprise', 'Siège', 'a_traiter',
-    [{ id:'pj-b4-1', nom:'BORDEREAU_CNPS_MARS2026.pdf',  type:'autre',    addedAt:'2026-04-18T07:30:00Z' }]),
-
-  mkTx('b-o5', '2026-04-15', 'Frais bancaires avril',                   -25_000, 'banque', 'BICEC — Compte courant entreprise', 'Siège', 'a_traiter',
-    [{ id:'pj-b5-1', nom:'RELEVE_FRAIS_BICEC_AVR26.pdf', type:'recu',     addedAt:'2026-04-15T08:00:00Z' }]),
-
-  // ── Banque UBA ────────────────────────────────────────────────────────────────
-  mkTx('b-o6', '2026-04-01', 'Intérêts trimestriels Q1 2026',            142_000, 'banque', 'UBA Cameroun — Compte épargne', 'Siège', 'traite',
-    [{ id:'pj-b6-1', nom:'AVIS_INTERETS_Q1_UBA.pdf',     type:'recu',     addedAt:'2026-04-01T10:00:00Z' }],
-    { accountCode:'771000', accountLabel:'Intérêts et produits assimilés',    libelle:'Intérêts Q1 2026 — UBA Épargne',    addedAt:'2026-04-01T11:00:00Z' }),
-
-  mkTx('b-o7', '2026-03-15', 'Virement depuis compte BICEC',           5_000_000, 'banque', 'UBA Cameroun — Compte épargne', 'Siège', 'traite',
-    [{ id:'pj-b7-1', nom:'ORDRE_VIREMENT_BICEC_UBA.pdf', type:'virement', addedAt:'2026-03-15T09:00:00Z' }],
-    { accountCode:'521100', accountLabel:'Banque BICEC — Compte courant',     libelle:'Virement interne BICEC → UBA',      addedAt:'2026-03-15T09:30:00Z' }),
-
-  mkTx('b-o8', '2026-01-01', 'Intérêts trimestriels Q4 2025',            138_500, 'banque', 'UBA Cameroun — Compte épargne', 'Siège', 'a_traiter',
-    [{ id:'pj-b8-1', nom:'AVIS_INTERETS_Q4_2025_UBA.pdf',type:'recu',     addedAt:'2026-01-01T09:00:00Z' }]),
-
-  // ── Banque Ecobank ────────────────────────────────────────────────────────────
-  mkTx('b-o9', '2026-04-19', 'Encaissement export — Groupe Delta',     3_200_000, 'banque', 'Ecobank — Compte devises (EUR)', 'Siège', 'traite',
-    [{ id:'pj-b9-1', nom:'CONTRAT_EXPORT_DELTA.pdf',     type:'contrat',  addedAt:'2026-04-10T08:00:00Z' },
-     { id:'pj-b9-2', nom:'FACTURE_EXPORT_GRP_DELTA.pdf', type:'facture',  addedAt:'2026-04-15T14:00:00Z' }],
-    { accountCode:'411100', accountLabel:'Clients — ventes ordinaires',       libelle:'Export Groupe Delta — avr. 2026',   addedAt:'2026-04-19T10:00:00Z' }),
-
-  mkTx('b-o10', '2026-04-10', 'Règlement fournisseur Import Express', -1_950_000, 'banque', 'Ecobank — Compte devises (EUR)', 'Siège', 'a_traiter',
-    [{ id:'pj-b10-1', nom:'FACT_IMPORT_EXPRESS_0312.pdf',type:'facture',  addedAt:'2026-04-10T08:30:00Z' }]),
-
-  mkTx('b-o11', '2026-04-05', 'Commission change EUR/XAF',               -18_000, 'banque', 'Ecobank — Compte devises (EUR)', 'Siège', 'a_traiter',
-    [{ id:'pj-b11-1', nom:'AVIS_COMMISSION_CHANGE.pdf',  type:'recu',     addedAt:'2026-04-05T09:15:00Z' }]),
-
-  // ── Caisse principale ─────────────────────────────────────────────────────────
-  mkTx('c-op1', '2026-04-25', 'Achat fournitures de bureau',             -45_000, 'caisse', 'Caisse principale', 'Siège', 'a_traiter',
-    [{ id:'pj-c1-1', nom:'TICKET_CAISSE_FOURNITURES.pdf',type:'recu',     addedAt:'2026-04-25T10:00:00Z' }]),
-
-  mkTx('c-op2', '2026-04-25', 'Versement espèces client Diop',           380_000, 'caisse', 'Caisse principale', 'Siège', 'traite',
-    [{ id:'pj-c2-1', nom:'RECU_CLIENT_DIOP_250426.pdf',  type:'recu',     addedAt:'2026-04-25T11:30:00Z' }],
-    { accountCode:'411100', accountLabel:'Clients — ventes ordinaires',       libelle:'Versement espèces — M. Diop',       addedAt:'2026-04-25T12:00:00Z' }),
-
-  mkTx('c-op3', '2026-04-24', 'Frais de déplacement commercial',         -85_000, 'caisse', 'Caisse principale', 'Siège', 'a_traiter',
-    [{ id:'pj-c3-1', nom:'NOTES_FRAIS_COMMERCIAL_24AVR.pdf',type:'autre', addedAt:'2026-04-24T18:00:00Z' }]),
-
-  mkTx('c-op4', '2026-04-24', 'Alimentation caisse (virement BICEC)',    500_000, 'caisse', 'Caisse principale', 'Siège', 'traite',
-    [{ id:'pj-c4-1', nom:'ORDRE_ALIMENTATION_CAISSE.pdf',type:'virement', addedAt:'2026-04-24T08:00:00Z' }],
-    { accountCode:'521100', accountLabel:'Banque BICEC — Compte courant',     libelle:'Alimentation caisse — 24/04/2026',  addedAt:'2026-04-24T08:30:00Z' }),
-
-  mkTx('c-op5', '2026-04-23', 'Paiement prestataire nettoyage',          -75_000, 'caisse', 'Caisse principale', 'Siège', 'a_traiter',
-    [{ id:'pj-c5-1', nom:'FACT_NETTOYAGE_AVRIL2026.pdf', type:'facture',  addedAt:'2026-04-23T09:00:00Z' }]),
-
-  mkTx('c-op6', '2026-04-23', 'Encaissement vente comptoir',             210_000, 'caisse', 'Caisse principale', 'Siège', 'traite',
-    [{ id:'pj-c6-1', nom:'TICKET_Z_CAISSE_230426.pdf',   type:'recu',     addedAt:'2026-04-23T18:00:00Z' }],
-    { accountCode:'701000', accountLabel:'Ventes de marchandises',            libelle:'Ventes comptoir — 23/04/2026',      addedAt:'2026-04-23T18:30:00Z' }),
-
-  // ── Petite caisse ─────────────────────────────────────────────────────────────
-  mkTx('c-op7', '2026-04-25', 'Café et collations réunion',              -15_000, 'caisse', 'Petite caisse', 'Siège', 'a_traiter',
-    [{ id:'pj-c7-1', nom:'TICKET_CAFE_250426.pdf',        type:'recu',    addedAt:'2026-04-25T14:00:00Z' }]),
-
-  mkTx('c-op8', '2026-04-24', 'Alimentation petite caisse',             100_000, 'caisse', 'Petite caisse', 'Siège', 'traite',
-    [{ id:'pj-c8-1', nom:'BON_ALIMENTATION_PETITE_CAISSE.pdf',type:'virement',addedAt:'2026-04-24T08:00:00Z' }],
-    { accountCode:'571000', accountLabel:'Caisse principale (siège)',          libelle:'Alimentation petite caisse — 24/04', addedAt:'2026-04-24T08:15:00Z' }),
-
-  mkTx('c-op9', '2026-04-23', 'Timbres et envoi courrier',               -8_500, 'caisse', 'Petite caisse', 'Siège', 'a_traiter',
-    [{ id:'pj-c9-1', nom:'RECU_POSTE_230426.pdf',         type:'recu',    addedAt:'2026-04-23T11:00:00Z' }]),
-
-  // ── MTN Mobile Money ──────────────────────────────────────────────────────────
-  mkTx('m-op1', '2026-04-25', 'Paiement reçu — Fournisseur Ebobolo',  1_200_000, 'mobile-money', 'MTN Mobile Money', 'Siège', 'traite',
-    [{ id:'pj-m1-1', nom:'FACTURE_EBOBOLO_0045.pdf',     type:'facture',  addedAt:'2026-04-25T09:30:00Z' }],
-    { accountCode:'411200', accountLabel:'Clients — prestations de services', libelle:'Règlement Ebobolo SARL — avr. 2026', addedAt:'2026-04-25T10:00:00Z' }),
-
-  mkTx('m-op2', '2026-04-25', 'Retrait agence MTN Akwa',               -500_000, 'mobile-money', 'MTN Mobile Money', 'Siège', 'a_traiter',
-    [{ id:'pj-m2-1', nom:'RECU_RETRAIT_MTN_250426.pdf',  type:'recu',     addedAt:'2026-04-25T14:30:00Z' }]),
-
-  mkTx('m-op3', '2026-04-24', 'Paiement reçu — Client Ayissi P.',       380_000, 'mobile-money', 'MTN Mobile Money', 'Siège', 'traite',
-    [{ id:'pj-m3-1', nom:'RECU_AYISSI_240426.pdf',       type:'recu',     addedAt:'2026-04-24T16:00:00Z' }],
-    { accountCode:'411100', accountLabel:'Clients — ventes ordinaires',       libelle:'Paiement M. Ayissi P. — 24/04',     addedAt:'2026-04-24T16:30:00Z' }),
-
-  mkTx('m-op4', '2026-04-24', 'Transfert vers compte BICEC',          -1_000_000, 'mobile-money', 'MTN Mobile Money', 'Siège', 'a_traiter',
-    [{ id:'pj-m4-1', nom:'ORDRE_TRANSFERT_MTN_BICEC.pdf',type:'virement', addedAt:'2026-04-24T09:00:00Z' }]),
-
-  mkTx('m-op5', '2026-04-23', 'Paiement facture eau et électricité',    -98_000, 'mobile-money', 'MTN Mobile Money', 'Siège', 'a_traiter',
-    [{ id:'pj-m5-1', nom:'FACTURE_AES_SONEL_AVR26.pdf',  type:'facture',  addedAt:'2026-04-23T08:00:00Z' }]),
-
-  // ── Orange Money ─────────────────────────────────────────────────────────────
-  mkTx('m-op6', '2026-04-25', 'Encaissement client Fouda L.',            650_000, 'mobile-money', 'Orange Money', 'Siège', 'traite',
-    [{ id:'pj-m6-1', nom:'RECU_FOUDA_250426.pdf',        type:'recu',     addedAt:'2026-04-25T10:00:00Z' }],
-    { accountCode:'411200', accountLabel:'Clients — prestations de services', libelle:'Règlement M. Fouda L. — 25/04',    addedAt:'2026-04-25T10:30:00Z' }),
-
-  mkTx('m-op7', '2026-04-24', 'Paiement prestataire design',            -180_000, 'mobile-money', 'Orange Money', 'Siège', 'a_traiter',
-    [{ id:'pj-m7-1', nom:'FACT_DESIGN_STUDIO_PIXEL.pdf', type:'facture',  addedAt:'2026-04-24T08:00:00Z' }]),
-
-  mkTx('m-op8', '2026-04-22', 'Encaissement vente directe',              320_000, 'mobile-money', 'Orange Money', 'Siège', 'a_traiter',
-    [{ id:'pj-m8-1', nom:'BON_VENTE_DIRECTE_220426.pdf', type:'recu',     addedAt:'2026-04-22T17:00:00Z' }]),
-]
-
 // ── Soldes par compte (source unique de vérité pour TresoreriePage, GestionOverview, Prévisions) ──
 
 export interface AccountBalance {
@@ -210,6 +101,29 @@ const INITIAL_BALANCES: AccountBalance[] = [
   { name: 'MTN Mobile Money',                  label: 'MTN Mobile Money',              type: 'mobile-money', agence: 'Siège',                       solde:  3_850_000 },
   { name: 'Orange Money',                      label: 'Orange Money',                  type: 'mobile-money', agence: 'Siège',                       solde:  1_620_000 },
 ]
+
+// ── Adaptateurs API → types locaux ────────────────────────────────────────────
+
+const INITIAL_BALANCE_BY_NAME = new Map(INITIAL_BALANCES.map(b => [b.name, b]))
+
+/** 'mobile_money' (backend) → 'mobile-money' (frontend) */
+function apiSourceType(t: string): SourceType {
+  return t === 'mobile_money' ? 'mobile-money' : (t as SourceType)
+}
+
+/** Convertit une entrée API en Transaction locale */
+function apiEntryToTx(e: treasuryApi.ApiTreasuryEntry): Transaction {
+  const sourceType = apiSourceType(e.sourceType)
+  const pieces: PieceJustificative[] = e.pieceName
+    ? [{ id: `pj-${e.id}`, nom: e.pieceName, type: 'autre', addedAt: e.createdAt }]
+    : []
+  return mkTx(
+    e.id, e.date.slice(0, 10), e.libelle, Number(e.montant),
+    sourceType, e.sourceName,
+    e.agence?.nom ?? 'Siège',
+    'a_traiter', pieces,
+  )
+}
 
 // ── Interface du contexte ─────────────────────────────────────────────────────
 
@@ -236,10 +150,38 @@ const TresorerieContext = createContext<TresorerieContextValue | null>(null)
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function TresorerieProvider({ children }: { children: ReactNode }) {
-  const [transactions, setTransactions] = useState<Transaction[]>(INIT_TRANSACTIONS)
-  const [balances,     setBalances]     = useState<AccountBalance[]>(INITIAL_BALANCES)
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [balances,     setBalances]     = useState<AccountBalance[]>([])
 
   const totalSolde = balances.reduce((s, b) => s + b.solde, 0)
+
+  // ── Chargement initial depuis l'API ────────────────────────────────────────
+  useEffect(() => {
+    // Soldes agrégés par compte
+    treasuryApi.getBalances()
+      .then(data => {
+        const newBal: AccountBalance[] = data.map(b => {
+          const existing = INITIAL_BALANCE_BY_NAME.get(b.sourceName)
+          const acc      = accountInfo(b.sourceName)
+          return {
+            name:   b.sourceName,
+            label:  (acc.label !== b.sourceName ? acc.label : null) ?? existing?.label ?? b.sourceName,
+            type:   apiSourceType(b.sourceType),
+            agence: existing?.agence ?? 'Siège',
+            solde:  b.solde,
+          }
+        })
+        setBalances(newBal)
+      })
+      .catch(() => setBalances([]))
+
+    // Mouvements détaillés
+    treasuryApi.listEntries({ limit: 500 })
+      .then(({ items }) => {
+        setTransactions(items.map(apiEntryToTx))
+      })
+      .catch(() => setTransactions([]))
+  }, [])
 
   function addTransaction(
     op:         { date: string; libelle: string; montant: number },
@@ -275,7 +217,6 @@ export function TresorerieProvider({ children }: { children: ReactNode }) {
     setBalances(prev => {
       const idx = prev.findIndex(b => b.name === sourceName)
       if (idx === -1) {
-        // Compte non encore connu → l'ajouter dynamiquement
         return [...prev, { name: sourceName, label: sourceName, type: sourceType, agence, solde: op.montant }]
       }
       return prev.map((b, i) => i === idx ? { ...b, solde: b.solde + op.montant } : b)
@@ -283,6 +224,17 @@ export function TresorerieProvider({ children }: { children: ReactNode }) {
 
     // Insérer en tête de liste (plus récent d'abord)
     setTransactions(prev => [tx, ...prev])
+
+    // Persister en base (background)
+    const apiType = sourceType === 'mobile-money' ? 'mobile_money' : sourceType
+    treasuryApi.createEntry({
+      date:      op.date,
+      libelle:   op.libelle,
+      montant:   op.montant,
+      sourceType: apiType as treasuryApi.TreasurySourceType,
+      sourceName,
+      ...(pieceName ? { pieceName } : {}),
+    }).catch(err => console.error('[treasury] addTransaction API error', err))
   }
 
   function validateTransaction(id: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]) {

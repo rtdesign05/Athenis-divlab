@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import { getPlanByZone, ZONE_LABELS } from '../../lib/accountingPlans.js'
+import { getAgenceFilter } from '../../middleware/agenceFilter.js'
+import type { JwtPayload } from '@athenis/shared-types'
 
 function toNum(d: Prisma.Decimal | null | undefined): number {
   return d ? Number(d) : 0
@@ -53,19 +55,21 @@ function fmtDecimal(n: number): string {
 
 // ── Existing reports ───────────────────────────────────────────────────────────
 
-export async function getCompteDeResultat(companyId: string, year: number) {
+export async function getCompteDeResultat(companyId: string, year: number, user?: JwtPayload) {
   const start = new Date(`${year}-01-01`)
   const end   = new Date(`${year}-12-31T23:59:59.999Z`)
+  const af    = user ? getAgenceFilter(user) : {}
 
   const [invoiceTotals, expenseTotals, salaryTotals] = await Promise.all([
     prisma.invoice.aggregate({
-      where: { companyId, status: 'PAID', issuedAt: { gte: start, lte: end } },
+      where: { companyId, ...af, status: 'PAID', issuedAt: { gte: start, lte: end } },
       _sum: { amountHT: true, amountTTC: true },
     }),
     prisma.expense.aggregate({
-      where: { companyId, date: { gte: start, lte: end } },
+      where: { companyId, ...af, date: { gte: start, lte: end } },
       _sum: { amount: true },
     }),
+    // La masse salariale est une donnée entreprise (pas par agence)
     prisma.employee.aggregate({
       where: { companyId, dateEmbauche: { lte: end }, OR: [{ dateFinContrat: null }, { dateFinContrat: { gte: start } }] },
       _sum: { salaireBrut: true },
@@ -88,21 +92,22 @@ export async function getCompteDeResultat(companyId: string, year: number) {
   }
 }
 
-export async function getBilan(companyId: string, year: number) {
+export async function getBilan(companyId: string, year: number, user?: JwtPayload) {
   const end   = new Date(`${year}-12-31T23:59:59.999Z`)
   const start = new Date(`${year}-01-01`)
+  const af    = user ? getAgenceFilter(user) : {}
 
   const [creances, dettes, tresorerie] = await Promise.all([
     prisma.invoice.aggregate({
-      where: { companyId, status: { in: ['SENT', 'OVERDUE'] }, dueAt: { lte: end } },
+      where: { companyId, ...af, status: { in: ['SENT', 'OVERDUE'] }, dueAt: { lte: end } },
       _sum: { amountTTC: true },
     }),
     prisma.expense.aggregate({
-      where: { companyId, date: { gte: start, lte: end } },
+      where: { companyId, ...af, date: { gte: start, lte: end } },
       _sum: { amount: true },
     }),
     prisma.invoice.aggregate({
-      where: { companyId, status: 'PAID', issuedAt: { gte: start, lte: end } },
+      where: { companyId, ...af, status: 'PAID', issuedAt: { gte: start, lte: end } },
       _sum: { amountTTC: true },
     }),
   ])
@@ -146,18 +151,19 @@ export async function getBalance(companyId: string, year: number) {
   return { year, invoicesByStatus, expensesByCategory }
 }
 
-export async function getGrandLivre(companyId: string, year: number) {
+export async function getGrandLivre(companyId: string, year: number, user?: JwtPayload) {
   const start = new Date(`${year}-01-01`)
   const end   = new Date(`${year}-12-31T23:59:59.999Z`)
+  const af    = user ? getAgenceFilter(user) : {}
 
   const [invoices, expenses] = await Promise.all([
     prisma.invoice.findMany({
-      where: { companyId, issuedAt: { gte: start, lte: end } },
+      where: { companyId, ...af, issuedAt: { gte: start, lte: end } },
       include: { client: { select: { nom: true } } },
       orderBy: { issuedAt: 'asc' },
     }),
     prisma.expense.findMany({
-      where: { companyId, date: { gte: start, lte: end } },
+      where: { companyId, ...af, date: { gte: start, lte: end } },
       orderBy: { date: 'asc' },
     }),
   ])
@@ -186,7 +192,8 @@ export async function getGrandLivre(companyId: string, year: number) {
   return { year, entries }
 }
 
-export async function getTvaTrimestrielle(companyId: string, year: number) {
+export async function getTvaTrimestrielle(companyId: string, year: number, user?: JwtPayload) {
+  const af = user ? getAgenceFilter(user) : {}
   const quarters = [1, 2, 3, 4].map((q) => {
     const startMonth = (q - 1) * 3
     return {
@@ -200,11 +207,11 @@ export async function getTvaTrimestrielle(companyId: string, year: number) {
     quarters.map(async ({ quarter, start, end }) => {
       const [collectee, deductible] = await Promise.all([
         prisma.invoice.aggregate({
-          where: { companyId, status: 'PAID', issuedAt: { gte: start, lte: end } },
+          where: { companyId, ...af, status: 'PAID', issuedAt: { gte: start, lte: end } },
           _sum:  { amountHT: true, amountTTC: true },
         }),
         prisma.expense.aggregate({
-          where: { companyId, date: { gte: start, lte: end } },
+          where: { companyId, ...af, date: { gte: start, lte: end } },
           _sum:  { amount: true },
         }),
       ])
