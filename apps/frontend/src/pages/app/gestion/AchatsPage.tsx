@@ -525,8 +525,8 @@ export function AchatsPage() {
   const address     = company?.address ?? ''
   const city        = company?.city    ?? ''
 
-  function handleCreate(data: Omit<Achat, 'id'>) {
-    const created = addAchat(data)
+  async function handleCreate(data: Omit<Achat, 'id'>) {
+    const created = await addAchat(data)
     setModal(null)
     setSelected(created)
   }

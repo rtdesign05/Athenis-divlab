@@ -28,7 +28,7 @@ bankRouter.get(
   checkModule('comptabilite', 'read'),
   async (req, res, next) => {
     try {
-      const data = await svc.bankStats(getCompanyId(req))
+      const data = await svc.bankStats(getCompanyId(req), req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -40,7 +40,7 @@ bankRouter.get(
   validateRequest({ query: ListBankTxDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.listBankTransactions(getCompanyId(req), req.query as never)
+      const data = await svc.listBankTransactions(getCompanyId(req), req.query as never, req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -52,7 +52,7 @@ bankRouter.post(
   validateRequest({ body: ImportBankDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.importBankStatement(getCompanyId(req), req.body)
+      const data = await svc.importBankStatement(getCompanyId(req), req.body, req.user)
       res.status(201).json({ success: true, data })
     } catch (e) { next(e) }
   },

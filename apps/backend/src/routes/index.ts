@@ -8,6 +8,7 @@ import { employeesRouter } from '../modules/employees/employees.routes.js'
 import { accountingRouter } from '../modules/accounting/accounting.routes.js'
 import { esgRouter } from '../modules/esg/esg.routes.js'
 import { bankRouter } from '../modules/bank/bank.routes.js'
+import { purchasesRouter } from '../modules/purchases/purchases.routes.js'
 import { cabinetRouter } from '../modules/cabinet/cabinet.routes.js'
 import { leavesRouter } from '../modules/leaves/leaves.routes.js'
 import { reviewsRouter } from '../modules/reviews/reviews.routes.js'
@@ -23,6 +24,7 @@ import { personalRouter } from '../modules/personal/personal.routes.js'
 import { invitationRouter } from '../modules/invitation/invitation.routes.js'
 import { mailRouter } from '../modules/mail/mail.routes.js'
 import scanRouter from '../modules/scan/scan.routes.js'
+import { treasuryRouter } from '../modules/treasury/treasury.routes.js'
 
 const router = Router()
 
@@ -38,6 +40,7 @@ router.use('/expenses', expensesRouter)
 router.use('/employees', employeesRouter)
 router.use('/accounting', accountingRouter)
 router.use('/bank', bankRouter)
+router.use('/purchases', purchasesRouter)
 router.use('/esg', esgRouter)
 router.use('/cabinet', cabinetRouter)
 router.use('/leaves', leavesRouter)
@@ -54,5 +57,6 @@ router.use('/personal', personalRouter)
 router.use('/invitations', invitationRouter)
 router.use('/mail', mailRouter)
 router.use('/scan', scanRouter)
+router.use('/treasury', treasuryRouter)
 
 export { router }

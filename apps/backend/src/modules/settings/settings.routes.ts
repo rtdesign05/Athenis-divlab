@@ -219,6 +219,31 @@ settingsRouter.delete('/agences/:id', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
+// ── Agence assignment ─────────────────────────────────────────────────────────
+
+const UpdateUserAgencesSchema = z.object({
+  agenceIds:    z.array(z.string()).default([]),
+  isRestricted: z.boolean().default(false),
+})
+
+settingsRouter.put(
+  '/users/:id/agences',
+  validateRequest({ body: UpdateUserAgencesSchema }),
+  async (req, res, next) => {
+    try {
+      requireAdmin(req)
+      const targetId = String(req.params['id'])
+      const data = await svc.updateUserAgences(
+        getCompanyId(req),
+        targetId,
+        req.body.agenceIds,
+        req.body.isRestricted,
+      )
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
 settingsRouter.put(
   '/users/:id/role',
   validateRequest({ body: UpdateRoleSchema }),

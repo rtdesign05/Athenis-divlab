@@ -310,8 +310,8 @@ function VentesRecurrentesPageInner() {
 
   const [generatedId, setGeneratedId] = useState<string | null>(null)
 
-  function handleGenerate(vr: VenteRecurrente) {
-    const facture = addFactureVente({
+  async function handleGenerate(vr: VenteRecurrente) {
+    const facture = await addFactureVente({
       modele:             'standard',
       commande:           vr.id,
       client:             vr.client,

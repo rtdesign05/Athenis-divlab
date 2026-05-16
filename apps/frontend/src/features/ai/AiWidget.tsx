@@ -36,6 +36,25 @@ const SUGGESTED = [
   'Comment optimiser ma TVA sur le trimestre ?',
 ]
 
+// Catégories de difficultés pour la section Discussion
+const DIFFICULTY_CATEGORIES = [
+  { label: 'Facturation',    icon: '🧾', prompt: 'J\'ai une difficulté avec la facturation : ' },
+  { label: 'Comptabilité',   icon: '📊', prompt: 'J\'ai un problème comptable : ' },
+  { label: 'RH / Paie',     icon: '👥', prompt: 'J\'ai une question RH ou paie : ' },
+  { label: 'Juridique',      icon: '⚖️', prompt: 'J\'ai une question juridique : ' },
+  { label: 'Trésorerie',     icon: '💰', prompt: 'J\'ai une difficulté de trésorerie : ' },
+  { label: 'Technique',      icon: '🔧', prompt: 'J\'ai un problème technique avec Athenis : ' },
+]
+
+const DISCUSSION_SUGGESTED = [
+  'Je n\'arrive pas à créer une facture correctement',
+  'Comment fonctionne le rapprochement bancaire ?',
+  'Mon bulletin de paie ne se génère pas',
+  'Où trouver ma déclaration TVA du trimestre ?',
+  'Comment ajouter un nouvel employé ?',
+  'Je ne comprends pas le grand livre comptable',
+]
+
 function MarkdownText({ text }: { text: string }) {
   const nodes: React.ReactNode[] = []
   text.split('\n').forEach((line, li) => {
@@ -53,18 +72,20 @@ function MarkdownText({ text }: { text: string }) {
 
 export function AiWidget() {
   const [open, setOpen]           = useState(false)
-  const [view, setView]           = useState<'chat' | 'history'>('chat')
+  const [view, setView]           = useState<'chat' | 'history' | 'discussion'>('chat')
   const [messages, setMessages]   = useState<Message[]>([])
+  const [discMessages, setDiscMessages] = useState<Message[]>([])
   const [input, setInput]         = useState('')
   const [loading, setLoading]     = useState(false)
   const [convId, setConvId]       = useState<string | undefined>()
+  const [discConvId, setDiscConvId] = useState<string | undefined>()
   const [conversations, setConvos]= useState<Conversation[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef  = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (open) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, open])
+  }, [messages, discMessages, open])
 
   useEffect(() => {
     if (open && view === 'history') {
@@ -91,15 +112,19 @@ export function AiWidget() {
     setView('chat')
   }
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, mode: 'chat' | 'discussion' = 'chat') => {
     if (!text.trim() || loading) return
     setInput('')
     setLoading(true)
 
+    const isDisc = mode === 'discussion'
+    const currentConvId = isDisc ? discConvId : convId
+
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text }
     const assistantMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: '', pending: true }
 
-    setMessages(prev => [...prev, userMsg, assistantMsg])
+    const setMsgs = isDisc ? setDiscMessages : setMessages
+    setMsgs(prev => [...prev, userMsg, assistantMsg])
 
     try {
       const baseUrl = (api.defaults.baseURL ?? '').replace(/\/$/, '')
@@ -111,11 +136,10 @@ export function AiWidget() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ message: text, conversationId: convId }),
+        body: JSON.stringify({ message: text, conversationId: currentConvId }),
       })
 
       if (!response.ok || !response.body) {
-        // Tenter de lire le message d'erreur JSON
         let errMsg = 'Erreur serveur'
         try {
           const errBody = await response.clone().json() as { error?: string }
@@ -141,24 +165,25 @@ export function AiWidget() {
             try {
               const payload = JSON.parse(line.slice(6))
               if (payload.token !== undefined) {
-                setMessages(prev => prev.map(m =>
+                setMsgs(prev => prev.map(m =>
                   m.id === assistantMsg.id
                     ? { ...m, content: m.content + payload.token }
                     : m
                 ))
               }
               if (payload.conversationId) {
-                setConvId(payload.conversationId)
+                if (isDisc) setDiscConvId(payload.conversationId)
+                else        setConvId(payload.conversationId)
               }
             } catch {}
           }
         }
       }
 
-      setMessages(prev => prev.map(m => m.id === assistantMsg.id ? { ...m, pending: false } : m))
+      setMsgs(prev => prev.map(m => m.id === assistantMsg.id ? { ...m, pending: false } : m))
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Erreur inconnue'
-      setMessages(prev => prev.map(m =>
+      setMsgs(prev => prev.map(m =>
         m.id === assistantMsg.id
           ? { ...m, content: `⚠️ ${msg}`, pending: false }
           : m
@@ -167,12 +192,12 @@ export function AiWidget() {
       setLoading(false)
       inputRef.current?.focus()
     }
-  }, [loading, convId])
+  }, [loading, convId, discConvId])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage(input)
+      sendMessage(input, view === 'discussion' ? 'discussion' : 'chat')
     }
   }
 
@@ -207,20 +232,31 @@ export function AiWidget() {
               </div>
             </div>
             <div className="flex items-center gap-1">
+              {/* Discussion */}
               <button
-                onClick={() => setView(v => v === 'chat' ? 'history' : 'chat')}
-                className="rounded-lg p-1.5 text-blue-200 hover:bg-blue-500 hover:text-white transition-colors"
-                title={view === 'chat' ? 'Historique' : 'Chat'}>
-                {view === 'chat' ? (
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h8" />
-                  </svg>
-                ) : (
+                onClick={() => setView(v => v === 'discussion' ? 'chat' : 'discussion')}
+                className={`rounded-lg p-1.5 transition-colors ${view === 'discussion' ? 'bg-blue-500 text-white' : 'text-blue-200 hover:bg-blue-500 hover:text-white'}`}
+                title="Discussion / Difficultés">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              {/* Historique */}
+              <button
+                onClick={() => setView(v => v === 'history' ? 'chat' : 'history')}
+                className={`rounded-lg p-1.5 transition-colors ${view === 'history' ? 'bg-blue-500 text-white' : 'text-blue-200 hover:bg-blue-500 hover:text-white'}`}
+                title={view === 'history' ? 'Chat' : 'Historique'}>
+                {view === 'history' ? (
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                   </svg>
+                ) : (
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h8" />
+                  </svg>
                 )}
               </button>
+              {/* Nouvelle conversation */}
               <button
                 onClick={newConversation}
                 className="rounded-lg p-1.5 text-blue-200 hover:bg-blue-500 hover:text-white transition-colors"
@@ -248,9 +284,100 @@ export function AiWidget() {
                 </button>
               ))}
             </div>
+
+          ) : view === 'discussion' ? (
+            <>
+              {/* Discussion — messages or welcome */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {discMessages.length === 0 && (
+                  <div className="space-y-3">
+                    <div className="rounded-xl bg-orange-50 border border-orange-100 p-3">
+                      <p className="text-sm font-semibold text-orange-900">Besoin d'aide ? 💬</p>
+                      <p className="text-xs text-orange-700 mt-1">
+                        Décrivez une difficulté rencontrée sur Athenis. Notre assistant vous guide pas à pas.
+                      </p>
+                    </div>
+                    {/* Category chips */}
+                    <p className="text-xs font-medium text-gray-400">Catégorie :</p>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {DIFFICULTY_CATEGORIES.map(cat => (
+                        <button
+                          key={cat.label}
+                          onClick={() => { setInput(cat.prompt); inputRef.current?.focus() }}
+                          className="flex flex-col items-center gap-1 rounded-xl border border-gray-200 bg-white px-2 py-2.5 text-center hover:border-orange-300 hover:bg-orange-50 transition-colors">
+                          <span className="text-lg leading-none">{cat.icon}</span>
+                          <span className="text-[11px] font-medium text-gray-600 leading-tight">{cat.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {/* Suggested questions */}
+                    <p className="text-xs font-medium text-gray-400">Questions fréquentes :</p>
+                    <div className="space-y-1.5">
+                      {DISCUSSION_SUGGESTED.map(s => (
+                        <button key={s} onClick={() => sendMessage(s, 'discussion')}
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-600 hover:border-orange-300 hover:bg-orange-50 transition-colors">
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {discMessages.map(msg => (
+                  <div key={msg.id}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
+                      msg.role === 'user'
+                        ? 'bg-orange-500 text-white rounded-br-sm'
+                        : 'bg-gray-100 text-gray-800 rounded-bl-sm'
+                    }`}>
+                      {msg.pending && !msg.content ? (
+                        <div className="flex gap-1 py-1">
+                          <span className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                          <span className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                          <span className="h-2 w-2 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                        </div>
+                      ) : (
+                        <MarkdownText text={msg.content} />
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div ref={bottomRef} />
+              </div>
+
+              {/* Discussion input */}
+              <div className="border-t border-gray-100 p-3">
+                <div className="flex items-end gap-2">
+                  <textarea
+                    ref={inputRef}
+                    rows={1}
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Décrivez votre difficulté… (Entrée pour envoyer)"
+                    disabled={loading}
+                    className="flex-1 resize-none rounded-xl border border-orange-200 px-3 py-2 text-sm focus:border-orange-400 focus:outline-none disabled:opacity-50"
+                    style={{ maxHeight: '120px' }}
+                  />
+                  <button
+                    onClick={() => sendMessage(input, 'discussion')}
+                    disabled={loading || !input.trim()}
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40 transition-colors">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="mt-1.5 text-center text-xs text-gray-400">
+                  Support Athenis · Shift+Entrée pour saut de ligne
+                </p>
+              </div>
+            </>
+
           ) : (
             <>
-              {/* Messages */}
+              {/* Chat messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
                 {messages.length === 0 && (
                   <div className="space-y-3">
@@ -261,7 +388,7 @@ export function AiWidget() {
                     <p className="text-xs font-medium text-gray-400">Suggestions :</p>
                     <div className="space-y-1.5">
                       {SUGGESTED.map(s => (
-                        <button key={s} onClick={() => sendMessage(s)}
+                        <button key={s} onClick={() => sendMessage(s, 'chat')}
                           className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-600 hover:border-blue-300 hover:bg-blue-50 transition-colors">
                           {s}
                         </button>
@@ -293,7 +420,7 @@ export function AiWidget() {
                 <div ref={bottomRef} />
               </div>
 
-              {/* Input */}
+              {/* Chat input */}
               <div className="border-t border-gray-100 p-3">
                 <div className="flex items-end gap-2">
                   <textarea
@@ -308,7 +435,7 @@ export function AiWidget() {
                     style={{ maxHeight: '120px' }}
                   />
                   <button
-                    onClick={() => sendMessage(input)}
+                    onClick={() => sendMessage(input, 'chat')}
                     disabled={loading || !input.trim()}
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

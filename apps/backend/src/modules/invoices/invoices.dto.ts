@@ -1,12 +1,24 @@
 import { z } from 'zod'
 
+export const InvoiceLineDto = z.object({
+  description:    z.string().min(1),
+  quantite:       z.number().positive().default(1),
+  unite:          z.string().default('pièce'),
+  prixUnitaireHT: z.number().min(0),
+  tvaRate:        z.number().min(0).max(100).default(0),
+  montantHT:      z.number().min(0),
+})
+
 export const CreateInvoiceDto = z.object({
-  clientId:  z.string().min(1),
-  issueDate: z.coerce.date(),
-  dueDate:   z.coerce.date(),
-  subtotal:  z.number().positive(),
-  taxRate:   z.number().min(0).max(100).default(20),
-  notes:     z.string().optional(),
+  clientId:           z.string().min(1),
+  modele:             z.enum(['standard', 'proforma', 'avoir', 'acompte']).default('standard'),
+  issueDate:          z.coerce.date(),
+  dueDate:            z.coerce.date(),
+  subtotal:           z.number().positive(),
+  taxRate:            z.number().min(0).max(100).default(20),
+  conditionsPaiement: z.string().optional(),
+  notes:              z.string().optional(),
+  lines:              z.array(InvoiceLineDto).default([]),
 })
 
 export const UpdateInvoiceDto = CreateInvoiceDto.partial()
@@ -40,6 +52,7 @@ export const UpdateRecurringDto = z.object({
   nextDueDate: z.coerce.date().optional(),
 })
 
+export type InvoiceLineInput     = z.infer<typeof InvoiceLineDto>
 export type CreateInvoiceInput   = z.infer<typeof CreateInvoiceDto>
 export type UpdateInvoiceInput   = z.infer<typeof UpdateInvoiceDto>
 export type ListInvoicesInput    = z.infer<typeof ListInvoicesDto>

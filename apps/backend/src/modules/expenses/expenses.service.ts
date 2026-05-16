@@ -1,12 +1,15 @@
 import { Prisma, type ExpenseCategory } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
+import { getAgenceFilter } from '../../middleware/agenceFilter.js'
+import type { JwtPayload } from '@athenis/shared-types'
 import type { CreateExpenseInput, UpdateExpenseInput, ListExpensesInput } from './expenses.dto.js'
 
-export async function listExpenses(companyId: string, query: ListExpensesInput) {
+export async function listExpenses(companyId: string, query: ListExpensesInput, user?: JwtPayload) {
   const { page, limit, category, from, to } = query
   const where: Prisma.ExpenseWhereInput = {
     companyId,
+    ...(user ? getAgenceFilter(user) : {}),
     ...(category ? { category: category as ExpenseCategory } : {}),
     ...(from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
   }
@@ -29,7 +32,8 @@ export async function getExpense(companyId: string, id: string) {
   return expense
 }
 
-export async function createExpense(companyId: string, data: CreateExpenseInput, _createdBy: string) {
+export async function createExpense(companyId: string, data: CreateExpenseInput, _createdBy: string, user?: JwtPayload) {
+  const agenceId = user?.agenceId ?? null
   return prisma.expense.create({
     data: {
       companyId,
@@ -37,6 +41,7 @@ export async function createExpense(companyId: string, data: CreateExpenseInput,
       description: data.description ?? '',
       date:        data.date,
       amount:      new Prisma.Decimal(data.amount),
+      ...(agenceId ? { agenceId } : {}),
     },
   })
 }

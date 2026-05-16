@@ -43,7 +43,7 @@ const PRIMARY_LIGHT = '#f0fdf4'
 interface FRow {
   ref?:       string
   label:      string
-  values?:    FSPair
+  values?:    FSPair | undefined
   section?:   boolean   // en-tête de section (fond gris)
   bold?:      boolean   // sous-total (fond vert pâle)
   grandTotal?: boolean  // total général (fond vert foncé, texte blanc)

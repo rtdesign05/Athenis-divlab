@@ -63,6 +63,10 @@ export interface SettingsUser {
   lastLoginAt:     string | null
   invitedAt:       string | null
   isInvitation:    boolean
+  /** IDs des agences auxquelles l'utilisateur est rattaché */
+  agenceIds:       string[]
+  /** true si la vue est restreinte aux agences sélectionnées */
+  isRestricted:    boolean
 }
 
 export interface CompanyRole {
@@ -153,6 +157,9 @@ export const settingsApi = {
 
   updateUserRole:   (id: string, roleId: string) =>
     api.put(`/settings/users/${id}/role`, { roleId }),
+
+  updateUserAgences: (id: string, agenceIds: string[], isRestricted: boolean) =>
+    api.put(`/settings/users/${id}/agences`, { agenceIds, isRestricted }),
 
   updateUserStatus: (id: string, status: string) =>
     api.put(`/settings/users/${id}/status`, { status }),

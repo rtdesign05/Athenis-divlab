@@ -16,7 +16,7 @@ expensesRouter.get(
   validateRequest({ query: ListExpensesDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.listExpenses(getCompanyId(req), req.query as never)
+      const data = await svc.listExpenses(getCompanyId(req), req.query as never, req.user)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
@@ -55,7 +55,7 @@ expensesRouter.post(
   validateRequest({ body: CreateExpenseDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.createExpense(getCompanyId(req), req.body, req.user?.sub ?? 'unknown')
+      const data = await svc.createExpense(getCompanyId(req), req.body, req.user?.sub ?? 'unknown', req.user)
       res.status(201).json({ success: true, data })
     } catch (e) { next(e) }
   },

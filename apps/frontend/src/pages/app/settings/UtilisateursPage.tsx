@@ -524,6 +524,173 @@ function InviteModal({ onClose, onSuccess }: InviteModalProps) {
   )
 }
 
+// ── Edit Agences Modal ────────────────────────────────────────────────────────
+
+interface EditAgencesModalProps {
+  user: SettingsUser
+  onClose: () => void
+  onSuccess: (agenceIds: string[], isRestricted: boolean) => void
+}
+
+function EditAgencesModal({ user, onClose, onSuccess }: EditAgencesModalProps) {
+  const [agences, setAgences] = useState<Agence[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selectedAgences, setSelectedAgences] = useState<Set<string>>(new Set(user.agenceIds))
+  const [isRestricted, setIsRestricted] = useState(user.isRestricted)
+
+  useEffect(() => {
+    settingsApi.listAgences()
+      .then(setAgences)
+      .catch(() => setError('Impossible de charger les agences'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  function toggleAgence(id: string) {
+    setSelectedAgences((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    setError(null)
+    try {
+      const agenceIds = [...selectedAgences]
+      const restricted = isRestricted && agenceIds.length > 0
+      await settingsApi.updateUserAgences(user.id, agenceIds, restricted)
+      onSuccess(agenceIds, restricted)
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Une erreur est survenue')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Agences de l'utilisateur</h2>
+            <p className="text-xs text-gray-500 mt-0.5">{displayName}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          <p className="text-sm text-gray-500">
+            Sélectionnez les agences auxquelles rattacher cet utilisateur.
+          </p>
+
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+            </div>
+          ) : agences.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-200 py-8 text-center">
+              <p className="text-sm text-gray-400">Aucune agence configurée.</p>
+              <p className="text-xs text-gray-400 mt-1">
+                Créez des agences dans <strong>Paramètres → Agences</strong>.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-xl border border-gray-100 overflow-hidden">
+                {agences.map((agence, i) => (
+                  <label
+                    key={agence.id}
+                    className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${
+                      i > 0 ? 'border-t border-gray-100' : ''
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedAgences.has(agence.id)}
+                      onChange={() => toggleAgence(agence.id)}
+                      className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">{agence.nom}</span>
+                        <span className="text-xs text-gray-400">{agence.code}</span>
+                        {agence.isSiege && (
+                          <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                            SIÈGE
+                          </span>
+                        )}
+                      </div>
+                      {agence.ville && <p className="text-xs text-gray-400">{agence.ville}</p>}
+                    </div>
+                    <span className="text-xs text-gray-400">
+                      {agence._count.members} membre{agence._count.members !== 1 ? 's' : ''}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              {selectedAgences.size > 0 && (
+                <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isRestricted}
+                    onChange={(e) => setIsRestricted(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                  />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-900">Restreindre la vue</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      L'utilisateur ne verra <strong>que les données des agences sélectionnées</strong>.
+                    </p>
+                  </div>
+                </label>
+              )}
+
+              {selectedAgences.size === 0 && (
+                <p className="text-xs text-gray-400 rounded-lg bg-gray-50 px-4 py-3">
+                  Aucune agence sélectionnée — l'utilisateur aura accès à toutes les données.
+                </p>
+              )}
+            </>
+          )}
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t border-gray-100 px-6 py-4 shrink-0">
+          <button
+            onClick={onClose}
+            className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => void handleSave()}
+            disabled={saving || loading}
+            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-50"
+          >
+            {saving ? 'Sauvegarde…' : 'Enregistrer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Confirm Dialog ────────────────────────────────────────────────────────────
 
 interface ConfirmDialogProps {
@@ -563,14 +730,20 @@ function ConfirmDialog({ message, onConfirm, onCancel, loading }: ConfirmDialogP
 interface UserRowProps {
   user: SettingsUser
   isSelf: boolean
+  agenceMap: Map<string, string>   // id → nom
   onStatusToggled: (userId: string, current: UserStatus) => Promise<void>
   onDeleted: (userId: string) => Promise<void>
   onCancelInvite: (userId: string) => Promise<void>
+  onAgencesUpdated: (userId: string, agenceIds: string[], isRestricted: boolean) => void
 }
 
-function UserRow({ user, isSelf, onStatusToggled, onDeleted, onCancelInvite }: UserRowProps) {
+function UserRow({
+  user, isSelf, agenceMap,
+  onStatusToggled, onDeleted, onCancelInvite, onAgencesUpdated,
+}: UserRowProps) {
   const [actionLoading, setActionLoading] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showEditAgences, setShowEditAgences] = useState(false)
 
   const displayRole = user.companyRoleName ?? user.globalRole
 
@@ -596,6 +769,29 @@ function UserRow({ user, isSelf, onStatusToggled, onDeleted, onCancelInvite }: U
     ? formatDate(user.invitedAt)
     : formatDate(user.lastLoginAt)
 
+  // Agences label for the table cell
+  const agenceLabel = user.agenceIds.length === 0
+    ? <span className="text-xs text-gray-400">Toutes</span>
+    : (
+      <div className="flex flex-wrap gap-1">
+        {user.agenceIds.slice(0, 2).map(id => (
+          <span key={id} className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700">
+            {agenceMap.get(id) ?? id.slice(0, 6)}
+          </span>
+        ))}
+        {user.agenceIds.length > 2 && (
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">
+            +{user.agenceIds.length - 2}
+          </span>
+        )}
+        {user.isRestricted && (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+            restreint
+          </span>
+        )}
+      </div>
+    )
+
   return (
     <>
       {confirmDelete && (
@@ -604,6 +800,16 @@ function UserRow({ user, isSelf, onStatusToggled, onDeleted, onCancelInvite }: U
           onConfirm={handleDelete}
           onCancel={() => setConfirmDelete(false)}
           loading={actionLoading}
+        />
+      )}
+      {showEditAgences && (
+        <EditAgencesModal
+          user={user}
+          onClose={() => setShowEditAgences(false)}
+          onSuccess={(ids, restricted) => {
+            onAgencesUpdated(user.id, ids, restricted)
+            setShowEditAgences(false)
+          }}
         />
       )}
       <tr className="hover:bg-gray-50 transition-colors">
@@ -623,6 +829,15 @@ function UserRow({ user, isSelf, onStatusToggled, onDeleted, onCancelInvite }: U
         </td>
         <td className="py-3 px-3">
           <StatusBadge status={user.status} />
+        </td>
+        <td className="py-3 px-3">
+          <button
+            onClick={() => !user.isInvitation && setShowEditAgences(true)}
+            className={`text-left ${!user.isInvitation ? 'hover:opacity-70 cursor-pointer' : 'cursor-default'}`}
+            title={!user.isInvitation ? 'Modifier les agences' : undefined}
+          >
+            {agenceLabel}
+          </button>
         </td>
         <td className="py-3 px-3">
           <span className="text-sm text-gray-500">{lastActivity}</span>
@@ -647,6 +862,12 @@ function UserRow({ user, isSelf, onStatusToggled, onDeleted, onCancelInvite }: U
             </button>
           ) : (
             <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => setShowEditAgences(true)}
+                className="text-sm text-indigo-600 hover:text-indigo-800 transition-colors"
+              >
+                Agences
+              </button>
               <button
                 onClick={handleStatusToggle}
                 disabled={actionLoading}
@@ -677,6 +898,7 @@ function UserRow({ user, isSelf, onStatusToggled, onDeleted, onCancelInvite }: U
 export function UtilisateursPage() {
   const { user: authUser } = useAuth()
   const [users, setUsers] = useState<SettingsUser[]>([])
+  const [agenceMap, setAgenceMap] = useState<Map<string, string>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
@@ -693,8 +915,12 @@ export function UtilisateursPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const fetchedUsers = await settingsApi.listUsers()
+      const [fetchedUsers, fetchedAgences] = await Promise.all([
+        settingsApi.listUsers(),
+        settingsApi.listAgences(),
+      ])
       setUsers(fetchedUsers)
+      setAgenceMap(new Map(fetchedAgences.map(a => [a.id, a.nom])))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur de chargement')
     } finally {
@@ -718,6 +944,11 @@ export function UtilisateursPage() {
   const handleCancelInvite = useCallback(async (userId: string) => {
     await settingsApi.deleteUser(userId)
     setUsers((prev) => prev.filter((u) => u.id !== userId))
+  }, [])
+
+  const handleAgencesUpdated = useCallback((userId: string, agenceIds: string[], isRestricted: boolean) => {
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, agenceIds, isRestricted } : u))
+    setToast('Agences mises à jour')
   }, [])
 
   if (loading) {
@@ -802,6 +1033,7 @@ export function UtilisateursPage() {
                   <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</th>
                   <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Rôle</th>
                   <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Statut</th>
+                  <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Agences</th>
                   <th className="py-3 px-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Dernière connexion</th>
                   <th className="py-3 px-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide">2FA</th>
                   <th className="py-3 pl-3 pr-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
@@ -810,7 +1042,7 @@ export function UtilisateursPage() {
               <tbody className="divide-y divide-gray-100">
                 {users.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-sm text-gray-400">
+                    <td colSpan={8} className="py-12 text-center text-sm text-gray-400">
                       Aucun utilisateur trouvé.
                     </td>
                   </tr>
@@ -820,9 +1052,11 @@ export function UtilisateursPage() {
                       key={user.id}
                       user={user}
                       isSelf={user.email === authUser?.email}
+                      agenceMap={agenceMap}
                       onStatusToggled={handleStatusToggled}
                       onDeleted={handleDeleted}
                       onCancelInvite={handleCancelInvite}
+                      onAgencesUpdated={handleAgencesUpdated}
                     />
                   ))
                 )}

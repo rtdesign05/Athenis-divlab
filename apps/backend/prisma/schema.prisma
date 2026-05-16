@@ -172,6 +172,8 @@ model Company {
   clients          Client[]
   invoices         Invoice[]
   expenses         Expense[]
+  purchaseOrders   PurchaseOrder[]
+  treasuryEntries  TreasuryEntry[]
   employees        Employee[]
   esgData          ESGData[]
   assets           Asset[]
@@ -257,16 +259,19 @@ model CompanyMember {
 }
 
 model Invitation {
-  id          String    @id @default(cuid())
-  companyId   String    @map("company_id")
-  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  email       String
-  roleId      String    @map("role_id")
-  token       String    @unique
-  expiresAt   DateTime  @map("expires_at")
-  acceptedAt  DateTime? @map("accepted_at")
-  createdBy   String    @map("created_by")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id           String    @id @default(cuid())
+  companyId    String    @map("company_id")
+  company      Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email        String
+  roleId       String    @map("role_id")
+  token        String    @unique
+  expiresAt    DateTime  @map("expires_at")
+  acceptedAt   DateTime? @map("accepted_at")
+  createdBy    String    @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  // Agence assignment — stored at invite time and applied on accept
+  agenceIds    String[]  @default([]) @map("agence_ids")
+  isRestricted Boolean   @default(false) @map("is_restricted")
 
   @@index([token])
   @@index([companyId])
@@ -346,6 +351,7 @@ model FiscalYear {
   depreciations   AssetDepreciation[]
   invoices        Invoice[]
   expenses        Expense[]
+  purchaseOrders  PurchaseOrder[]
   vatDeclarations VatDeclaration[]
 
   createdAt       DateTime         @default(now()) @map("created_at")
@@ -402,18 +408,23 @@ model Invoice {
   client       Client        @relation(fields: [clientId], references: [id])
   fiscalYearId String?       @map("fiscal_year_id")
   fiscalYear   FiscalYear?   @relation(fields: [fiscalYearId], references: [id])
+  agenceId     String?       @map("agence_id")
+  agence       Agence?       @relation(fields: [agenceId], references: [id])
 
-  reference    String        @map("number")
-  status       InvoiceStatus @default(DRAFT)
-  amountHT     Decimal       @db.Decimal(12, 2) @map("subtotal")
-  vatRate      Decimal       @db.Decimal(5, 2) @default(20) @map("tax_rate")
-  amountTTC    Decimal       @db.Decimal(12, 2) @map("total")
-  taxAmount    Decimal       @db.Decimal(12, 2) @map("tax_amount")
-  issuedAt     DateTime      @map("issue_date")
-  dueAt        DateTime      @map("due_date")
-  paidAt       DateTime?     @map("paid_at")
-  description  String?       @map("notes")
+  reference          String        @map("number")
+  modele             String        @default("standard")
+  status             InvoiceStatus @default(DRAFT)
+  amountHT           Decimal       @db.Decimal(12, 2) @map("subtotal")
+  vatRate            Decimal       @db.Decimal(5, 2) @default(20) @map("tax_rate")
+  amountTTC          Decimal       @db.Decimal(12, 2) @map("total")
+  taxAmount          Decimal       @db.Decimal(12, 2) @map("tax_amount")
+  issuedAt           DateTime      @map("issue_date")
+  dueAt              DateTime      @map("due_date")
+  paidAt             DateTime?     @map("paid_at")
+  description        String?       @map("notes")
+  conditionsPaiement String?       @map("conditions_paiement")
 
+  lines              InvoiceLine[]
   quoteId            String?          @unique @map("quote_id")
   recurringInvoiceId String?          @map("recurring_invoice_id")
   attachments        Attachment[]
@@ -427,7 +438,23 @@ model Invoice {
   @@unique([companyId, reference])
   @@index([companyId, status])
   @@index([clientId])
+  @@index([agenceId])
   @@map("invoices")
+}
+
+model InvoiceLine {
+  id            String   @id @default(cuid())
+  invoiceId     String   @map("invoice_id")
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description   String
+  quantite      Decimal  @db.Decimal(10, 3) @default(1)
+  unite         String   @default("pièce")
+  prixUnitaireHT Decimal @db.Decimal(12, 2) @map("prix_unitaire_ht")
+  tvaRate       Decimal  @db.Decimal(5, 2) @default(0) @map("tva_rate")
+  montantHT     Decimal  @db.Decimal(12, 2) @map("montant_ht")
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
 }
 
 enum InvoiceStatus {
@@ -436,6 +463,34 @@ enum InvoiceStatus {
   PAID
   OVERDUE
   CANCELLED
+}
+
+enum TreasurySourceType {
+  banque
+  caisse
+  mobile_money
+
+  @@map("TreasurySourceType")
+}
+
+model TreasuryEntry {
+  id         String             @id @default(cuid())
+  companyId  String             @map("company_id")
+  company    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId   String?            @map("agence_id")
+  agence     Agence?            @relation(fields: [agenceId], references: [id], onDelete: SetNull)
+  date       DateTime
+  libelle    String
+  montant    Decimal            @db.Decimal(12, 2)
+  sourceType TreasurySourceType @map("source_type")
+  sourceName String             @map("source_name")
+  pieceName  String?            @map("piece_name")
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  @@index([companyId])
+  @@index([agenceId])
+  @@index([companyId, sourceName])
+  @@map("treasury_entries")
 }
 
 // ─────────────────────────────────────────
@@ -448,6 +503,8 @@ model Expense {
   company      Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
   fiscalYearId String?         @map("fiscal_year_id")
   fiscalYear   FiscalYear?     @relation(fields: [fiscalYearId], references: [id])
+  agenceId     String?         @map("agence_id")
+  agence       Agence?         @relation(fields: [agenceId], references: [id])
 
   category     ExpenseCategory
   amount       Decimal         @db.Decimal(12, 2)
@@ -462,6 +519,7 @@ model Expense {
   updatedAt    DateTime        @updatedAt @map("updated_at")
 
   @@index([companyId, date])
+  @@index([agenceId])
   @@map("expenses")
 }
 
@@ -1066,6 +1124,64 @@ model RecurringInvoice {
 }
 
 // ─────────────────────────────────────────
+// BONS DE COMMANDE FOURNISSEURS (ACHATS)
+// ─────────────────────────────────────────
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  RECEIVED
+  PARTIAL
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  companyId    String              @map("company_id")
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId     String?             @map("agence_id")
+  agence       Agence?             @relation(fields: [agenceId], references: [id])
+  fiscalYearId String?             @map("fiscal_year_id")
+  fiscalYear   FiscalYear?         @relation(fields: [fiscalYearId], references: [id])
+
+  reference    String              @map("number")
+  fournisseur  String
+  objet        String
+  status       PurchaseOrderStatus @default(DRAFT)
+  date         DateTime
+  receptionAt  DateTime?           @map("reception_at")
+  montantHT    Decimal             @db.Decimal(12, 2) @map("montant_ht")
+  vatRate      Decimal             @db.Decimal(5, 2) @default(0) @map("vat_rate")
+  montantTTC   Decimal             @db.Decimal(12, 2) @map("montant_ttc")
+  conditionsPaiement String?       @map("conditions_paiement")
+  notes        String?
+
+  lines        PurchaseOrderLine[]
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  @@unique([companyId, reference])
+  @@index([companyId, status])
+  @@index([agenceId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderLine {
+  id             String        @id @default(cuid())
+  orderId        String        @map("order_id")
+  order          PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reference      String?
+  designation    String
+  quantite       Decimal       @db.Decimal(10, 3)
+  unite          String        @default("pièce")
+  prixUnitaireHT Decimal       @db.Decimal(12, 2) @map("prix_unitaire_ht")
+  montantHT      Decimal       @db.Decimal(12, 2) @map("montant_ht")
+
+  @@index([orderId])
+  @@map("purchase_order_lines")
+}
+
+// ─────────────────────────────────────────
 // RAPPROCHEMENT BANCAIRE
 // ─────────────────────────────────────────
 
@@ -1073,6 +1189,8 @@ model BankTransaction {
   id         String               @id @default(cuid())
   companyId  String               @map("company_id")
   company    Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId   String?              @map("agence_id")
+  agence     Agence?              @relation(fields: [agenceId], references: [id])
   date       DateTime
   label      String
   amount     Decimal              @db.Decimal(12, 2)
@@ -1090,6 +1208,7 @@ model BankTransaction {
   @@index([companyId])
   @@index([date])
   @@index([status])
+  @@index([agenceId])
   @@map("bank_transactions")
 }
 
@@ -1581,7 +1700,12 @@ model Agence {
   isActive  Boolean       @default(true) @map("is_active")
   isSiege   Boolean       @default(false) @map("is_siege")
   createdAt DateTime      @default(now()) @map("created_at")
-  members   AgenceMember[]
+  members          AgenceMember[]
+  invoices         Invoice[]
+  expenses         Expense[]
+  bankTransactions BankTransaction[]
+  purchaseOrders   PurchaseOrder[]
+  treasuryEntries  TreasuryEntry[]
 
   @@unique([companyId, code])
   @@index([companyId])

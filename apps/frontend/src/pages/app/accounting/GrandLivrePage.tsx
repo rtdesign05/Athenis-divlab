@@ -47,14 +47,15 @@ function openGrandLivrePrint(
   fmtAmt: (v: number) => string,
   readOnly: boolean,
   coveredYears: number[],
+  tabLabel = 'Grand Livre général',
 ) {
   const today   = new Date().toLocaleDateString('fr-FR')
   const isOHADA = !['FR', 'BE', 'CH', 'LU'].includes(info.country)
   const idLabel = isOHADA ? 'NUI / RCCM' : 'SIRET'
   const idValue = isOHADA ? (info.vatNumber ?? '—') : (info.siret ?? info.siren ?? '—')
   const docTitle = isOHADA
-    ? 'GRAND LIVRE DES COMPTES (SYSCOHADA révisé)'
-    : 'GRAND LIVRE DES COMPTES (Plan Comptable Général)'
+    ? `${tabLabel.toUpperCase()} (SYSCOHADA révisé)`
+    : `${tabLabel.toUpperCase()} (Plan Comptable Général)`
   const refText = isOHADA
     ? 'Établi conformément au Système Comptable OHADA — SYSCOHADA révisé (Acte uniforme relatif au droit comptable)'
     : 'Établi conformément au Plan Comptable Général (PCG) — Règlement ANC n° 2014-03'
@@ -304,6 +305,17 @@ function ReimputeModal({ selectedIds, sourceAccounts, onConfirm, onClose, isPend
   )
 }
 
+// ── Onglets Grand Livre ───────────────────────────────────────────────────────
+
+type GLTab = 'general' | 'clients' | 'fournisseurs' | 'charges-produits'
+
+const GL_TABS: { id: GLTab; label: string; icon: string; filter: (account: string) => boolean }[] = [
+  { id: 'general',          label: 'Grand Livre général',      icon: '📊', filter: () => true },
+  { id: 'clients',          label: 'Grand Livre clients',      icon: '👥', filter: a => a.startsWith('41') },
+  { id: 'fournisseurs',     label: 'Grand Livre fournisseurs', icon: '🏭', filter: a => a.startsWith('40') },
+  { id: 'charges-produits', label: 'Charges et produits',      icon: '📈', filter: a => a.startsWith('6') || a.startsWith('7') },
+]
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function GrandLivrePage() {
@@ -322,9 +334,10 @@ export function GrandLivrePage() {
   const defaultFrom = globalFY?.startDate.slice(0, 10) ?? toISO(new Date(new Date().getFullYear(), 0, 1))
   const defaultTo   = globalFY?.endDate.slice(0, 10)   ?? toISO(new Date(new Date().getFullYear(), 11, 31))
 
-  const [dateFrom, setDateFrom] = useState(defaultFrom)
-  const [dateTo,   setDateTo]   = useState(defaultTo)
-  const [search,   setSearch]   = useState(compteParam)
+  const [dateFrom,   setDateFrom]   = useState(defaultFrom)
+  const [dateTo,     setDateTo]     = useState(defaultTo)
+  const [search,     setSearch]     = useState(compteParam)
+  const [activeTab,  setActiveTab]  = useState<GLTab>('general')
 
   // ── Sélection pour réimputation ───────────────────────────────────────────
   const [selectedIds,    setSelectedIds]    = useState<Set<string>>(new Set())
@@ -453,11 +466,18 @@ export function GrandLivrePage() {
     )
   }, [mergedComptes, search])
 
+  // ── Filtrage par onglet ───────────────────────────────────────────────────
+  const tabFilter    = GL_TABS.find(t => t.id === activeTab)?.filter ?? (() => true)
+  const activeComptes = useMemo(
+    () => filteredComptes.filter(c => tabFilter(c.account)),
+    [filteredComptes, activeTab], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+
   // ── Comptes sources des écritures sélectionnées ───────────────────────────
   const selectedSourceAccounts = useMemo(() => {
     if (selectedIds.size === 0) return []
     const accounts = new Set<string>()
-    for (const c of filteredComptes) {
+    for (const c of activeComptes) {
       for (const l of c.lignes) {
         if (selectedIds.has(l.id)) accounts.add(c.account)
       }
@@ -477,7 +497,8 @@ export function GrandLivrePage() {
       city:        company?.city ?? null,
       country,
     }
-    openGrandLivrePrint(info, dateFrom, dateTo, filteredComptes, fmt, hasClosedFY, coveredYears)
+    const tabLabel = GL_TABS.find(t => t.id === activeTab)?.label ?? 'Grand Livre'
+    openGrandLivrePrint(info, dateFrom, dateTo, activeComptes, fmt, hasClosedFY, coveredYears, tabLabel)
   }
 
   // ── Presets de période ────────────────────────────────────────────────────
@@ -526,7 +547,7 @@ export function GrandLivrePage() {
           <h1 className="text-xl font-semibold text-gray-900">Grand livre</h1>
           <p className="mt-0.5 text-sm text-gray-500">
             {coveredFYs.length > 0
-              ? `${filteredComptes.length} compte(s) · exercice(s) ${coveredYears.join(', ')}`
+              ? `${activeComptes.length} compte(s) · exercice(s) ${coveredYears.join(', ')}`
               : 'Aucun exercice dans la plage sélectionnée'}
           </p>
         </div>
@@ -538,7 +559,7 @@ export function GrandLivrePage() {
           )}
           <button
             onClick={handlePrint}
-            disabled={filteredComptes.length === 0}
+            disabled={activeComptes.length === 0}
             className="flex items-center gap-2 rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-white
                        hover:bg-[#2d6a4f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
@@ -676,6 +697,31 @@ export function GrandLivrePage() {
         )}
       </div>
 
+      {/* ── Barre d'onglets ── */}
+      <div className="flex border-b border-gray-200 bg-white rounded-t-xl overflow-hidden">
+        {GL_TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => { setActiveTab(tab.id); clearSelection() }}
+            className={`flex-1 px-2 py-3 text-xs font-medium transition-colors border-b-2 flex items-center justify-center gap-1
+              ${activeTab === tab.id
+                ? 'border-[#1b4332] text-[#1b4332] bg-[#1b4332]/5'
+                : 'border-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+            {!isLoading && filteredComptes.length > 0 && (
+              <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none
+                ${activeTab === tab.id
+                  ? 'bg-[#1b4332] text-white'
+                  : 'bg-gray-100 text-gray-500'}`}>
+                {filteredComptes.filter(c => tab.filter(c.account)).length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {/* États */}
       {isLoading && <Spinner />}
 
@@ -693,7 +739,7 @@ export function GrandLivrePage() {
         </div>
       )}
 
-      {!isLoading && coveredFYs.length > 0 && filteredComptes.length === 0 && (
+      {!isLoading && coveredFYs.length > 0 && activeComptes.length === 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-2 text-slate-400">
           {search
             ? <p className="text-sm">Aucun compte ne correspond à «&nbsp;{search}&nbsp;» sur cette période.</p>
@@ -703,7 +749,7 @@ export function GrandLivrePage() {
       )}
 
       {/* ── Comptes ── */}
-      {filteredComptes.map(c => {
+      {activeComptes.map(c => {
         const totalD = c.lignes.reduce((s, l) => s + l.debit,  0)
         const totalC = c.lignes.reduce((s, l) => s + l.credit, 0)
         const solde  = totalD - totalC

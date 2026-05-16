@@ -765,7 +765,7 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
   }, 0)
   const totalTTC = totalHT + tvaAmt
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!client.trim()) return
 
     const builtLignes: LigneFacture[] = lignes.map((l, i) => ({
@@ -778,7 +778,7 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
       montantHT:      lineMontantHT(l),
     }))
 
-    const result = addFactureVente({
+    const result = await addFactureVente({
       modele,
       commande,
       client,

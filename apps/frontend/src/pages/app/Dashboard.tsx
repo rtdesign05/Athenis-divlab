@@ -342,9 +342,14 @@ export function AppDashboard() {
         <div className="shrink-0 flex items-center justify-between">
           <div>
             <h1 className="text-base font-semibold text-gray-900">Bonjour, {firstName}</h1>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-400 flex items-center gap-1.5">
               {companyName && <>{companyName} · </>}
               {user?.atheisNumber && <AtheisId number={user.atheisNumber} size="sm" />}
+              {user?.isRestricted && user?.agenceNom && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                  <span>🏢</span>{user.agenceNom}
+                </span>
+              )}
             </p>
           </div>
           <p className="text-xs text-gray-400">
