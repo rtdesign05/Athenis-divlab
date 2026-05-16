@@ -18,17 +18,58 @@ accountingRouter.use(authenticate)
 
 // ── Read-only guard ───────────────────────────────────────────────────────────
 
+/** V\u00e9rifie que l'exercice fiscal est OPEN avant toute \u00e9criture.
+ *  Cherche fiscalYearId dans : body.fiscalYearId \u2192 query.fiscalYearId \u2192 params.id */
 async function requireFiscalYearWritable(req: Request, res: Response, next: NextFunction) {
-  const fiscalYearId = (req.params['id'] ?? req.body?.fiscalYearId ?? req.query['fiscalYearId']) as string | undefined
+  const fiscalYearId = (req.body?.fiscalYearId ?? req.query['fiscalYearId'] ?? req.params['id']) as string | undefined
   if (!fiscalYearId) return next()
   try {
     const fy = await prisma.fiscalYear.findUnique({ where: { id: fiscalYearId }, select: { status: true } })
     if (fy?.status === 'CLOSED') {
       res.status(403).json({
         success: false,
-        error:   'Exercice cl\xf4tur\xe9 \u2014 lecture seule. Les modifications ne sont pas autoris\xe9es.',
+        error:   'Exercice cl\u00f4tur\u00e9 \u2014 lecture seule. Les modifications ne sont pas autoris\u00e9es.',
         code:    'FISCAL_YEAR_CLOSED',
       })
+      return
+    }
+    if (fy?.status === 'LOCKED') {
+      res.status(403).json({
+        success: false,
+        error:   "Exercice verrouill\u00e9 \u2014 aucune \u00e9criture ne peut \u00eatre cr\u00e9\u00e9e ou modifi\u00e9e. D\u00e9verrouillez l'exercice pour effectuer des saisies.",
+        code:    'FISCAL_YEAR_LOCKED',
+      })
+      return
+    }
+    next()
+  } catch { next() }
+}
+
+/** M\u00eame garde, mais r\u00e9sout le fiscalYearId via l'une des \u00e9critures de la pi\u00e8ce (pieceId dans params). */
+async function requirePieceWritable(req: Request, res: Response, next: NextFunction) {
+  const pieceId = req.params['pieceId'] as string | undefined
+  const entryId = req.params['id'] as string | undefined
+  try {
+    let fy: { status: string } | null = null
+    if (pieceId) {
+      const entry = await prisma.journalEntry.findFirst({
+        where:  { pieceId },
+        select: { fiscalYear: { select: { status: true } } },
+      })
+      fy = entry?.fiscalYear ?? null
+    } else if (entryId) {
+      const entry = await prisma.journalEntry.findUnique({
+        where:  { id: entryId },
+        select: { fiscalYear: { select: { status: true } } },
+      })
+      fy = entry?.fiscalYear ?? null
+    }
+    if (fy?.status === 'CLOSED') {
+      res.status(403).json({ success: false, error: 'Exercice cl\u00f4tur\u00e9 \u2014 lecture seule.', code: 'FISCAL_YEAR_CLOSED' })
+      return
+    }
+    if (fy?.status === 'LOCKED') {
+      res.status(403).json({ success: false, error: "Exercice verrouill\u00e9 \u2014 d\u00e9verrouillez avant de modifier des \u00e9critures.", code: 'FISCAL_YEAR_LOCKED' })
       return
     }
     next()
@@ -379,6 +420,7 @@ accountingRouter.get('/financial-statements',   checkModule('comptabilite', 'rea
 accountingRouter.post(
   '/journal/batch',
   checkModule('comptabilite', 'write'),
+  requireFiscalYearWritable,
   async (req, res, next) => {
     try {
       const { fiscalYearId, date, journal, reference, lines } = req.body as {
@@ -413,6 +455,7 @@ accountingRouter.post(
 accountingRouter.post(
   '/journal',
   checkModule('comptabilite', 'write'),
+  requireFiscalYearWritable,
   async (req, res, next) => {
     try {
       const { fiscalYearId, date, journal, compte, libelle, debit, credit, reference } = req.body as {
@@ -449,6 +492,7 @@ accountingRouter.get(
 accountingRouter.put(
   '/journal/piece/:pieceId',
   checkModule('comptabilite', 'write'),
+  requirePieceWritable,
   async (req, res, next) => {
     try {
       const { pieceId } = req.params as { pieceId: string }
@@ -483,6 +527,7 @@ accountingRouter.put(
 accountingRouter.delete(
   '/journal/piece/:pieceId',
   checkModule('comptabilite', 'write'),
+  requirePieceWritable,
   async (req, res, next) => {
     try {
       const { pieceId } = req.params as { pieceId: string }
@@ -495,6 +540,7 @@ accountingRouter.delete(
 accountingRouter.delete(
   '/journal/:id',
   checkModule('comptabilite', 'write'),
+  requirePieceWritable,
   async (req, res, next) => {
     try {
       const { id } = req.params as { id: string }
