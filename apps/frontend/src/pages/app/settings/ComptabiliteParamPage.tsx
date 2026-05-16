@@ -24,6 +24,7 @@ import {
   useCloseFiscalYear,
   useLockFiscalYear,
   useReopenFiscalYear,
+  useGenerateOpeningEntries,
   useCanCreateFiscalYear,
 } from '@/hooks/useFiscalYear'
 
@@ -638,6 +639,7 @@ function TabExercices({ zone }: TabExercicesProps) {
   const { data: years = [], isLoading, isError } = useFiscalYears()
   const lockMutation   = useLockFiscalYear()
   const reopenMutation = useReopenFiscalYear()
+  const anMutation     = useGenerateOpeningEntries()
 
   const [showNewModal,   setShowNewModal]   = useState(false)
   const [closingFy,      setClosingFy]      = useState<FiscalYear | null>(null)
@@ -685,6 +687,11 @@ function TabExercices({ zone }: TabExercicesProps) {
       {reopenMutation.isError && (
         <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
           ⚠️ {(reopenMutation.error as { message?: string })?.message ?? 'Erreur lors de la réouverture.'}
+        </div>
+      )}
+      {anMutation.isError && (
+        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          ⚠️ {(anMutation.error as { message?: string })?.message ?? 'Erreur lors de la génération des à-nouveaux.'}
         </div>
       )}
 
@@ -767,18 +774,35 @@ function TabExercices({ zone }: TabExercicesProps) {
                       </button>
                     )}
                     {fy.status === 'CLOSED' && (
-                      <button
-                        onClick={() => {
-                          if (confirm(`Réouvrir l'exercice ${fy.year} ? Cette opération doit être utilisée avec précaution.`)) {
-                            reopenMutation.mutate(fy.id)
-                          }
-                        }}
-                        disabled={reopenMutation.isPending}
-                        className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-                        title="Réouvrir l'exercice (attention)"
-                      >
-                        Réouvrir
-                      </button>
+                      <>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Générer (ou régénérer) les à-nouveaux de l'exercice ${fy.year + 1} à partir des soldes de ${fy.year} ?`)) {
+                              anMutation.mutate(fy.id, {
+                                onSuccess: (data) => alert(`✅ ${data.generated} écriture(s) à-nouveaux générée(s) dans le journal AN de ${data.nextYear}.`),
+                                onError:   (e)    => alert(`⚠️ ${e instanceof Error ? e.message : 'Erreur'}`),
+                              })
+                            }
+                          }}
+                          disabled={anMutation.isPending}
+                          className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
+                          title={`Générer les écritures d'à-nouveaux dans l'exercice ${fy.year + 1}`}
+                        >
+                          {anMutation.isPending ? '…' : 'Générer AN'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Réouvrir l'exercice ${fy.year} ? Cette opération doit être utilisée avec précaution.`)) {
+                              reopenMutation.mutate(fy.id)
+                            }
+                          }}
+                          disabled={reopenMutation.isPending}
+                          className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                          title="Réouvrir l'exercice (attention)"
+                        >
+                          Réouvrir
+                        </button>
+                      </>
                     )}
                   </div>
                 </td>

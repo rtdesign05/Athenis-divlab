@@ -718,19 +718,48 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
   if (fy.status !== 'OPEN' && fy.status !== 'LOCKED')
     throw new AppError(`Impossible de clôturer un exercice avec le statut "${fy.status}"`, 422, 'INVALID_STATUS')
 
-  // Calculate financial summaries
+  // ── Zone comptable (OHADA / FRANCE / IFRS) ─────────────────────────────────
+  const company = await prisma.company.findUnique({
+    where: { id: companyId }, select: { accountingZone: true },
+  })
+  const zone = (company?.accountingZone ?? 'OHADA') as string
+
+  // ── Agrégats financiers (métadonnées closingBalance) ───────────────────────
   const [compteResultat, bilan] = await Promise.all([
     getCompteDeResultat(companyId, fy.year),
     getBilan(companyId, fy.year),
   ])
-
   const closingBalance = {
-    actif:   bilan.actif,
-    passif:  bilan.passif,
+    actif:    bilan.actif,
+    passif:   bilan.passif,
     resultat: compteResultat.resultatBrut,
   }
 
-  // Close the fiscal year
+  // ── Soldes des écritures journal de l'exercice ─────────────────────────────
+  const journalEntries = await prisma.journalEntry.findMany({
+    where:  { companyId, fiscalYearId: id },
+    select: { compte: true, debit: true, credit: true },
+  })
+  const balanceMap = new Map<string, { debit: number; credit: number }>()
+  for (const e of journalEntries) {
+    const cur = balanceMap.get(e.compte) ?? { debit: 0, credit: 0 }
+    cur.debit  += Number(e.debit)
+    cur.credit += Number(e.credit)
+    balanceMap.set(e.compte, cur)
+  }
+
+  // Résultat net depuis les comptes 6 et 7
+  // (le compte 13x/12x n'est pas alimenté en cours d'exercice — conforme SYSCOHADA)
+  let totalProduits = 0
+  let totalCharges  = 0
+  for (const [compte, { debit, credit }] of balanceMap) {
+    const c = compte.charAt(0)
+    if (c === '7') totalProduits += credit - debit
+    if (c === '6') totalCharges  += debit  - credit
+  }
+  const resultatNetJournal = totalProduits - totalCharges
+
+  // ── Clôturer l'exercice ────────────────────────────────────────────────────
   const updated = await prisma.fiscalYear.update({
     where: { id },
     data: {
@@ -741,13 +770,13 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
     },
   })
 
-  // Auto-create next year's fiscal year if it doesn't exist yet
+  // ── Créer l'exercice N+1 s'il n'existe pas encore ─────────────────────────
   const nextYear = fy.year + 1
-  const nextYearExists = await prisma.fiscalYear.findUnique({
+  let nextFy = await prisma.fiscalYear.findUnique({
     where: { companyId_year: { companyId, year: nextYear } },
   })
-  if (!nextYearExists) {
-    await prisma.fiscalYear.create({
+  if (!nextFy) {
+    nextFy = await prisma.fiscalYear.create({
       data: {
         companyId,
         year:           nextYear,
@@ -760,6 +789,102 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
     })
   }
 
+  // ── Écritures d'à-nouveaux dans l'exercice N+1 (journal AN) ───────────────
+  // Conformément au SYSCOHADA révisé : les comptes de bilan (classes 1-5) sont
+  // repris en ouverture ; le résultat N est viré au compte 119 (Report à nouveau).
+  const existingAN = await prisma.journalEntry.count({
+    where: { companyId, fiscalYearId: nextFy.id, journal: 'AN' },
+  })
+
+  if (existingAN === 0) {
+    const openingDate = new Date(`${nextYear}-01-01`)
+    const anRef       = `AN-${nextYear}`
+
+    type ANRow = {
+      companyId:    string
+      fiscalYearId: string
+      date:         Date
+      journal:      string
+      compte:       string
+      libelle:      string
+      debit:        number
+      credit:       number
+      reference:    string
+      createdBy:    string
+    }
+    const anRows: ANRow[] = []
+
+    if (journalEntries.length > 0) {
+      // ── Cas 1 : journal alimenté — reporter les soldes des comptes de bilan ──
+      for (const [compte, { debit, credit }] of balanceMap) {
+        const classe = compte.charAt(0)
+        if (!['1', '2', '3', '4', '5'].includes(classe)) continue
+
+        const solde = debit - credit
+        if (Math.abs(solde) < 0.01) continue
+
+        anRows.push({
+          companyId, fiscalYearId: nextFy.id,
+          date: openingDate, journal: 'AN',
+          compte,
+          libelle:   `À-nouveau ${fy.year}`,
+          debit:     Math.max(0,  solde),
+          credit:    Math.max(0, -solde),
+          reference: anRef,
+          createdBy: userId,
+        })
+      }
+
+      // Reporter le résultat vers le compte 119 (Report à nouveau) —
+      // sauf si le compte résultat (13x OHADA / 12x France) a déjà des écritures
+      const resultPrefix  = zone === 'FRANCE' ? '12' : '13'
+      const hasResCompte  = [...balanceMap.keys()].some(k => k.startsWith(resultPrefix))
+      if (!hasResCompte && Math.abs(resultatNetJournal) > 0.01) {
+        anRows.push({
+          companyId, fiscalYearId: nextFy.id,
+          date: openingDate, journal: 'AN',
+          compte:  '119',
+          libelle: `À-nouveau ${fy.year} — Résultat ${resultatNetJournal >= 0 ? '(bénéfice)' : '(perte)'}`,
+          debit:   resultatNetJournal < 0 ? Math.abs(resultatNetJournal) : 0,
+          credit:  resultatNetJournal > 0 ? resultatNetJournal            : 0,
+          reference: anRef,
+          createdBy: userId,
+        })
+      }
+    } else {
+      // ── Cas 2 : journal vide — fallback sur le bilan calculé ──────────────
+      const { actif, passif } = closingBalance
+
+      if (actif.creancesClients > 0.01)
+        anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+          compte: '411', libelle: `À-nouveau ${fy.year} — Créances clients`,
+          debit: actif.creancesClients, credit: 0, reference: anRef, createdBy: userId })
+
+      if (actif.tresorerie > 0.01)
+        anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+          compte: zone === 'OHADA' ? '521' : '512', libelle: `À-nouveau ${fy.year} — Trésorerie`,
+          debit: actif.tresorerie, credit: 0, reference: anRef, createdBy: userId })
+
+      if (passif.dettesExploitation > 0.01)
+        anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+          compte: '401', libelle: `À-nouveau ${fy.year} — Dettes fournisseurs`,
+          debit: 0, credit: passif.dettesExploitation, reference: anRef, createdBy: userId })
+
+      const net = compteResultat.resultatBrut
+      if (Math.abs(net) > 0.01)
+        anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+          compte:  '119',
+          libelle: `À-nouveau ${fy.year} — Résultat ${net >= 0 ? '(bénéfice)' : '(perte)'}`,
+          debit:   net < 0 ? Math.abs(net) : 0,
+          credit:  net > 0 ? net            : 0,
+          reference: anRef, createdBy: userId })
+    }
+
+    if (anRows.length > 0) {
+      await prisma.journalEntry.createMany({ data: anRows })
+    }
+  }
+
   return updated
 }
 
@@ -768,14 +893,148 @@ export async function reopenFiscalYear(companyId: string, id: string) {
   if (fy.status !== 'CLOSED')
     throw new AppError(`Impossible de rouvrir un exercice avec le statut "${fy.status}"`, 422, 'INVALID_STATUS')
 
+  // Supprimer les à-nouveaux auto-générés dans l'exercice N+1
+  const nextFy = await prisma.fiscalYear.findUnique({
+    where: { companyId_year: { companyId, year: fy.year + 1 } },
+  })
+  if (nextFy) {
+    await prisma.journalEntry.deleteMany({
+      where: {
+        companyId,
+        fiscalYearId: nextFy.id,
+        journal:      'AN',
+        reference:    `AN-${fy.year + 1}`,
+      },
+    })
+  }
+
   return prisma.fiscalYear.update({
     where: { id },
     data: {
-      status:    'OPEN',
-      closedBy:  null,
-      closedAt:  null,
+      status:   'OPEN',
+      closedBy: null,
+      closedAt: null,
     },
   })
+}
+
+/**
+ * Génère (ou régénère) les écritures d'à-nouveaux pour l'exercice N+1
+ * à partir d'un exercice N déjà clôturé.
+ * Idempotent : les écritures AN existantes sont d'abord supprimées.
+ */
+export async function generateOpeningEntries(companyId: string, closedFyId: string, userId: string) {
+  const fy = await getFiscalYear(companyId, closedFyId)
+  if (fy.status !== 'CLOSED')
+    throw new AppError(`L'exercice ${fy.year} n'est pas clôturé`, 422, 'INVALID_STATUS')
+
+  const company = await prisma.company.findUnique({
+    where: { id: companyId }, select: { accountingZone: true },
+  })
+  const zone = (company?.accountingZone ?? 'OHADA') as string
+
+  const nextYear = fy.year + 1
+  const nextFy   = await prisma.fiscalYear.findUnique({
+    where: { companyId_year: { companyId, year: nextYear } },
+  })
+  if (!nextFy)
+    throw new AppError(`L'exercice ${nextYear} est introuvable. Créez-le d'abord.`, 404, 'NOT_FOUND')
+
+  const [compteResultat, bilan] = await Promise.all([
+    getCompteDeResultat(companyId, fy.year),
+    getBilan(companyId, fy.year),
+  ])
+
+  const journalEntries = await prisma.journalEntry.findMany({
+    where:  { companyId, fiscalYearId: closedFyId },
+    select: { compte: true, debit: true, credit: true },
+  })
+  const balanceMap = new Map<string, { debit: number; credit: number }>()
+  for (const e of journalEntries) {
+    const cur = balanceMap.get(e.compte) ?? { debit: 0, credit: 0 }
+    cur.debit  += Number(e.debit)
+    cur.credit += Number(e.credit)
+    balanceMap.set(e.compte, cur)
+  }
+
+  let totalProduits = 0
+  let totalCharges  = 0
+  for (const [compte, { debit, credit }] of balanceMap) {
+    const c = compte.charAt(0)
+    if (c === '7') totalProduits += credit - debit
+    if (c === '6') totalCharges  += debit  - credit
+  }
+  const resultatNetJournal = totalProduits - totalCharges
+
+  const anRef       = `AN-${nextYear}`
+  const openingDate = new Date(`${nextYear}-01-01`)
+
+  // Supprimer les AN existants (régénération)
+  await prisma.journalEntry.deleteMany({
+    where: { companyId, fiscalYearId: nextFy.id, journal: 'AN', reference: anRef },
+  })
+
+  type ANRow = {
+    companyId: string; fiscalYearId: string; date: Date; journal: string
+    compte: string; libelle: string; debit: number; credit: number
+    reference: string; createdBy: string
+  }
+  const anRows: ANRow[] = []
+
+  if (journalEntries.length > 0) {
+    for (const [compte, { debit, credit }] of balanceMap) {
+      const classe = compte.charAt(0)
+      if (!['1', '2', '3', '4', '5'].includes(classe)) continue
+      const solde = debit - credit
+      if (Math.abs(solde) < 0.01) continue
+      anRows.push({
+        companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+        compte, libelle: `À-nouveau ${fy.year}`,
+        debit: Math.max(0, solde), credit: Math.max(0, -solde),
+        reference: anRef, createdBy: userId,
+      })
+    }
+    const resultPrefix = zone === 'FRANCE' ? '12' : '13'
+    const hasResCompte = [...balanceMap.keys()].some(k => k.startsWith(resultPrefix))
+    if (!hasResCompte && Math.abs(resultatNetJournal) > 0.01) {
+      anRows.push({
+        companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+        compte: '119',
+        libelle: `À-nouveau ${fy.year} — Résultat ${resultatNetJournal >= 0 ? '(bénéfice)' : '(perte)'}`,
+        debit:  resultatNetJournal < 0 ? Math.abs(resultatNetJournal) : 0,
+        credit: resultatNetJournal > 0 ? resultatNetJournal            : 0,
+        reference: anRef, createdBy: userId,
+      })
+    }
+  } else {
+    const { actif, passif } = { actif: bilan.actif, passif: bilan.passif }
+    if (actif.creancesClients > 0.01)
+      anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+        compte: '411', libelle: `À-nouveau ${fy.year} — Créances clients`,
+        debit: actif.creancesClients, credit: 0, reference: anRef, createdBy: userId })
+    if (actif.tresorerie > 0.01)
+      anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+        compte: zone === 'OHADA' ? '521' : '512', libelle: `À-nouveau ${fy.year} — Trésorerie`,
+        debit: actif.tresorerie, credit: 0, reference: anRef, createdBy: userId })
+    if (passif.dettesExploitation > 0.01)
+      anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+        compte: '401', libelle: `À-nouveau ${fy.year} — Dettes fournisseurs`,
+        debit: 0, credit: passif.dettesExploitation, reference: anRef, createdBy: userId })
+    const net = compteResultat.resultatBrut
+    if (Math.abs(net) > 0.01)
+      anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
+        compte: '119',
+        libelle: `À-nouveau ${fy.year} — Résultat ${net >= 0 ? '(bénéfice)' : '(perte)'}`,
+        debit:  net < 0 ? Math.abs(net) : 0,
+        credit: net > 0 ? net            : 0,
+        reference: anRef, createdBy: userId })
+  }
+
+  if (anRows.length > 0) {
+    await prisma.journalEntry.createMany({ data: anRows })
+  }
+
+  return { generated: anRows.length, fiscalYear: fy.year, nextYear }
 }
 
 export async function getFiscalYearSummary(companyId: string, id: string) {

@@ -344,6 +344,21 @@ accountingRouter.post(
   },
 )
 
+accountingRouter.post(
+  '/fiscal-years/:id/generate-opening-entries',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      if (req.user?.role !== 'ADMIN')
+        throw new AppError('Accès réservé aux administrateurs', 403, 'FORBIDDEN')
+      const id     = req.params['id'] as string
+      const userId = req.user?.sub ?? 'system'
+      const data   = await svc.generateOpeningEntries(getCompanyId(req)!, id, userId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
 // ── États financiers ──────────────────────────────────────────────────────────
 
 async function handleFinancialStatements(req: import('express').Request, res: import('express').Response, next: import('express').NextFunction) {

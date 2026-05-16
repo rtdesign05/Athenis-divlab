@@ -56,7 +56,24 @@ export function useReopenFiscalYear() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: string) => accountingApi.reopenFiscalYear(id),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['fiscal-years'] }),
+    onSuccess:  () => {
+      qc.invalidateQueries({ queryKey: ['fiscal-years'] })
+      qc.invalidateQueries({ queryKey: ['journal'] })
+      qc.invalidateQueries({ queryKey: ['balance-journal'] })
+    },
+  })
+}
+
+export function useGenerateOpeningEntries() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => accountingApi.generateOpeningEntries(id),
+    onSuccess:  () => {
+      qc.invalidateQueries({ queryKey: ['journal'] })
+      qc.invalidateQueries({ queryKey: ['balance-journal'] })
+      qc.invalidateQueries({ queryKey: ['grand-livre-journal'] })
+      qc.invalidateQueries({ queryKey: ['financial-statements'] })
+    },
   })
 }
 

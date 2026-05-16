@@ -168,10 +168,11 @@ export const accountingApi = {
   listFiscalYears:   () => api.get<{ data: FiscalYear[] }>('/accounting/fiscal-years').then(d),
   createFiscalYear:  (body: { year: number; startDate?: string; endDate?: string }) => api.post<{ data: FiscalYear }>('/accounting/fiscal-years', body).then(d),
   getFiscalYear:     (id: string) => api.get<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}`).then(d),
-  lockFiscalYear:    (id: string) => api.put<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/lock`).then(d),
-  closeFiscalYear:   (id: string) => api.post<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/close`).then(d),
-  reopenFiscalYear:  (id: string) => api.post<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/reopen`).then(d),
-  fiscalYearSummary: (id: string) => api.get<{ data: FiscalYearSummary }>(`/accounting/fiscal-years/${id}/summary`).then(d),
+  lockFiscalYear:          (id: string) => api.put<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/lock`).then(d),
+  closeFiscalYear:         (id: string) => api.post<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/close`).then(d),
+  reopenFiscalYear:        (id: string) => api.post<{ data: FiscalYear }>(`/accounting/fiscal-years/${id}/reopen`).then(d),
+  generateOpeningEntries:  (id: string) => api.post<{ data: { generated: number; fiscalYear: number; nextYear: number } }>(`/accounting/fiscal-years/${id}/generate-opening-entries`).then(d),
+  fiscalYearSummary:       (id: string) => api.get<{ data: FiscalYearSummary }>(`/accounting/fiscal-years/${id}/summary`).then(d),
 }
 
 // ── Plan comptable / Comptes types ───────────────────────────────────────────
