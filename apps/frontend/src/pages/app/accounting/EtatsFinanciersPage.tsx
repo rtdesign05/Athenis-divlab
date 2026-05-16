@@ -1056,13 +1056,14 @@ function Spinner() {
 
 // ── Clôture modal ─────────────────────────────────────────────────────────────
 
-function ClotureModal({ fy, nextFY, onClose, onDone }: {
-  fy: FiscalYear; nextFY: FiscalYear | undefined; onClose: () => void; onDone: () => void
+function ClotureModal({ fy, onClose, onDone }: {
+  fy: FiscalYear; nextFY?: FiscalYear; onClose: () => void; onDone: () => void
 }) {
   const qc      = useQueryClient()
   const closeFY = useCloseFiscalYear()
   const [step,   setStep]   = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [errMsg, setErrMsg] = useState('')
+  const [anCount, setAnCount] = useState<number | null>(null)
 
   const { data: balance, isLoading: balanceLoading } = useQuery({
     queryKey: ['balance-journal', fy.id],
@@ -1076,36 +1077,27 @@ function ClotureModal({ fy, nextFY, onClose, onDone }: {
   }) ?? []
 
   const handleCloture = useCallback(async () => {
-    if (!balance) return
     setStep('loading'); setErrMsg('')
     try {
-      if (nextFY && bilanRows.length > 0) {
-        await accountingApi.createJournalEntryBatch({
-          fiscalYearId: nextFY.id,
-          date: nextFY.startDate.slice(0, 10),
-          journal: 'AN',
-          reference: `AN-${fy.year}`,
-          lines: bilanRows.map(r => ({
-            compte: r.account,
-            libelle: `À NOUVEAUX — ${r.label}`,
-            debit: r.soldeDebiteur  > 0.005 ? r.soldeDebiteur  : 0,
-            credit: r.soldeCrediteur > 0.005 ? r.soldeCrediteur : 0,
-          })),
-        })
-      }
-      await closeFY.mutateAsync(fy.id)
+      // Le backend génère automatiquement les écritures d'à-nouveaux
+      // (classes 1-5 + résultat net → compte 119) conformément au SYSCOHADA/PCG
+      const result = await closeFY.mutateAsync(fy.id) as { generated?: number } | undefined
+      setAnCount(typeof result === 'object' && result !== null && 'generated' in result
+        ? (result as { generated: number }).generated
+        : null)
       qc.invalidateQueries({ queryKey: ['fiscal-years'] })
       qc.invalidateQueries({ queryKey: ['journal'] })
       qc.invalidateQueries({ queryKey: ['balance-journal'] })
       qc.invalidateQueries({ queryKey: ['financial-statements'] })
       setStep('done')
     } catch (e) {
-      setErrMsg(e instanceof Error ? e.message : 'Erreur lors de la clôture')
+      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
+      setErrMsg(msg ?? (e instanceof Error ? e.message : 'Erreur lors de la clôture'))
       setStep('error')
     }
-  }, [balance, nextFY, bilanRows, fy, closeFY, qc])
+  }, [fy, closeFY, qc])
 
-  const canClose = !balanceLoading && !!balance && balance.equilibre && !!nextFY && step !== 'loading'
+  const canClose = !balanceLoading && !!balance && balance.equilibre && step !== 'loading'
 
   if (step === 'done') return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -1113,7 +1105,11 @@ function ClotureModal({ fy, nextFY, onClose, onDone }: {
         <div className="flex items-center gap-3"><span className="text-3xl">✅</span>
           <div>
             <h3 className="text-base font-semibold text-emerald-800">Exercice {fy.year} clôturé</h3>
-            {nextFY && <p className="text-sm text-slate-500 mt-0.5">{bilanRows.length} écriture(s) À Nouveaux passée(s) dans le journal AN de l'exercice {nextFY.year}.</p>}
+            <p className="text-sm text-slate-500 mt-0.5">
+              {anCount !== null && anCount > 0
+                ? `${anCount} écriture(s) d'à-nouveaux générées automatiquement dans le journal AN de l'exercice ${fy.year + 1}.`
+                : `Les écritures d'à-nouveaux ont été reportées dans l'exercice ${fy.year + 1}.`}
+            </p>
           </div>
         </div>
         <div className="flex justify-end">
@@ -1144,13 +1140,9 @@ function ClotureModal({ fy, nextFY, onClose, onDone }: {
               </p>
             </div>
           )}
-        {nextFY
-          ? <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
-              📋 Les <strong>{bilanRows.length} écriture(s) À Nouveaux</strong> seront passées dans le journal <code className="font-mono bg-blue-100 px-1 rounded">AN</code> de l'exercice <strong>{nextFY.year}</strong> à la date du <strong>{nextFY.startDate.slice(0, 10)}</strong>.
-            </div>
-          : <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              ⚠️ Aucun exercice {fy.year + 1} trouvé. Créez l'exercice {fy.year + 1} avant de clôturer.
-            </div>}
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          📋 À la clôture, le système génèrera <strong>automatiquement</strong> les écritures d'à-nouveaux dans le journal <code className="font-mono bg-blue-100 px-1 rounded">AN</code> de l'exercice <strong>{fy.year + 1}</strong> — classes 1–5 + résultat net (compte 119) conformément au SYSCOHADA/PCG.
+        </div>
         {step === 'error' && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3">{errMsg}</p>}
         <div className="flex justify-end gap-3 pt-1">
           <button onClick={onClose} disabled={step === 'loading'}
@@ -1181,9 +1173,8 @@ export function EtatsFinanciersPage() {
     staleTime: 5 * 60_000,
   })
 
-  const { data: allFY, isLoading: yearsLoading } = useFiscalYears()
+  const { isLoading: yearsLoading } = useFiscalYears()
   const fyData = useSelectedFiscalYearData()
-  const nextFY = allFY?.find(f => f.year === (fyData?.year ?? 0) + 1)
 
   const { data: fsData, isLoading: fsLoading, isError } = useQuery({
     queryKey: ['financial-statements', fyData?.id],
@@ -1249,7 +1240,7 @@ export function EtatsFinanciersPage() {
     <div className="space-y-5">
 
       {showCloture && fyData && fyData.status === 'OPEN' && (
-        <ClotureModal fy={fyData} nextFY={nextFY} onClose={() => setShowCloture(false)} onDone={() => setShowCloture(false)} />
+        <ClotureModal fy={fyData} onClose={() => setShowCloture(false)} onDone={() => setShowCloture(false)} />
       )}
 
       {/* Header */}

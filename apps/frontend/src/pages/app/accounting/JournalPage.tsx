@@ -1,8 +1,8 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
-import { useFiscalYearGuard } from '@/hooks/useFiscalYear'
+import { useFiscalYears } from '@/hooks/useFiscalYear'
 import { accountingApi } from '@/services/accountingApi'
+import type { FiscalYear } from '@/services/accountingApi'
 import { useCurrency } from '@/hooks/useCurrency'
 import { CompteCombobox, normalizeCompteCode } from '@/components/accounting/CompteCombobox'
 import type { CompteOption } from '@/components/accounting/CompteCombobox'
@@ -502,6 +502,23 @@ function ConfirmDeleteModal({ lineCount, onConfirm, onCancel, isPending }: {
   )
 }
 
+// ── Fiscal year selector badge ───────────────────────────────────────────────
+
+function FYStatusBadge({ status }: { status: FiscalYear['status'] }) {
+  const map: Record<string, { label: string; cls: string }> = {
+    OPEN:   { label: 'Ouvert',     cls: 'bg-green-100 text-green-700' },
+    LOCKED: { label: 'Verrouillé', cls: 'bg-amber-100 text-amber-700' },
+    CLOSED: { label: 'Clôturé',    cls: 'bg-blue-100 text-blue-700' },
+    DRAFT:  { label: 'Brouillon',  cls: 'bg-gray-100 text-gray-500' },
+  }
+  const { label, cls } = map[status] ?? { label: status, cls: 'bg-gray-100 text-gray-600' }
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+      {label}
+    </span>
+  )
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export function JournalPage() {
@@ -521,9 +538,34 @@ export function JournalPage() {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; pieceId: string | null; lineCount: number } | null>(null)
 
-  const { isLoading: yearsLoading } = useFiscalYears()
-  const fyData = useSelectedFiscalYearData()
-  const { isReadOnly } = useFiscalYearGuard()
+  // ── Sélecteur d'exercice local ─────────────────────────────────────────────
+  // Seuls les exercices OPEN et LOCKED sont sélectionnables pour la saisie.
+  // Les exercices CLOSED ne sont pas accessibles dans le journal pour saisir.
+  const { data: allYears = [], isLoading: yearsLoading } = useFiscalYears()
+
+  // Tri : exercices OPEN en premier, puis LOCKED, puis les autres
+  const selectableYears = useMemo(() => {
+    const ranked = allYears
+      .filter(y => y.status === 'OPEN' || y.status === 'LOCKED')
+      .sort((a, b) => {
+        const rank = (s: string) => s === 'OPEN' ? 0 : 1
+        if (rank(a.status) !== rank(b.status)) return rank(a.status) - rank(b.status)
+        return b.year - a.year // plus récent en premier à égalité de statut
+      })
+    return ranked
+  }, [allYears])
+
+  const [selectedFyId, setSelectedFyId] = useState<string | null>(null)
+
+  // Initialise avec le premier exercice OPEN (ou LOCKED s'il n'y a pas d'OPEN)
+  useEffect(() => {
+    if (selectedFyId === null && selectableYears.length > 0) {
+      setSelectedFyId(selectableYears[0]!.id)
+    }
+  }, [selectableYears, selectedFyId])
+
+  const fyData = selectableYears.find(y => y.id === selectedFyId) ?? selectableYears[0] ?? null
+  const isReadOnly = fyData?.status === 'LOCKED'
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['journal', fyData?.id],
@@ -595,13 +637,47 @@ export function JournalPage() {
             {data ? `Exercice ${data.year} — ${entries.length} ligne${entries.length !== 1 ? 's' : ''}` : 'Chargement…'}
           </p>
         </div>
-        {!isReadOnly && (
+        {!isReadOnly && fyData && (
           <button onClick={() => openNewModal()}
             className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-700 transition-colors">
             + Nouvelle écriture
           </button>
         )}
       </div>
+
+      {/* ── Sélecteur exercice ── */}
+      {!yearsLoading && (
+        selectableYears.length === 0
+          ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Aucun exercice ouvert ou verrouillé. Créez ou ouvrez un exercice dans{' '}
+              <strong>Paramètres → Exercices comptables</strong> pour saisir des écritures.
+              Les exercices clôturés ne sont pas accessibles dans le journal.
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              {selectableYears.map(fy => (
+                <button
+                  key={fy.id}
+                  onClick={() => { setSelectedFyId(fy.id); setFilter('ALL') }}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                    fyData?.id === fy.id
+                      ? 'border-forest-600 bg-forest-50 text-forest-800 shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <span>Exercice {fy.year}</span>
+                  <FYStatusBadge status={fy.status} />
+                </button>
+              ))}
+              {isReadOnly && fyData && (
+                <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                  🔒 Exercice verrouillé — consultation seule
+                </span>
+              )}
+            </div>
+          )
+      )}
 
       <div className="flex items-center gap-2">
         <select
@@ -629,7 +705,7 @@ export function JournalPage() {
 
       {(yearsLoading || isLoading) && <Spinner />}
 
-      {!yearsLoading && !fyData && (
+      {!yearsLoading && selectableYears.length > 0 && !fyData && (
         <div className="flex flex-col items-center justify-center py-20 gap-2 text-slate-500">
           <p className="text-sm">Sélectionnez un exercice comptable ci-dessus.</p>
         </div>

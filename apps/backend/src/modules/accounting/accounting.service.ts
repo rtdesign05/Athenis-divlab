@@ -796,6 +796,8 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
     where: { companyId, fiscalYearId: nextFy.id, journal: 'AN' },
   })
 
+  let anGenerated = 0
+
   if (existingAN === 0) {
     const openingDate = new Date(`${nextYear}-01-01`)
     const anRef       = `AN-${nextYear}`
@@ -882,10 +884,11 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
 
     if (anRows.length > 0) {
       await prisma.journalEntry.createMany({ data: anRows })
+      anGenerated = anRows.length
     }
   }
 
-  return updated
+  return { fiscalYear: updated, anGenerated, nextYear }
 }
 
 export async function reopenFiscalYear(companyId: string, id: string) {
