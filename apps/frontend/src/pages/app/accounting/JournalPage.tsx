@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useFiscalYears } from '@/hooks/useFiscalYear'
 import { accountingApi } from '@/services/accountingApi'
 import type { FiscalYear } from '@/services/accountingApi'
 import { useCurrency } from '@/hooks/useCurrency'
@@ -109,6 +108,8 @@ function makeEmptyForm(
 
 interface NewEntryModalProps {
   fiscalYearId: string
+  fyStatus:     string   // statut live de l'exercice — bloque la soumission si ≠ OPEN
+  fyYear:       number   // pour l'affichage dans les messages d'erreur
   onClose: () => void
   initialJournal?: string
   // Edit mode
@@ -121,7 +122,7 @@ interface NewEntryModalProps {
   }
 }
 
-function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, editData }: NewEntryModalProps) {
+function NewEntryModal({ fiscalYearId, fyStatus, fyYear, onClose, initialJournal, editPieceId, editData }: NewEntryModalProps) {
   const isEditMode = !!editPieceId
   const queryClient = useQueryClient()
 
@@ -171,8 +172,10 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
       onClose()
     },
     onError: (e: unknown) => {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setError(msg ?? 'Une erreur est survenue.')
+      // Le backend renvoie { error: '...', code: '...' } — chercher les deux champs
+      const data = (e as { response?: { data?: { error?: string; message?: string } } })?.response?.data
+      const msg = data?.error ?? data?.message
+      setError(msg ?? 'Une erreur est survenue. Vérifiez que l\'exercice est ouvert.')
     },
   })
 
@@ -212,6 +215,15 @@ function NewEntryModal({ fiscalYearId, onClose, initialJournal, editPieceId, edi
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // Vérification côté client : exercice doit être OPEN
+    if (fyStatus === 'CLOSED') {
+      setError(`L'exercice ${fyYear} est clôturé. Aucune écriture ne peut être saisie.`)
+      return
+    }
+    if (fyStatus === 'LOCKED') {
+      setError(`L'exercice ${fyYear} est verrouillé. Déverrouillez-le avant de saisir des écritures.`)
+      return
+    }
     if (!resolvedJournal) { setError('Veuillez saisir un code journal.'); return }
     if (!hasEnoughLines)  { setError('Au moins 2 lignes sont requises.'); return }
 
@@ -539,20 +551,26 @@ export function JournalPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; pieceId: string | null; lineCount: number } | null>(null)
 
   // ── Sélecteur d'exercice local ─────────────────────────────────────────────
-  // Seuls les exercices OPEN et LOCKED sont sélectionnables pour la saisie.
-  // Les exercices CLOSED ne sont pas accessibles dans le journal pour saisir.
-  const { data: allYears = [], isLoading: yearsLoading } = useFiscalYears()
+  // staleTime:0 + refetchInterval:15s pour toujours avoir le statut réel des exercices.
+  // Évite l'affichage d'un exercice CLOSED comme OPEN dans le sélecteur.
+  const { data: allYears = [], isLoading: yearsLoading } = useQuery({
+    queryKey: ['fiscal-years'],
+    queryFn:  () => accountingApi.listFiscalYears(),
+    staleTime: 0,               // toujours considéré périmé → refetch à chaque montage
+    refetchInterval: 15_000,    // polling 15s : détecte une clôture externe sans refresh page
+    refetchOnWindowFocus: true, // mise à jour dès que l'utilisateur revient sur l'onglet
+  })
 
-  // Tri : exercices OPEN en premier, puis LOCKED, puis les autres
+  // Seuls les exercices OPEN et LOCKED sont sélectionnables pour la saisie.
+  // Les exercices CLOSED ne sont PAS accessibles dans le journal pour saisir.
   const selectableYears = useMemo(() => {
-    const ranked = allYears
+    return allYears
       .filter(y => y.status === 'OPEN' || y.status === 'LOCKED')
       .sort((a, b) => {
         const rank = (s: string) => s === 'OPEN' ? 0 : 1
         if (rank(a.status) !== rank(b.status)) return rank(a.status) - rank(b.status)
-        return b.year - a.year // plus récent en premier à égalité de statut
+        return b.year - a.year
       })
-    return ranked
   }, [allYears])
 
   const [selectedFyId, setSelectedFyId] = useState<string | null>(null)
@@ -564,8 +582,17 @@ export function JournalPage() {
     }
   }, [selectableYears, selectedFyId])
 
+  // Si l'exercice sélectionné vient d'être clôturé (plus dans selectableYears),
+  // bascule automatiquement sur le premier exercice disponible.
+  useEffect(() => {
+    if (selectedFyId !== null && selectableYears.length > 0) {
+      const stillAvailable = selectableYears.some(y => y.id === selectedFyId)
+      if (!stillAvailable) setSelectedFyId(selectableYears[0]!.id)
+    }
+  }, [selectableYears, selectedFyId])
+
   const fyData = selectableYears.find(y => y.id === selectedFyId) ?? selectableYears[0] ?? null
-  const isReadOnly = fyData?.status === 'LOCKED'
+  const isReadOnly = fyData?.status !== 'OPEN' // LOCKED ou autre → lecture seule
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['journal', fyData?.id],
@@ -838,6 +865,8 @@ export function JournalPage() {
       {showModal && fyData && (
         <NewEntryModal
           fiscalYearId={fyData.id}
+          fyStatus={fyData.status}
+          fyYear={fyData.year}
           onClose={() => { setShowModal(false); setEditPieceId(undefined); setEditData(undefined) }}
           {...(modalJournal  !== undefined ? { initialJournal: modalJournal }  : {})}
           {...(editPieceId   !== undefined ? { editPieceId }                   : {})}
