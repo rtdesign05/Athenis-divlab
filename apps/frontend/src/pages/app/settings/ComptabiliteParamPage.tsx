@@ -676,6 +676,18 @@ function TabExercices({ zone }: TabExercicesProps) {
         </button>
       </div>
 
+      {/* Erreurs mutations verrouillage / réouverture */}
+      {lockMutation.isError && (
+        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          ⚠️ {(lockMutation.error as { message?: string })?.message ?? 'Erreur lors du (dé)verrouillage.'}
+        </div>
+      )}
+      {reopenMutation.isError && (
+        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+          ⚠️ {(reopenMutation.error as { message?: string })?.message ?? 'Erreur lors de la réouverture.'}
+        </div>
+      )}
+
       {/* Tableau */}
       <div className="rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">

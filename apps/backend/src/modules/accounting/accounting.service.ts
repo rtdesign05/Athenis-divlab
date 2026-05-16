@@ -694,13 +694,20 @@ export async function getFiscalYear(companyId: string, id: string) {
 
 export async function lockFiscalYear(companyId: string, id: string) {
   const fy = await getFiscalYear(companyId, id)
-  if (fy.status !== 'OPEN')
-    throw new AppError(`Impossible de verrouiller un exercice avec le statut "${fy.status}"`, 422, 'INVALID_STATUS')
 
-  return prisma.fiscalYear.update({
-    where: { id },
-    data:  { status: 'LOCKED' },
-  })
+  // Toggle : OPEN → LOCKED  /  LOCKED → OPEN (déverrouillage)
+  if (fy.status === 'OPEN') {
+    return prisma.fiscalYear.update({ where: { id }, data: { status: 'LOCKED' } })
+  }
+  if (fy.status === 'LOCKED') {
+    return prisma.fiscalYear.update({ where: { id }, data: { status: 'OPEN' } })
+  }
+
+  throw new AppError(
+    `Impossible de (dé)verrouiller un exercice avec le statut "${fy.status}"`,
+    422,
+    'INVALID_STATUS',
+  )
 }
 
 export async function closeFiscalYearNew(companyId: string, id: string, userId: string) {
