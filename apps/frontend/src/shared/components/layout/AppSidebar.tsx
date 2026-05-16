@@ -157,29 +157,6 @@ export function AppSidebar({ onClose }: { onClose?: () => void }) {
             >
               <span>⚙️</span> Paramètres
             </Link>
-            {/* Sous-entrées imbriquées sous Paramètres */}
-            <div className="ml-4 border-l border-green-800/50 pl-2 space-y-0.5">
-              <Link
-                to="/app/settings/securite"
-                onClick={onClose}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-green-300 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                <span>🔒</span> Sécurité
-              </Link>
-              <Link
-                to="/app/settings/facturation"
-                onClick={onClose}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-green-300 transition-colors hover:bg-white/10 hover:text-white"
-              >
-                <span>📋</span>
-                <span>Forfait</span>
-                {user?.plan && (
-                  <span className="ml-auto rounded bg-green-800/60 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                    {user.plan}
-                  </span>
-                )}
-              </Link>
-            </div>
           </div>
 
           {/* Athenis ID + Déconnexion */}
