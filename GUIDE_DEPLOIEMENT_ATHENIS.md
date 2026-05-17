@@ -27,12 +27,14 @@ Durée totale estimée : **3 à 5 heures**, étalées sur 24 h (le DNS prend du 
 15. [Phase 13 : sauvegardes automatiques de la base](#15-phase-13--sauvegardes)
 16. [Phase 14 : surveillance (UptimeRobot, Sentry)](#16-phase-14--monitoring)
 17. [Phase 15 : mettre à jour Athenis quand une nouvelle version sort](#17-phase-15--maj)
-18. [Phase 16 : dépannage — problèmes fréquents](#18-phase-16--depannage)
-19. [Annexes](#19-annexes)
+18. [Phase 16 : distribuer Athenis en application — PWA, Desktop, Mobile](#18-phase-16--distribution-apps)
+19. [Phase 17 : dépannage — problèmes fréquents](#19-phase-17--depannage)
+20. [Annexes](#20-annexes)
     - A. Glossaire des termes techniques
     - B. Checklist finale avant mise en production
     - C. Commandes Linux essentielles
     - D. Coûts mensuels récapitulatifs
+    - E. Tableau comparatif Web / Desktop / Mobile
 
 ---
 
@@ -997,7 +999,368 @@ Ajoute :
 
 ---
 
-# 18. Phase 16 : dépannage — problèmes fréquents {#18-phase-16--depannage}
+# 18. Phase 16 : distribuer Athenis en application — PWA, Desktop, Mobile {#18-phase-16--distribution-apps}
+
+Une fois ton serveur en ligne (phases 1 à 15), tu disposes d'**Athenis Web** consultable sur `https://ton-domaine.com`. Tu peux maintenant proposer aussi des **versions installables** sur les appareils de tes utilisateurs.
+
+Quatre modes de distribution existent. Tu peux choisir un seul, plusieurs ou tous.
+
+| Mode | Plateforme | Statut | Effort |
+|---|---|---|---|
+| **A. PWA (Web installable)** | Tout navigateur + Android + iOS + Desktop | ✅ Déjà actif | 0 |
+| **B. Desktop natif (Tauri)** | Windows / macOS / Linux | ⚙ Configuré, à builder | 2-4 h par OS |
+| **C. Mobile Android (Tauri Mobile)** | Android 7+ | ⚙ Configuré, à initialiser | 4 h + signature |
+| **D. Mobile iOS (Tauri Mobile)** | iPhone / iPad | ⚙ Configuré, Mac requis | 8 h + 99 €/an Apple |
+
+---
+
+## 18.A — Mode PWA (le plus simple, déjà actif) 🌐
+
+**C'est ce que tu as déjà déployé.** N'importe quel utilisateur peut installer Athenis comme une appli en 2 clics depuis son navigateur.
+
+### Sur Android (Chrome, Edge, Brave)
+1. L'utilisateur ouvre `https://ton-domaine.com` dans Chrome
+2. Un bandeau **« Ajouter à l'écran d'accueil »** apparaît automatiquement
+3. Clic → l'icône Athenis apparaît comme une vraie appli native
+4. L'app s'ouvre en plein écran (sans barre de navigation), fonctionne hors-ligne en lecture
+
+### Sur iOS (Safari uniquement)
+1. Ouvrir le site dans **Safari** (pas Chrome — iOS bloque les autres navigateurs)
+2. Appuyer sur le bouton **Partager** (carré avec flèche vers le haut)
+3. Faire défiler → **« Sur l'écran d'accueil »** → **Ajouter**
+4. L'icône apparaît sur l'écran d'accueil
+
+### Sur Windows / macOS / Linux (Chrome / Edge)
+1. Ouvrir le site dans Chrome ou Edge
+2. **Icône « + » à droite de la barre d'adresse** → **Installer Athenis**
+3. Raccourci créé sur le bureau et menu Démarrer
+
+### Avantages du mode PWA
+- ✅ **Aucune action de ta part** (déjà configuré via `manifest.json`)
+- ✅ **Mise à jour automatique** — tes utilisateurs ont toujours la dernière version
+- ✅ **Pas de magasin d'apps** (pas de Google Play, pas d'App Store, pas de Microsoft Store)
+- ✅ **Aucun coût supplémentaire** (pas de compte développeur à 25 $ ou 99 €/an)
+- ✅ Fonctionne sur **toutes les plateformes** avec un seul code
+
+### Limitations
+- ⚠ Première ouverture nécessite Internet
+- ⚠ Sur iOS, l'expérience est moins fluide (Safari limite certaines fonctions)
+- ⚠ Pas dans le Play Store / App Store (les utilisateurs ne te trouvent pas par recherche)
+
+**Recommandation : commence avec ça pour 100 % de tes utilisateurs.**
+
+---
+
+## 18.B — Application Desktop native (Windows / macOS / Linux) 💻
+
+Tauri est déjà configuré dans `apps/frontend/src-tauri/`. Tu obtiens un vrai **installateur `.exe`, `.dmg`, ou `.AppImage`** que tes utilisateurs téléchargent et installent.
+
+### Pré-requis communs
+
+- **Node.js 18+** déjà installé sur ton poste (vérifie avec `node --version`)
+- **Rust** : télécharge sur https://rustup.rs/ → lance l'installateur, choisis **option 1**, patiente 10 minutes
+- **Le code Athenis** sur ton poste (`git clone https://github.com/ulrichmouafo/athenis.git`)
+
+### Pré-requis Windows (uniquement pour build Windows)
+
+Sur l'ordinateur où tu builds :
+1. **Microsoft Edge WebView2 Runtime** : déjà installé sur Windows 10/11
+2. **Microsoft Visual Studio Build Tools 2022** :
+   - Télécharge sur https://visualstudio.microsoft.com/visual-cpp-build-tools/
+   - Pendant l'installation, coche **« Développement Desktop en C++ »**
+   - Patiente 15-30 min (~6 GB)
+
+### Build Windows (.exe + .msi)
+
+Ouvre **PowerShell** ou **Windows Terminal** dans le dossier du projet :
+```powershell
+cd C:\chemin\vers\athenis\apps\frontend
+npm install
+npm run tauri:build
+```
+
+Le build dure **10 à 20 minutes la première fois** (Rust compile tout). Les fois suivantes : 2-5 minutes.
+
+Résultat dans `apps/frontend/src-tauri/target/release/bundle/` :
+- **`msi/Athenis_1.0.0_x64_en-US.msi`** — installateur standard Windows
+- **`nsis/Athenis_1.0.0_x64-setup.exe`** — installateur alternatif (plus rapide)
+
+### Pré-requis macOS (build .dmg)
+
+**Mac obligatoire** (impossible depuis Windows). Sur le Mac :
+```bash
+# Installe Homebrew si absent
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# Installe Xcode Command Line Tools
+xcode-select --install
+# Installe Rust
+brew install rustup
+rustup-init
+```
+
+Puis :
+```bash
+cd ~/athenis/apps/frontend
+npm install && npm run tauri:build
+```
+
+Résultat : `apps/frontend/src-tauri/target/release/bundle/dmg/Athenis_1.0.0_x64.dmg`
+
+### Pré-requis Linux (build .AppImage / .deb)
+
+Sur Ubuntu 22.04+ :
+```bash
+sudo apt update
+sudo apt install -y \
+  libwebkit2gtk-4.1-dev \
+  build-essential \
+  curl wget file libxdo-dev \
+  libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source $HOME/.cargo/env
+```
+
+Puis :
+```bash
+cd ~/athenis/apps/frontend
+npm install && npm run tauri:build
+```
+
+Résultat :
+- **`appimage/athenis_1.0.0_amd64.AppImage`** — universel Linux
+- **`deb/athenis_1.0.0_amd64.deb`** — Ubuntu/Debian
+- **`rpm/athenis-1.0.0-1.x86_64.rpm`** — Fedora/RHEL
+
+### Configurer l'URL du backend dans l'app
+
+Par défaut, Tauri pointe sur `http://localhost:3001`. Pour la distribution, l'app doit savoir où trouver TON backend en production.
+
+Édite `apps/frontend/src-tauri/tauri.conf.json` :
+```json
+"security": {
+  "csp": "default-src 'self' tauri: https://tauri.localhost; connect-src 'self' ipc: http://ipc.localhost https://ton-domaine.com https://*.sentry.io https://eu.i.posthog.com https://fonts.googleapis.com; ..."
+}
+```
+Remplace `http://localhost:3001` par `https://ton-domaine.com`.
+
+Édite aussi `apps/frontend/src/lib/api.ts` (ou équivalent) pour pointer sur l'URL production :
+```typescript
+const API_URL = import.meta.env.VITE_API_URL ?? 'https://ton-domaine.com/api'
+```
+
+Et `apps/frontend/.env.production` :
+```env
+VITE_API_URL=https://ton-domaine.com/api
+```
+
+Re-builde après modification.
+
+### Distribution des installateurs
+
+**Méthode 1 — Hébergement direct**
+1. Mets les fichiers (`.msi`, `.dmg`, `.AppImage`) dans `apps/frontend/public/downloads/`
+2. Re-déploie ton frontend
+3. Ajoute des liens sur le site : `<a href="/downloads/Athenis_1.0.0.msi">Télécharger pour Windows</a>`
+
+**Méthode 2 — GitHub Releases (recommandée)**
+1. Va sur https://github.com/ulrichmouafo/athenis/releases → **Draft a new release**
+2. Tag : `v1.0.0`
+3. Upload les fichiers `.msi`, `.dmg`, `.AppImage`
+4. Tes utilisateurs téléchargent depuis https://github.com/ulrichmouafo/athenis/releases
+
+**Méthode 3 — Signature numérique** (pour éviter l'avertissement Windows SmartScreen)
+- Acheter un certificat **EV Code Signing** (~250 €/an chez Sectigo, DigiCert, etc.)
+- Signer le `.exe` avec `signtool.exe`
+- Plus aucun avertissement à l'installation
+
+Pour macOS : compte Apple Developer (99 €/an) + Apple Notarization automatique via Tauri.
+
+### Avantages Desktop natif
+- ✅ Icône dans le menu Démarrer / Dock / Applications
+- ✅ Fonctionne **complètement hors ligne** (toutes les pages déjà chargées)
+- ✅ Notifications système natives
+- ✅ Démarrage instantané (~50 Mo de RAM)
+- ✅ Accès au système de fichiers (export Excel, scan facture, etc.)
+
+### Limitations
+- ⚠ Mise à jour à la charge de l'utilisateur (ou intégrer Tauri Updater)
+- ⚠ Un build différent pour Windows, Mac, Linux
+- ⚠ Doit refaire un build à chaque nouvelle version Athenis
+
+---
+
+## 18.C — Application Android (Tauri Mobile) 📱
+
+**Tauri 2** supporte Android nativement depuis fin 2024.
+
+### Pré-requis (sur ton PC Windows ou Mac)
+
+1. **Java JDK 17** :
+   - Windows : `winget install Microsoft.OpenJDK.17`
+   - macOS : `brew install openjdk@17`
+2. **Android Studio** : https://developer.android.com/studio (~5 GB, 30 min d'installation)
+3. Dans Android Studio → **Tools → SDK Manager** :
+   - **Android SDK Platform 34** (Android 14)
+   - **Android NDK 27** (Side panel → SDK Tools)
+   - **Android SDK Build-Tools 34**
+4. **Variables d'environnement** :
+   - Windows (PowerShell admin) :
+     ```powershell
+     setx ANDROID_HOME "C:\Users\admin\AppData\Local\Android\Sdk"
+     setx NDK_HOME "%ANDROID_HOME%\ndk\27.0.12077973"
+     ```
+   - macOS / Linux (`~/.zshrc` ou `~/.bashrc`) :
+     ```bash
+     export ANDROID_HOME=$HOME/Library/Android/sdk
+     export NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973
+     ```
+5. Redémarre le terminal.
+
+### Initialiser le projet Android
+
+```bash
+cd apps/frontend
+npx @tauri-apps/cli android init
+```
+
+Cela crée `src-tauri/gen/android/` (un projet Android Studio complet).
+
+### Build de test (APK installable directement)
+
+```bash
+npx @tauri-apps/cli android build --apk
+```
+
+Résultat : `apps/frontend/src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`
+
+### Tester sur ton téléphone
+
+**Méthode 1 — Câble USB**
+1. Active le **mode développeur** sur ton téléphone : Paramètres → À propos → tape 7 fois sur « Numéro de build »
+2. Active **Débogage USB** dans Options développeur
+3. Branche le téléphone à ton PC
+4. Dans le terminal :
+   ```bash
+   adb install app-universal-release.apk
+   ```
+
+**Méthode 2 — Email / WhatsApp / Drive**
+1. Envoie le fichier `.apk` à toi-même sur ton téléphone
+2. Ouvre le fichier → autorise « Installer depuis cette source »
+3. Installation
+
+### Publier sur le Google Play Store
+
+1. **Créer un compte Play Console** : https://play.google.com/console — paiement unique de **25 $**
+2. **Signer l'APK** avec une clé persistante (à conserver précieusement, sinon impossibilité de mettre à jour) :
+   ```bash
+   keytool -genkey -v -keystore athenis-release.keystore \
+     -keyalg RSA -keysize 2048 -validity 10000 \
+     -alias athenis
+   ```
+3. **Builder un AAB** (Android App Bundle, format requis par Google) :
+   ```bash
+   npx @tauri-apps/cli android build --aab
+   ```
+4. Upload sur le Play Console + remplir la fiche (description, captures, politique de confidentialité, classification)
+5. Délai d'approbation Google : **1 à 7 jours** la première fois
+
+### Avantages Android natif
+- ✅ Apparaît dans le **Play Store** → utilisateurs te trouvent par recherche
+- ✅ Mises à jour automatiques via Play Store
+- ✅ Notifications push (avec Firebase Cloud Messaging)
+- ✅ Accès caméra (scan factures), GPS, fichiers
+
+### Limitations
+- ⚠ Compte Play Console : 25 $ une fois
+- ⚠ Politique de confidentialité obligatoire (peux générer sur https://app-privacy-policy-generator.firebaseapp.com)
+- ⚠ Re-signature à chaque mise à jour
+- ⚠ Tauri Mobile est récent — quelques bugs possibles
+
+---
+
+## 18.D — Application iOS (Tauri Mobile) 🍎
+
+### Contraintes Apple incontournables
+
+- **Mac obligatoire** (Xcode ne tourne pas sous Windows/Linux)
+- **Compte Apple Developer** : **99 €/an** (pas d'option gratuite pour la publication)
+- **Signature avec certificat Apple** obligatoire
+- **App Review** : 1-7 jours, ils inspectent l'app en détail
+
+### Pré-requis (sur le Mac)
+
+1. **macOS Ventura 13+** (Sonoma recommandé)
+2. **Xcode 16+** : Mac App Store (gratuit, mais 15 GB)
+3. **CocoaPods** : `brew install cocoapods`
+4. **Rust** déjà installé (voir 18.B)
+5. **Compte Apple Developer** validé : https://developer.apple.com/programs/
+
+### Initialiser iOS
+
+```bash
+cd apps/frontend
+npx @tauri-apps/cli ios init
+```
+
+### Tester sur ton iPhone
+
+1. Ouvre `apps/frontend/src-tauri/gen/apple/Athenis.xcodeproj` dans Xcode
+2. Branche ton iPhone au Mac
+3. En haut, choisis **« Athenis » → ton iPhone**
+4. Clique **▶ Run** (triangle)
+5. Sur l'iPhone, autorise le développeur dans Réglages → Général → VPN et gestion d'appareils
+
+### Build pour publication
+
+Dans Xcode :
+**Product → Archive → Distribute App → App Store Connect → Upload**
+
+Ensuite, dans https://appstoreconnect.apple.com/ :
+1. Crée la fiche app (nom, descriptions, captures iPhone et iPad, mots-clés)
+2. Soumets l'archive pour review
+3. Patiente 1-7 jours
+
+### Coûts iOS récapitulatifs
+
+| Item | Coût |
+|---|---|
+| Mac (si tu n'en as pas) | 700-2000 € |
+| Apple Developer Program | 99 €/an |
+| Xcode | 0 € (gratuit) |
+
+---
+
+## 18.E — Stratégie de versioning recommandée
+
+Pour gérer les versions Web, Desktop, Android, iOS de façon cohérente :
+
+| Composant | Version dans | Mettre à jour comment |
+|---|---|---|
+| Web (PWA) | `apps/frontend/package.json` + Service Worker | Auto à chaque déploiement |
+| Desktop Tauri | `apps/frontend/src-tauri/tauri.conf.json` (`version`) | Manuel + re-build + nouveau release GitHub |
+| Android | `apps/frontend/src-tauri/gen/android/app/build.gradle.kts` (versionCode + versionName) | Manuel + re-build + nouveau release Play Store |
+| iOS | Xcode → cible → Build Settings (Version + Build) | Manuel + nouveau Archive + upload TestFlight/App Store |
+
+**Convention recommandée** : suivre la version du backend (ex. `1.2.3`). Quand tu mets à jour le backend, mets à jour les 4 versions en même temps.
+
+---
+
+## 18.F — Récapitulatif et ordre de priorité
+
+Pour démarrer en douceur :
+
+1. **PWA** ✅ (déjà actif) — couvre 95 % des cas, 0 effort
+2. **Tauri Desktop Windows** ensuite, si tu vises un public Windows pro qui veut une vraie appli
+3. **Tauri Android** ensuite, quand tu auras des utilisateurs nomades
+4. **iOS App Store** dernier, uniquement si tu vises un marché iPhone professionnel
+
+Tu peux **commencer uniquement avec la PWA** et ajouter les autres modes progressivement, sans modifier le serveur.
+
+---
+
+# 19. Phase 17 : dépannage — problèmes fréquents {#19-phase-17--depannage}
 
 ## 18.1 — Le site ne s'ouvre pas du tout
 
@@ -1050,7 +1413,7 @@ docker system prune -af --volumes
 
 ---
 
-# 19. Annexes {#19-annexes}
+# 20. Annexes {#20-annexes}
 
 ## A. Glossaire des termes techniques
 
@@ -1129,6 +1492,24 @@ Pour passer en croissance (1000+ utilisateurs) :
 - **Documentation OVH** : https://help.ovhcloud.com/
 - **Let's Encrypt** : https://letsencrypt.org/getting-started/
 - **Stack Overflow** : pour toute question technique en anglais
+
+---
+
+## E. Tableau comparatif Web / Desktop / Mobile
+
+| Critère | PWA (Web) | Desktop (Tauri) | Android (Tauri Mobile) | iOS (Tauri Mobile) |
+|---|---|---|---|---|
+| **Effort initial** | 0 (déjà actif) | 2-4 h par OS | 4 h + Play Store | 8 h + Mac requis |
+| **Effort à chaque MAJ** | Auto (re-déploiement web) | Re-build + GitHub Releases | Re-build + Play Store | Re-build + App Store |
+| **Coût** | 0 € | 0 € (250 €/an certif. EV optionnel) | 25 $ Play Console une fois | 99 €/an Apple Developer |
+| **Délai mise en ligne MAJ** | Immédiat | Immédiat (téléchargement) | 1-7 jours review | 1-7 jours review |
+| **Hors-ligne** | Lecture seule | Complet | Complet | Complet |
+| **Stockage utilisateur** | ~30 Mo cache | ~80 Mo | ~50 Mo | ~50 Mo |
+| **Accès caméra/GPS** | Limité (Web API) | Oui (API Tauri) | Complet | Complet |
+| **Notifications push** | Limité (Web Push) | Oui | Oui (Firebase) | Oui (APNs) |
+| **Découverte** | URL connue ou SEO | GitHub Releases / site | Play Store recherche | App Store recherche |
+| **Mac requis** | Non | Non (sauf macOS build) | Non | **Oui** |
+| **Recommandé pour** | Démarrage, MVP | Pro Windows/Mac | Mobilité Android | Marché iPhone pro |
 
 ---
 
