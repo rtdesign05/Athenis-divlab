@@ -78,6 +78,29 @@ export interface CompanyRole {
   userCount:   number
 }
 
+export interface PayrollConfig {
+  /** Code du journal de paie (ex. PAY, SA) */
+  journalCode:           string
+  /** Compte de charges salariales (641 par défaut — SYSCOHADA) */
+  chargeAccount:         string
+  /** Compte des cotisations sociales globales (431) */
+  socialAccount:         string
+  /** Compte des impôts retenus globaux (447) */
+  taxAccount:            string
+  /** Compte de trésorerie utilisé pour les paiements (521) */
+  treasuryAccount:       string
+  /** Si true → split CNPS en sal/pat + IRPP/CAC en comptes séparés */
+  splitContributions:    boolean
+  /** Cotisations sociales — part salariale (ex. 4311) */
+  socialAccountPersonal: string
+  /** Cotisations sociales — part patronale (ex. 4312) */
+  socialAccountEmployer: string
+  /** IRPP — Impôt sur le revenu (ex. 4471) */
+  taxAccountIrpp:        string
+  /** CAC — Centimes additionnels communaux (ex. 4472) */
+  taxAccountCac:         string
+}
+
 export interface SecurityPolicy {
   passwordMinLength:      number
   requireUppercase:       boolean
@@ -187,6 +210,12 @@ export const settingsApi = {
 
   getAuditLogs:     () =>
     api.get<{ data: AuditLogEntry[] }>('/settings/security/audit').then(d),
+
+  getPayrollConfig:    () =>
+    api.get<{ data: PayrollConfig }>('/settings/payroll-config').then(d),
+
+  updatePayrollConfig: (body: Partial<PayrollConfig>) =>
+    api.put<{ data: PayrollConfig }>('/settings/payroll-config', body).then(d),
 
   listAgences:   () =>
     api.get<{ data: Agence[] }>('/settings/agences').then(d),

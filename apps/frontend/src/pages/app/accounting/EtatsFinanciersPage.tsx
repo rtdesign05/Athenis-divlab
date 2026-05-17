@@ -255,7 +255,8 @@ function OhadaKpi({ d, fmtCur }: { d: FinancialStatements; fmtCur: (n: number) =
   const totalActif = a?.['totalActif']?.n  ?? 0
   const totalCP    = p?.['totalCapitauxPropres']?.n ?? 0
   const resultat   = (cr?.['resultat'] as FSPair | undefined)?.n ?? 0
-  const tresorerie = a?.['banquesCaisse']?.n ?? 0
+  // totalTresorerie = titresPlacement (50) + valeursEncaissement (51) + banquesCaisse (52-58)
+  const tresorerie = a?.['totalTresorerie']?.n ?? 0
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -338,7 +339,11 @@ function OhadaBilan({ d }: { d: FinancialStatements }) {
           { ref: 'DJ', label: 'Fournisseurs d\'exploitation',              values: p['dettesFournisseurs'],        indent: true },
           { ref: 'DK', label: 'Dettes fiscales et sociales',               values: p['dettesFiscalesSociales'],    indent: true },
           { ref: 'DM', label: 'TOTAL PASSIF CIRCULANT',                    values: p['totalPassifCirculant'],      bold: true },
-          { ref: 'DV', label: 'TOTAL GÉNÉRAL',                             values: p['totalPassif'],               grandTotal: true },
+          { separator: true, label: '' },
+          { section: true, label: 'TRÉSORERIE — PASSIF (IV)' },
+          { ref: 'DP', label: 'Banques, crédits de trésorerie, découverts',values: p['tresoBanquesPassif'],        indent: true },
+          { ref: 'DT', label: 'TOTAL TRÉSORERIE-PASSIF (IV)',              values: p['totalTresoreriePassif'],     bold: true },
+          { ref: 'DV', label: 'TOTAL GÉNÉRAL (I + II + III + IV)',         values: p['totalPassif'],               grandTotal: true },
         ]} />
       </div>
     </div>

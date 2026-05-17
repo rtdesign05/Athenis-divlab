@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/useAuth'
+import { accountingApi } from '@/services/accountingApi'
 
 interface FiscalYearContextValue {
   selectedYear:    number
@@ -26,6 +28,34 @@ export function FiscalYearProvider({ children }: { children: ReactNode }) {
     try { localStorage.setItem(key, String(year)) } catch { /* ignore */ }
     setSelectedYearState(year)
   }, [key])
+
+  // ── Auto-correction de l'année sélectionnée ────────────────────────────────
+  // Si l'année stockée n'existe pas dans la société courante (changement de
+  // société, FY supprimée, démo, etc.), bascule automatiquement sur l'exercice
+  // OPEN couvrant la date du jour, sinon le plus récent.
+  const { data: years } = useQuery({
+    queryKey: ['fiscal-years', companyId],
+    queryFn:  () => accountingApi.listFiscalYears(),
+    staleTime: 30_000,
+    enabled:   !!user,
+  })
+
+  useEffect(() => {
+    if (!years || years.length === 0) return
+    const exists = years.some(y => y.year === selectedYear)
+    if (exists) return  // l'année sélectionnée est valide
+    // Bascule sur l'OPEN couvrant aujourd'hui, sinon le plus récent OPEN, sinon le plus récent
+    const today = new Date()
+    const openCovering = years.find(y =>
+      y.status !== 'CLOSED' &&
+      new Date(y.startDate) <= today &&
+      new Date(y.endDate)   >= today,
+    )
+    const latestOpen   = [...years].filter(y => y.status !== 'CLOSED').sort((a, b) => b.year - a.year)[0]
+    const latest       = [...years].sort((a, b) => b.year - a.year)[0]
+    const target       = (openCovering ?? latestOpen ?? latest)?.year
+    if (target && target !== selectedYear) setSelectedYear(target)
+  }, [years, selectedYear, setSelectedYear])
 
   return (
     <FiscalYearContext.Provider value={{ selectedYear, setSelectedYear }}>

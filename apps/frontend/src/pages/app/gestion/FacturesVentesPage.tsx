@@ -10,6 +10,8 @@ import {
 } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { SendEmailModal } from '@/components/gestion/SendEmailModal'
+import { ArticleCombobox } from '@/components/gestion/ArticleCombobox'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 import { encodePaymentToken } from '@/pages/pay/PaymentPage'
 import { printDocument } from '@/lib/printDocument'
 import { generateQRDataUrl, buildFactureVenteQR } from '@/lib/qrCode'
@@ -677,6 +679,8 @@ interface ModalNouvelleFactureProps {
 
 interface LigneForm {
   id:             string
+  /** ID de l'article sélectionné (vide tant que pas validé via le combobox) */
+  articleId:      string
   description:    string
   quantite:       string
   unite:          string
@@ -687,6 +691,7 @@ interface LigneForm {
 function emptyLigne(idx: number, vatRate: number): LigneForm {
   return {
     id:             `nl-${Date.now()}-${idx}`,
+    articleId:      '',
     description:    '',
     quantite:       '1',
     unite:          'pièce',
@@ -712,7 +717,14 @@ function defaultsForModele(modele: ModeleFacture): { notes: string; conditionsPa
 }
 
 function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences, defaultVatRate }: ModalNouvelleFactureProps) {
-  const { addFactureVente } = useGestion()
+  const { addFactureVente, articles, updateFactureVenteStatut } = useGestion()
+
+  // Si true, la facture est immédiatement validée (statut Envoyée) → comptabilisée
+  // dans le journal VTE et visible sur le dashboard. Si false, elle reste en
+  // Brouillon (modifiable, non comptabilisée).
+  const [validateOnCreate, setValidateOnCreate] = useState(true)
+  const [submitError,      setSubmitError]      = useState<string | null>(null)
+  const [submitting,       setSubmitting]       = useState(false)
 
   const [step,     setStep]     = useState<1 | 2>(1)
   const [modele,   setModele]   = useState<ModeleFacture>('standard')
@@ -757,6 +769,48 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
     return qty * pu
   }
 
+  // Sélectionne un article dans le combobox → auto-remplit la ligne
+  function selectArticle(idx: number, article: import('@/contexts/GestionContext').Article) {
+    updateLigne(idx, {
+      articleId:      article.id,
+      description:    article.nom,
+      unite:          article.unite,
+      prixUnitaireHT: String(article.prixVenteHT),
+    })
+  }
+
+  // Une seule règle : avoir, proforma et acompte exigent un article comme une facture standard
+  const isReglementaire = true  // toutes les factures de vente doivent référencer des articles
+
+  // Validation des lignes
+  const lineErrors: { idx: number; reason: 'no-article' | 'qty-stock' | 'qty-zero'; message: string }[] = []
+  if (isReglementaire) {
+    lignes.forEach((l, idx) => {
+      const qty = parseFloat(l.quantite) || 0
+      if (qty <= 0) {
+        lineErrors.push({ idx, reason: 'qty-zero', message: 'Quantité requise' })
+        return
+      }
+      if (!l.articleId) {
+        lineErrors.push({ idx, reason: 'no-article', message: 'Article non sélectionné' })
+        return
+      }
+      const art = articles.find(a => a.id === l.articleId)
+      if (!art) {
+        lineErrors.push({ idx, reason: 'no-article', message: 'Article introuvable' })
+        return
+      }
+      if (modele !== 'avoir' && qty > art.stock) {
+        lineErrors.push({
+          idx,
+          reason:  'qty-stock',
+          message: `Stock insuffisant : ${art.stock} disponible(s)`,
+        })
+      }
+    })
+  }
+  const hasErrors = lineErrors.length > 0 || !client.trim() || lignes.length === 0
+
   const totalHT  = lignes.reduce((s, l) => s + lineMontantHT(l), 0)
   const tvaAmt   = lignes.reduce((s, l) => {
     const mht  = lineMontantHT(l)
@@ -767,9 +821,13 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
 
   async function handleSubmit() {
     if (!client.trim()) return
+    if (hasErrors) return  // garde-fou : ne soumettre que si toutes les lignes sont valides
+    setSubmitError(null)
+    setSubmitting(true)
 
     const builtLignes: LigneFacture[] = lignes.map((l, i) => ({
       id:             `l${i + 1}`,
+      ...(l.articleId ? { articleId: l.articleId } : {}),
       description:    l.description,
       quantite:       parseFloat(l.quantite) || 0,
       unite:          l.unite,
@@ -778,28 +836,51 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
       montantHT:      lineMontantHT(l),
     }))
 
-    const result = await addFactureVente({
-      modele,
-      commande,
-      client,
-      agence,
-      date,
-      echeance,
-      montantHT:  totalHT,
-      tva:        19.25,
-      montantTTC: totalTTC,
-      statut:     'Brouillon',
-      lignes:     builtLignes,
-      notes,
-      conditionsPaiement,
-    })
+    try {
+      const result = await addFactureVente({
+        modele,
+        commande,
+        client,
+        agence,
+        date,
+        echeance,
+        montantHT:  totalHT,
+        tva:        19.25,
+        montantTTC: totalTTC,
+        statut:     'Brouillon',
+        lignes:     builtLignes,
+        notes,
+        conditionsPaiement,
+      })
 
-    onCreated(result.id)
+      // Si l'utilisateur a coché "Valider et comptabiliser", on passe la facture
+      // immédiatement en Envoyée pour déclencher la comptabilisation backend
+      // (création des écritures dans le journal VTE).
+      if (validateOnCreate) {
+        try {
+          updateFactureVenteStatut(result.id, 'Envoyée')
+        } catch (e) {
+          console.error('[invoices] auto-validation failed', e)
+        }
+      }
+
+      onCreated(result.id)
+    } catch (err) {
+      // L'API a échoué — afficher un message clair plutôt que de fermer le modal
+      // (l'ancien comportement créait une facture fantôme locale perdue au refresh)
+      const msg = (err as { response?: { data?: { error?: string } }; message?: string })
+        ?.response?.data?.error
+        ?? (err as { message?: string }).message
+        ?? 'Erreur inconnue'
+      setSubmitError(`Impossible d'enregistrer la facture : ${msg}`)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="relative w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-xl overflow-hidden">
+      <div className="relative w-full max-w-5xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-xl overflow-hidden">
 
         {/* Step 1 — template selector */}
         {step === 1 && (
@@ -940,36 +1021,51 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
               {/* Lignes d'articles */}
               <div>
                 <p className="text-xs font-semibold text-gray-600 mb-2">Lignes d'articles</p>
-                <div className="rounded-lg border border-gray-200 overflow-hidden">
+                {/* overflow-visible (au lieu de hidden) pour ne pas couper le dropdown article */}
+                <div className="rounded-lg border border-gray-200 overflow-visible">
                   <table className="w-full text-xs">
                     <thead className="bg-gray-50 border-b border-gray-200">
                       <tr className="text-left text-gray-500">
-                        <th className="px-3 py-2 font-semibold">Description</th>
+                        <th className="px-3 py-2 font-semibold min-w-[420px]">Article</th>
                         <th className="px-2 py-2 font-semibold w-16">Qté</th>
-                        <th className="px-2 py-2 font-semibold w-24">Unité</th>
-                        <th className="px-2 py-2 font-semibold w-28">P.U. HT</th>
-                        <th className="px-2 py-2 font-semibold w-20">TVA %</th>
-                        <th className="px-2 py-2 font-semibold w-28 text-right">Total HT</th>
+                        <th className="px-2 py-2 font-semibold w-20">Unité</th>
+                        <th className="px-2 py-2 font-semibold w-24">P.U. HT</th>
+                        <th className="px-2 py-2 font-semibold w-16">TVA %</th>
+                        <th className="px-2 py-2 font-semibold w-24 text-right">Total HT</th>
                         <th className="px-2 py-2 w-8"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {lignes.map((l, idx) => (
-                        <tr key={l.id}>
-                          <td className="px-3 py-1.5">
-                            <input
-                              value={l.description}
-                              onChange={e => updateLigne(idx, { description: e.target.value })}
-                              placeholder="Description de l'article..."
-                              className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"
+                      {lignes.map((l, idx) => {
+                        const qtyNum    = parseFloat(l.quantite) || 0
+                        const lineError = lineErrors.find(e => e.idx === idx)
+                        return (
+                        <tr key={l.id} className={lineError ? 'bg-red-50/30' : ''}>
+                          <td className="px-3 py-1.5 pb-5">
+                            <ArticleCombobox
+                              articles={articles}
+                              selectedId={l.articleId}
+                              text={l.description}
+                              quantite={qtyNum}
+                              onlyAvailable
+                              onSelect={art => selectArticle(idx, art)}
+                              onTextChange={text => updateLigne(idx, { description: text, articleId: '' })}
+                              placeholder="Tapez les premières lettres…"
+                              compact
                             />
                           </td>
                           <td className="px-2 py-1.5">
                             <input
                               type="number"
+                              min={0}
+                              step="any"
                               value={l.quantite}
                               onChange={e => updateLigne(idx, { quantite: e.target.value })}
-                              className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"
+                              className={`w-full rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 ${
+                                lineError?.reason === 'qty-stock' || lineError?.reason === 'qty-zero'
+                                  ? 'border-amber-300 focus:ring-amber-300/40'
+                                  : 'border-gray-200 focus:ring-green-500/30'
+                              }`}
                             />
                           </td>
                           <td className="px-2 py-1.5">
@@ -1013,7 +1109,8 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
                   </table>
                   <div className="border-t border-gray-100 px-3 py-2">
@@ -1074,20 +1171,54 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
             </div>
 
             {/* Footer */}
-            <div className="shrink-0 flex justify-end gap-3 border-t border-gray-100 px-6 py-4">
-              <button
-                onClick={onClose}
-                className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={!client.trim()}
-                className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-40"
-              >
-                Créer la facture
-              </button>
+            <div className="shrink-0 flex flex-col gap-3 border-t border-gray-100 px-6 py-4">
+              {submitError && (
+                <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-xs text-red-700">
+                  <span className="font-bold">⚠ </span>{submitError}
+                </div>
+              )}
+              {lineErrors.length > 0 && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <span className="font-semibold">Impossible de créer la facture — </span>
+                  {lineErrors.map(e => `Ligne ${e.idx + 1} : ${e.message}`).join(' · ')}
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-3">
+                {/* Toggle Valider et comptabiliser */}
+                <label className="flex items-start gap-2 cursor-pointer max-w-md">
+                  <input
+                    type="checkbox"
+                    checked={validateOnCreate}
+                    onChange={e => setValidateOnCreate(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-green-700"
+                  />
+                  <span className="text-xs text-gray-700 leading-snug">
+                    <strong className="text-gray-800">Valider et comptabiliser immédiatement</strong>
+                    <span className="block text-[11px] text-gray-500">
+                      La facture passera en statut <em>Envoyée</em> et sera enregistrée dans le journal des ventes (VTE).
+                      Décochez pour la conserver en <em>Brouillon</em>.
+                    </span>
+                  </span>
+                </label>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={onClose}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleSubmit}
+                    disabled={hasErrors || submitting}
+                    title={hasErrors ? 'Corrigez les erreurs ci-dessous avant de soumettre' : ''}
+                    className="rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white hover:bg-green-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {submitting
+                      ? 'Enregistrement…'
+                      : validateOnCreate ? 'Créer et comptabiliser' : 'Enregistrer en brouillon'}
+                  </button>
+                </div>
+              </div>
             </div>
           </>
         )}
@@ -1437,6 +1568,8 @@ export function FacturesVentesPage() {
   const [showImportModal, setShowImportModal] = useState(false)
   const [search,          setSearch]          = useState('')
   const [statutFilter,    setStatutFilter]    = useState<FactureVenteStatut | 'all'>('all')
+  const [dateFrom,        setDateFrom]        = useState('')
+  const [dateTo,          setDateTo]          = useState('')
 
   const items = useMemo(() => {
     let list = agenceNom ? facturesVentes.filter(f => f.agence === agenceNom) : facturesVentes
@@ -1449,8 +1582,10 @@ export function FacturesVentesPage() {
         f.commande.toLowerCase().includes(q),
       )
     }
+    list = filterByDateRange(list, f => f.date, dateFrom, dateTo)
     return list
-  }, [facturesVentes, agenceNom, statutFilter, search])
+  }, [facturesVentes, agenceNom, statutFilter, search, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   const currentIndex = selectedId ? items.findIndex(f => f.id === selectedId) : -1
   const prevFacture  = currentIndex > 0               ? items[currentIndex - 1] : null
@@ -1544,7 +1679,7 @@ export function FacturesVentesPage() {
 
       {/* Tableau */}
       <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5 flex-wrap">
           <div className="relative flex-1 min-w-[160px]">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
             <input
@@ -1562,6 +1697,12 @@ export function FacturesVentesPage() {
             <option value="all">Tous les statuts</option>
             {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          <PeriodFilter
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+            count={isFiltered ? `${items.length} résultat${items.length > 1 ? 's' : ''}` : null}
+          />
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto">

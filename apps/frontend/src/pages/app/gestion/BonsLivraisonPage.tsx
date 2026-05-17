@@ -5,6 +5,7 @@ import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { SendEmailModal } from '@/components/gestion/SendEmailModal'
 import { printDocument } from '@/lib/printDocument'
 import { generateQRDataUrl, buildBLQR } from '@/lib/qrCode'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -593,6 +594,8 @@ export function BonsLivraisonPage() {
   const [search,     setSearch]     = useState('')
   const [modal,      setModal]      = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [dateFrom,   setDateFrom]   = useState('')
+  const [dateTo,     setDateTo]     = useState('')
 
   const items = useMemo(() => {
     let list = agenceNom ? bonsLivraison.filter(b => b.agence === agenceNom) : bonsLivraison
@@ -604,8 +607,10 @@ export function BonsLivraisonPage() {
         b.commande.toLowerCase().includes(q),
       )
     }
+    list = filterByDateRange(list, b => b.dateCreation, dateFrom, dateTo)
     return list
-  }, [bonsLivraison, agenceNom, search])
+  }, [bonsLivraison, agenceNom, search, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   const currentIndex = selectedId ? items.findIndex(b => b.id === selectedId) : -1
 
@@ -686,13 +691,19 @@ export function BonsLivraisonPage() {
 
       {/* Tableau */}
       <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5 flex-wrap">
           <div className="relative flex-1 min-w-[160px]">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Client, N° BL, N° commande…"
               className="w-full rounded-lg border border-gray-200 bg-white pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30" />
           </div>
+          <PeriodFilter
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+            count={isFiltered ? `${items.length} résultat${items.length > 1 ? 's' : ''}` : null}
+          />
           <span className="text-xs text-gray-400 ml-auto">
             Cliquer sur une ligne pour ouvrir le document
           </span>

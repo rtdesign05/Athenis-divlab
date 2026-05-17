@@ -7,6 +7,8 @@ export const InvoiceLineDto = z.object({
   prixUnitaireHT: z.number().min(0),
   tvaRate:        z.number().min(0).max(100).default(0),
   montantHT:      z.number().min(0),
+  articleId:      z.string().optional(),
+  compteVente:    z.string().optional(),
 })
 
 export const CreateInvoiceDto = z.object({

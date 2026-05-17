@@ -1,11 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
-import { useAuth } from '@/features/auth/useAuth'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
-import {
-  useFiscalYears,
-  useCreateFiscalYear,
-  useCanCreateFiscalYear,
-} from '@/hooks/useFiscalYear'
+import { useFiscalYears } from '@/hooks/useFiscalYear'
 import type { FiscalYearStatus } from '@/services/accountingApi'
 
 // ── Inline SVG icons ──────────────────────────────────────────────────────────
@@ -51,11 +47,11 @@ function IconLock() {
   )
 }
 
-function IconPlus() {
+function IconSettings() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
   )
 }
@@ -85,115 +81,21 @@ function StatusBadge({ status, size = 'md' }: { status: FiscalYearStatus; size?:
   )
 }
 
-// ── New fiscal year modal ─────────────────────────────────────────────────────
-
-interface NewFiscalYearModalProps {
-  latestYear: number
-  onClose: () => void
-  onCreated: (year: number) => void
-}
-
-function NewFiscalYearModal({ latestYear, onClose, onCreated }: NewFiscalYearModalProps) {
-  const nextYear = latestYear + 1
-  const [year, setYear] = useState(nextYear)
-  const [startDate, setStartDate] = useState(`${nextYear}-01-01`)
-  const [endDate, setEndDate] = useState(`${nextYear}-12-31`)
-  const createFiscalYear = useCreateFiscalYear()
-
-  const handleYearChange = (val: number) => {
-    setYear(val)
-    setStartDate(`${val}-01-01`)
-    setEndDate(`${val}-12-31`)
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const fy = await createFiscalYear.mutateAsync({ year, startDate, endDate })
-    onCreated(fy.year)
-    onClose()
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Nouvel exercice fiscal</h2>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Ann\xe9e</label>
-            <input
-              type="number" value={year}
-              onChange={e => handleYearChange(Number(e.target.value))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Date de d\xe9but</label>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Date de fin</label>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
-              Annuler
-            </button>
-            <button type="submit" disabled={createFiscalYear.isPending}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
-              {createFiscalYear.isPending ? 'Cr\xe9ation\u2026' : 'Cr\xe9er'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-// ── Max-open alert ────────────────────────────────────────────────────────────
-
-function MaxOpenAlert({ message, onClose }: { message: string; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-        <div className="mb-3 text-2xl">\u26a0\ufe0f</div>
-        <h2 className="mb-2 text-base font-semibold text-gray-900">Limite atteinte</h2>
-        <p className="mb-5 text-sm text-gray-600">{message}</p>
-        <div className="flex justify-end">
-          <button type="button" onClick={onClose}
-            className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
-            Compris
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
+//
+// Sélection de l'exercice comptable actif. La création est volontairement
+// retirée de ce composant : un nouvel exercice ne peut être créé QUE depuis
+// Paramètres › Comptabilité › onglet « Exercices ».
 
 export function FiscalYearSelector() {
-  const { user } = useAuth()
   const { selectedYear, setSelectedYear } = useFiscalYear()
   const { data: years = [], isLoading } = useFiscalYears()
-  const { canCreate, blockingMessage } = useCanCreateFiscalYear()
 
-  const [isOpen, setIsOpen]           = useState(false)
-  const [showNewModal, setShowNewModal] = useState(false)
-  const [showMaxAlert, setShowMaxAlert] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  const isAdmin   = user?.role === 'ADMIN'
-  const sorted    = [...years].sort((a, b) => b.year - a.year)
-  const selected  = years.find(y => y.year === selectedYear)
-  const latestYear = years.length > 0 ? Math.max(...years.map(y => y.year)) : selectedYear
+  const sorted   = [...years].sort((a, b) => b.year - a.year)
+  const selected = years.find(y => y.year === selectedYear)
 
   // Close on outside click
   useEffect(() => {
@@ -206,38 +108,36 @@ export function FiscalYearSelector() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleNewClick = () => {
-    setIsOpen(false)
-    if (!canCreate) { setShowMaxAlert(true); return }
-    setShowNewModal(true)
-  }
-
   if (isLoading) {
     return <div className="h-9 w-44 animate-pulse rounded-lg bg-gray-200" />
   }
 
   return (
-    <>
-      <div ref={ref} className="relative">
-        {/* ── Trigger button ── */}
-        <button
-          type="button"
-          onClick={() => setIsOpen(v => !v)}
-          className="flex h-9 min-w-[200px] items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm transition-colors hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400"
-        >
-          <div className="flex items-center gap-2 text-gray-500">
-            <IconCalendar />
-            <span className="font-medium text-gray-900">
-              Exercice {selected?.year ?? selectedYear}
-            </span>
-            {selected && <StatusBadge status={selected.status} />}
-          </div>
-          <IconChevron open={isOpen} />
-        </button>
+    <div ref={ref} className="relative">
+      {/* ── Trigger button ── */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(v => !v)}
+        className="flex h-9 min-w-[200px] items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 text-sm transition-colors hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-400"
+      >
+        <div className="flex items-center gap-2 text-gray-500">
+          <IconCalendar />
+          <span className="font-medium text-gray-900">
+            Exercice {selected?.year ?? selectedYear}
+          </span>
+          {selected && <StatusBadge status={selected.status} />}
+        </div>
+        <IconChevron open={isOpen} />
+      </button>
 
-        {/* ── Dropdown ── */}
-        {isOpen && (
-          <div className="absolute right-0 top-full z-50 mt-1 min-w-[220px] rounded-lg border border-gray-100 bg-white shadow-lg">
+      {/* ── Dropdown ── */}
+      {isOpen && (
+        <div className="absolute right-0 top-full z-50 mt-1 min-w-[240px] rounded-lg border border-gray-100 bg-white shadow-lg">
+          {sorted.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-gray-400">
+              Aucun exercice configur\xe9
+            </div>
+          ) : (
             <div className="max-h-48 overflow-y-auto py-1">
               {sorted.map(fy => {
                 const isSel = fy.year === selectedYear
@@ -264,35 +164,21 @@ export function FiscalYearSelector() {
                 )
               })}
             </div>
+          )}
 
-            {isAdmin && (
-              <div className="border-t border-gray-100 py-1">
-                <button
-                  type="button"
-                  onClick={handleNewClick}
-                  disabled={!canCreate}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-green-700 transition-colors hover:bg-green-50 disabled:cursor-not-allowed disabled:text-gray-300"
-                >
-                  <IconPlus />
-                  <span>Nouvel exercice</span>
-                </button>
-              </div>
-            )}
+          {/* Lien vers les param\xe8tres pour cr\xe9er un nouvel exercice */}
+          <div className="border-t border-gray-100">
+            <Link
+              to="/app/settings/comptabilite?tab=exercices"
+              onClick={() => setIsOpen(false)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-700"
+            >
+              <IconSettings />
+              <span>G\xe9rer les exercices dans les param\xe8tres</span>
+            </Link>
           </div>
-        )}
-      </div>
-
-      {showNewModal && (
-        <NewFiscalYearModal
-          latestYear={latestYear}
-          onClose={() => setShowNewModal(false)}
-          onCreated={year => { setSelectedYear(year); setShowNewModal(false) }}
-        />
+        </div>
       )}
-
-      {showMaxAlert && blockingMessage && (
-        <MaxOpenAlert message={blockingMessage} onClose={() => setShowMaxAlert(false)} />
-      )}
-    </>
+    </div>
   )
 }

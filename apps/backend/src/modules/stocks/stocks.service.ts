@@ -141,6 +141,8 @@ export async function createArticle(companyId: string, dto: CreateArticleInput) 
         ...(rest.description !== undefined ? { description: rest.description } : {}),
         ...(rest.compteAchat !== undefined ? { compteAchat: rest.compteAchat } : {}),
         ...(rest.compteVente !== undefined ? { compteVente: rest.compteVente } : {}),
+        ...(rest.compteStock !== undefined ? { compteStock: rest.compteStock } : {}),
+        ...(rest.compteVariationStock !== undefined ? { compteVariationStock: rest.compteVariationStock } : {}),
         stockActuel: 0,
         valeurCmup: rest.prixAchat,
       } as never,
@@ -181,6 +183,8 @@ export async function updateArticle(companyId: string, id: string, dto: UpdateAr
       ...(dto.description  !== undefined ? { description: dto.description }       : {}),
       ...(dto.compteAchat  !== undefined ? { compteAchat: dto.compteAchat }       : {}),
       ...(dto.compteVente  !== undefined ? { compteVente: dto.compteVente }       : {}),
+      ...(dto.compteStock  !== undefined ? { compteStock: dto.compteStock }       : {}),
+      ...(dto.compteVariationStock !== undefined ? { compteVariationStock: dto.compteVariationStock } : {}),
     } as never,
     include: { famille: true },
   })

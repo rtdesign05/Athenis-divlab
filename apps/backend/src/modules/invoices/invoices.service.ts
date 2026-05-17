@@ -104,6 +104,8 @@ export async function createInvoice(companyId: string, data: CreateInvoiceInput,
             prixUnitaireHT: new Prisma.Decimal(l.prixUnitaireHT),
             tvaRate:        new Prisma.Decimal(l.tvaRate),
             montantHT:      new Prisma.Decimal(l.montantHT),
+            ...(l.articleId   ? { articleId: l.articleId }     : {}),
+            ...(l.compteVente ? { compteVente: l.compteVente } : {}),
           })),
         },
       },
@@ -142,6 +144,8 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
             prixUnitaireHT: new Prisma.Decimal(l.prixUnitaireHT),
             tvaRate:        new Prisma.Decimal(l.tvaRate),
             montantHT:      new Prisma.Decimal(l.montantHT),
+            ...(l.articleId   ? { articleId: l.articleId }     : {}),
+            ...(l.compteVente ? { compteVente: l.compteVente } : {}),
           })),
         },
       } : {}),
@@ -153,13 +157,29 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
 const VALID_INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'] as const
 type InvoiceStatusType = (typeof VALID_INVOICE_STATUSES)[number]
 
-export async function updateInvoiceStatus(companyId: string, id: string, status: string) {
+export async function updateInvoiceStatus(companyId: string, id: string, status: string, userId?: string) {
   if (!(VALID_INVOICE_STATUSES as readonly string[]).includes(status)) {
     throw new AppError(`Statut invalide: ${status}`, 400, 'INVALID_STATUS')
   }
-  await getInvoice(companyId, id)
+  const existing = await getInvoice(companyId, id)
   const extra = status === 'PAID' ? { paidAt: new Date() } : {}
-  return prisma.invoice.update({ where: { id }, data: { status: status as InvoiceStatusType, ...extra } })
+  const updated = await prisma.invoice.update({ where: { id }, data: { status: status as InvoiceStatusType, ...extra } })
+
+  // ── Comptabilisation automatique au passage en SENT ou PAID ───────────────
+  // (DRAFT → SENT/PAID = facture validée → journal VTE)
+  if ((status === 'SENT' || status === 'PAID') && !existing.posted) {
+    try {
+      const { postSaleInvoice } = await import('../accounting/posting.service.js')
+      await postSaleInvoice(companyId, id, userId ?? 'system')
+    } catch (e) {
+      // Erreur de comptabilisation non bloquante pour le changement de statut,
+      // mais on remonte l'erreur pour information.
+      console.error('[Posting] Échec comptabilisation facture', id, e)
+      throw e
+    }
+  }
+
+  return updated
 }
 
 export async function deleteInvoice(companyId: string, id: string) {
@@ -208,13 +228,20 @@ export async function dashboardStats(
 
   const af = user ? getAgenceFilter(user) : {}
 
-  const [paidCurr, paidPrev, expenses, paidInvoicesForDSO, pending, overdue] = await Promise.all([
+  // Conformément à SYSCOHADA / PCG : le chiffre d'affaires est reconnu à la
+  // DATE D'ÉMISSION de la facture (issuedAt), pas à la date de paiement.
+  // Inclus : SENT, PAID, OVERDUE (toute facture émise et non annulée).
+  // Exclus : DRAFT (non validée) et CANCELLED (annulée).
+  const SALES_STATUSES = ['SENT', 'PAID', 'OVERDUE'] as const
+
+  const [salesCurr, salesPrev, expenses, paidInvoicesForDSO, pending, overdue, cashedCurr] = await Promise.all([
     prisma.invoice.aggregate({
-      where: { companyId, ...af, status: 'PAID', paidAt: { gte: from, lte: to } },
+      where: { companyId, ...af, status: { in: [...SALES_STATUSES] }, issuedAt: { gte: from, lte: to } },
       _sum: { amountTTC: true, amountHT: true },
+      _count: true,
     }),
     prisma.invoice.aggregate({
-      where: { companyId, ...af, status: 'PAID', paidAt: { gte: prevFrom, lte: prevTo } },
+      where: { companyId, ...af, status: { in: [...SALES_STATUSES] }, issuedAt: { gte: prevFrom, lte: prevTo } },
       _sum: { amountTTC: true },
     }),
     prisma.expense.aggregate({
@@ -235,11 +262,17 @@ export async function dashboardStats(
       _sum: { amountTTC: true },
       _count: true,
     }),
+    // Encaissements de la période (utile pour la trésorerie / DSO)
+    prisma.invoice.aggregate({
+      where: { companyId, ...af, status: 'PAID', paidAt: { gte: from, lte: to } },
+      _sum: { amountTTC: true },
+    }),
   ])
 
-  const revenueCurr   = Number(paidCurr._sum?.amountTTC   ?? 0)
-  const revenuePrev   = Number(paidPrev._sum?.amountTTC   ?? 0)
+  const revenueCurr   = Number(salesCurr._sum?.amountTTC   ?? 0)
+  const revenuePrev   = Number(salesPrev._sum?.amountTTC   ?? 0)
   const revenueGrowth = revenuePrev > 0 ? ((revenueCurr - revenuePrev) / revenuePrev) * 100 : null
+  const cashedAmount  = Number(cashedCurr._sum?.amountTTC ?? 0)
   const totalExpenses = Number(expenses._sum?.amount  ?? 0)
   const grossProfit   = revenueCurr - totalExpenses
   const grossMargin   = revenueCurr > 0 ? grossProfit / revenueCurr : null
@@ -255,6 +288,8 @@ export async function dashboardStats(
 
   return {
     revenue:       { current: revenueCurr, previous: revenuePrev, growth: revenueGrowth },
+    salesCount:    salesCurr._count,
+    cashedAmount,                                       // encaissements de la période (PAID)
     grossProfit:   { amount: grossProfit, margin: grossMargin },
     dso,
     pendingAmount: Number(pending._sum?.amountTTC ?? 0),

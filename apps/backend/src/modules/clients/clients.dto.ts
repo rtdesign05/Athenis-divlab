@@ -6,6 +6,8 @@ export const CreateClientDto = z.object({
   siren: z.string().length(9).optional(),
   phone: z.string().max(20).optional(),
   address: z.string().max(500).optional(),
+  /** Compte comptable client (411xxx). Auto-généré si non fourni. */
+  accountingCode: z.string().min(3).max(9).optional(),
 })
 
 export const UpdateClientDto = CreateClientDto.partial()

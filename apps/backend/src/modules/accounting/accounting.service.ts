@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import { getPlanByZone, ZONE_LABELS } from '../../lib/accountingPlans.js'
 import { getAgenceFilter } from '../../middleware/agenceFilter.js'
+import { normalizeAccountCode } from '../../lib/accountCodes.js'
 import type { JwtPayload } from '@athenis/shared-types'
 
 function toNum(d: Prisma.Decimal | null | undefined): number {
@@ -528,10 +529,12 @@ export async function getComptes(companyId: string) {
   })
 }
 
-/** Normalise un numéro de compte : purement numérique → 9 chiffres (complété à droite par des 0) */
+/**
+ * Normalise un numéro de compte avec validation stricte (cf. lib/accountCodes.ts).
+ * @deprecated Utiliser `normalizeAccountCode` directement.
+ */
 function normalizeNumero(numero: string): string {
-  const n = numero.trim()
-  return /^\d+$/.test(n) ? n.padEnd(9, '0') : n
+  return normalizeAccountCode(numero)
 }
 
 export async function addCompte(
@@ -724,7 +727,7 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
   })
   const zone = (company?.accountingZone ?? 'OHADA') as string
 
-  // ── Agrégats financiers (métadonnées closingBalance) ───────────────────────
+  // ── Agrégats financiers (métadonnées closingBalance) — lectures pré-transaction ──
   const [compteResultat, bilan] = await Promise.all([
     getCompteDeResultat(companyId, fy.year),
     getBilan(companyId, fy.year),
@@ -735,7 +738,7 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
     resultat: compteResultat.resultatBrut,
   }
 
-  // ── Soldes des écritures journal de l'exercice ─────────────────────────────
+  // ── Soldes des écritures journal (lecture pré-transaction) ─────────────────
   const journalEntries = await prisma.journalEntry.findMany({
     where:  { companyId, fiscalYearId: id },
     select: { compte: true, debit: true, credit: true },
@@ -749,7 +752,6 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
   }
 
   // Résultat net depuis les comptes 6 et 7
-  // (le compte 13x/12x n'est pas alimenté en cours d'exercice — conforme SYSCOHADA)
   let totalProduits = 0
   let totalCharges  = 0
   for (const [compte, { debit, credit }] of balanceMap) {
@@ -759,136 +761,119 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
   }
   const resultatNetJournal = totalProduits - totalCharges
 
-  // ── Clôturer l'exercice ────────────────────────────────────────────────────
-  const updated = await prisma.fiscalYear.update({
-    where: { id },
-    data: {
-      status:         'CLOSED',
-      closedBy:       userId,
-      closedAt:       new Date(),
-      closingBalance: closingBalance as Prisma.InputJsonValue,
-    },
-  })
+  // ── Préparer les lignes AN (calcul pur, sans écriture DB) ─────────────────
+  const nextYear    = fy.year + 1
+  const openingDate = new Date(`${nextYear}-01-01`)
+  const anRef       = `AN-${nextYear}`
 
-  // ── Créer l'exercice N+1 s'il n'existe pas encore ─────────────────────────
-  const nextYear = fy.year + 1
-  let nextFy = await prisma.fiscalYear.findUnique({
-    where: { companyId_year: { companyId, year: nextYear } },
-  })
-  if (!nextFy) {
-    nextFy = await prisma.fiscalYear.create({
+  type ANRow = {
+    companyId: string; fiscalYearId: string; date: Date
+    journal: string; compte: string; libelle: string
+    debit: number; credit: number; reference: string; createdBy: string
+  }
+  const pendingAnRows: ANRow[] = []
+
+  if (journalEntries.length > 0) {
+    // Cas 1 : journal alimenté — reporter les soldes des comptes de bilan (classes 1-5)
+    for (const [compte, { debit, credit }] of balanceMap) {
+      const classe = compte.charAt(0)
+      if (!['1', '2', '3', '4', '5'].includes(classe)) continue
+      const solde = debit - credit
+      if (Math.abs(solde) < 0.01) continue
+      pendingAnRows.push({
+        companyId, fiscalYearId: '__PLACEHOLDER__',
+        date: openingDate, journal: 'AN', compte,
+        libelle:   `À-nouveau ${fy.year}`,
+        debit:     Math.max(0,  solde),
+        credit:    Math.max(0, -solde),
+        reference: anRef, createdBy: userId,
+      })
+    }
+    // Reporter le résultat vers le compte 119
+    const resultPrefix = zone === 'FRANCE' ? '12' : '13'
+    const hasResCompte = [...balanceMap.keys()].some(k => k.startsWith(resultPrefix))
+    if (!hasResCompte && Math.abs(resultatNetJournal) > 0.01) {
+      pendingAnRows.push({
+        companyId, fiscalYearId: '__PLACEHOLDER__',
+        date: openingDate, journal: 'AN', compte: normalizeAccountCode('119'),
+        libelle: `À-nouveau ${fy.year} — Résultat ${resultatNetJournal >= 0 ? '(bénéfice)' : '(perte)'}`,
+        debit:   resultatNetJournal < 0 ? Math.abs(resultatNetJournal) : 0,
+        credit:  resultatNetJournal > 0 ? resultatNetJournal : 0,
+        reference: anRef, createdBy: userId,
+      })
+    }
+  } else {
+    // Cas 2 : journal vide — fallback sur le bilan calculé
+    const { actif, passif } = closingBalance
+    if (actif.creancesClients > 0.01)
+      pendingAnRows.push({ companyId, fiscalYearId: '__PLACEHOLDER__', date: openingDate, journal: 'AN',
+        compte: normalizeAccountCode('411'), libelle: `À-nouveau ${fy.year} — Créances clients`,
+        debit: actif.creancesClients, credit: 0, reference: anRef, createdBy: userId })
+    if (actif.tresorerie > 0.01)
+      pendingAnRows.push({ companyId, fiscalYearId: '__PLACEHOLDER__', date: openingDate, journal: 'AN',
+        compte: normalizeAccountCode(zone === 'OHADA' ? '521' : '512'), libelle: `À-nouveau ${fy.year} — Trésorerie`,
+        debit: actif.tresorerie, credit: 0, reference: anRef, createdBy: userId })
+    if (passif.dettesExploitation > 0.01)
+      pendingAnRows.push({ companyId, fiscalYearId: '__PLACEHOLDER__', date: openingDate, journal: 'AN',
+        compte: normalizeAccountCode('401'), libelle: `À-nouveau ${fy.year} — Dettes fournisseurs`,
+        debit: 0, credit: passif.dettesExploitation, reference: anRef, createdBy: userId })
+    const net = compteResultat.resultatBrut
+    if (Math.abs(net) > 0.01)
+      pendingAnRows.push({ companyId, fiscalYearId: '__PLACEHOLDER__', date: openingDate, journal: 'AN',
+        compte:  '119',
+        libelle: `À-nouveau ${fy.year} — Résultat ${net >= 0 ? '(bénéfice)' : '(perte)'}`,
+        debit:   net < 0 ? Math.abs(net) : 0,
+        credit:  net > 0 ? net : 0,
+        reference: anRef, createdBy: userId })
+  }
+
+  // ── Transaction atomique : clôture + création N+1 + insertion AN ──────────
+  // Si une étape échoue, l'ensemble est annulé — aucun état intermédiaire incohérent.
+  return prisma.$transaction(async (tx) => {
+    // 1. Clôturer l'exercice
+    const updated = await tx.fiscalYear.update({
+      where: { id },
       data: {
-        companyId,
-        year:           nextYear,
-        startDate:      new Date(`${nextYear}-01-01`),
-        endDate:        new Date(`${nextYear}-12-31`),
-        status:         'OPEN',
-        createdBy:      userId,
-        openingBalance: closingBalance as Prisma.InputJsonValue,
+        status:         'CLOSED',
+        closedBy:       userId,
+        closedAt:       new Date(),
+        closingBalance: closingBalance as Prisma.InputJsonValue,
       },
     })
-  }
 
-  // ── Écritures d'à-nouveaux dans l'exercice N+1 (journal AN) ───────────────
-  // Conformément au SYSCOHADA révisé : les comptes de bilan (classes 1-5) sont
-  // repris en ouverture ; le résultat N est viré au compte 119 (Report à nouveau).
-  const existingAN = await prisma.journalEntry.count({
-    where: { companyId, fiscalYearId: nextFy.id, journal: 'AN' },
-  })
-
-  let anGenerated = 0
-
-  if (existingAN === 0) {
-    const openingDate = new Date(`${nextYear}-01-01`)
-    const anRef       = `AN-${nextYear}`
-
-    type ANRow = {
-      companyId:    string
-      fiscalYearId: string
-      date:         Date
-      journal:      string
-      compte:       string
-      libelle:      string
-      debit:        number
-      credit:       number
-      reference:    string
-      createdBy:    string
-    }
-    const anRows: ANRow[] = []
-
-    if (journalEntries.length > 0) {
-      // ── Cas 1 : journal alimenté — reporter les soldes des comptes de bilan ──
-      for (const [compte, { debit, credit }] of balanceMap) {
-        const classe = compte.charAt(0)
-        if (!['1', '2', '3', '4', '5'].includes(classe)) continue
-
-        const solde = debit - credit
-        if (Math.abs(solde) < 0.01) continue
-
-        anRows.push({
-          companyId, fiscalYearId: nextFy.id,
-          date: openingDate, journal: 'AN',
-          compte,
-          libelle:   `À-nouveau ${fy.year}`,
-          debit:     Math.max(0,  solde),
-          credit:    Math.max(0, -solde),
-          reference: anRef,
-          createdBy: userId,
-        })
-      }
-
-      // Reporter le résultat vers le compte 119 (Report à nouveau) —
-      // sauf si le compte résultat (13x OHADA / 12x France) a déjà des écritures
-      const resultPrefix  = zone === 'FRANCE' ? '12' : '13'
-      const hasResCompte  = [...balanceMap.keys()].some(k => k.startsWith(resultPrefix))
-      if (!hasResCompte && Math.abs(resultatNetJournal) > 0.01) {
-        anRows.push({
-          companyId, fiscalYearId: nextFy.id,
-          date: openingDate, journal: 'AN',
-          compte:  '119',
-          libelle: `À-nouveau ${fy.year} — Résultat ${resultatNetJournal >= 0 ? '(bénéfice)' : '(perte)'}`,
-          debit:   resultatNetJournal < 0 ? Math.abs(resultatNetJournal) : 0,
-          credit:  resultatNetJournal > 0 ? resultatNetJournal            : 0,
-          reference: anRef,
-          createdBy: userId,
-        })
-      }
-    } else {
-      // ── Cas 2 : journal vide — fallback sur le bilan calculé ──────────────
-      const { actif, passif } = closingBalance
-
-      if (actif.creancesClients > 0.01)
-        anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-          compte: '411', libelle: `À-nouveau ${fy.year} — Créances clients`,
-          debit: actif.creancesClients, credit: 0, reference: anRef, createdBy: userId })
-
-      if (actif.tresorerie > 0.01)
-        anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-          compte: zone === 'OHADA' ? '521' : '512', libelle: `À-nouveau ${fy.year} — Trésorerie`,
-          debit: actif.tresorerie, credit: 0, reference: anRef, createdBy: userId })
-
-      if (passif.dettesExploitation > 0.01)
-        anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-          compte: '401', libelle: `À-nouveau ${fy.year} — Dettes fournisseurs`,
-          debit: 0, credit: passif.dettesExploitation, reference: anRef, createdBy: userId })
-
-      const net = compteResultat.resultatBrut
-      if (Math.abs(net) > 0.01)
-        anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-          compte:  '119',
-          libelle: `À-nouveau ${fy.year} — Résultat ${net >= 0 ? '(bénéfice)' : '(perte)'}`,
-          debit:   net < 0 ? Math.abs(net) : 0,
-          credit:  net > 0 ? net            : 0,
-          reference: anRef, createdBy: userId })
+    // 2. Créer l'exercice N+1 s'il n'existe pas encore
+    let nextFy = await tx.fiscalYear.findUnique({
+      where: { companyId_year: { companyId, year: nextYear } },
+    })
+    if (!nextFy) {
+      nextFy = await tx.fiscalYear.create({
+        data: {
+          companyId,
+          year:           nextYear,
+          startDate:      new Date(`${nextYear}-01-01`),
+          endDate:        new Date(`${nextYear}-12-31`),
+          status:         'OPEN',
+          createdBy:      userId,
+          openingBalance: closingBalance as Prisma.InputJsonValue,
+        },
+      })
     }
 
-    if (anRows.length > 0) {
-      await prisma.journalEntry.createMany({ data: anRows })
+    // 3. Insérer les AN si aucun n'existe déjà pour cet exercice
+    const existingAN = await tx.journalEntry.count({
+      where: { companyId, fiscalYearId: nextFy.id, journal: 'AN' },
+    })
+
+    let anGenerated = 0
+    if (existingAN === 0 && pendingAnRows.length > 0) {
+      // Remplacer le placeholder par le vrai fiscalYearId maintenant connu
+      const anRows = pendingAnRows.map(r => ({ ...r, fiscalYearId: nextFy!.id }))
+      await tx.journalEntry.createMany({ data: anRows })
       anGenerated = anRows.length
     }
-  }
 
-  return { fiscalYear: updated, anGenerated, nextYear }
+    return { fiscalYear: updated, anGenerated, nextYear }
+  })
 }
 
 export async function reopenFiscalYear(companyId: string, id: string) {
@@ -1002,7 +987,7 @@ export async function generateOpeningEntries(companyId: string, closedFyId: stri
     if (!hasResCompte && Math.abs(resultatNetJournal) > 0.01) {
       anRows.push({
         companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-        compte: '119',
+        compte: normalizeAccountCode('119'),
         libelle: `À-nouveau ${fy.year} — Résultat ${resultatNetJournal >= 0 ? '(bénéfice)' : '(perte)'}`,
         debit:  resultatNetJournal < 0 ? Math.abs(resultatNetJournal) : 0,
         credit: resultatNetJournal > 0 ? resultatNetJournal            : 0,
@@ -1013,20 +998,20 @@ export async function generateOpeningEntries(companyId: string, closedFyId: stri
     const { actif, passif } = { actif: bilan.actif, passif: bilan.passif }
     if (actif.creancesClients > 0.01)
       anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-        compte: '411', libelle: `À-nouveau ${fy.year} — Créances clients`,
+        compte: normalizeAccountCode('411'), libelle: `À-nouveau ${fy.year} — Créances clients`,
         debit: actif.creancesClients, credit: 0, reference: anRef, createdBy: userId })
     if (actif.tresorerie > 0.01)
       anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-        compte: zone === 'OHADA' ? '521' : '512', libelle: `À-nouveau ${fy.year} — Trésorerie`,
+        compte: normalizeAccountCode(zone === 'OHADA' ? '521' : '512'), libelle: `À-nouveau ${fy.year} — Trésorerie`,
         debit: actif.tresorerie, credit: 0, reference: anRef, createdBy: userId })
     if (passif.dettesExploitation > 0.01)
       anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-        compte: '401', libelle: `À-nouveau ${fy.year} — Dettes fournisseurs`,
+        compte: normalizeAccountCode('401'), libelle: `À-nouveau ${fy.year} — Dettes fournisseurs`,
         debit: 0, credit: passif.dettesExploitation, reference: anRef, createdBy: userId })
     const net = compteResultat.resultatBrut
     if (Math.abs(net) > 0.01)
       anRows.push({ companyId, fiscalYearId: nextFy.id, date: openingDate, journal: 'AN',
-        compte: '119',
+        compte: normalizeAccountCode('119'),
         libelle: `À-nouveau ${fy.year} — Résultat ${net >= 0 ? '(bénéfice)' : '(perte)'}`,
         debit:  net < 0 ? Math.abs(net) : 0,
         credit: net > 0 ? net            : 0,
@@ -1101,13 +1086,216 @@ export async function getJournalByFiscalYear(companyId: string, fiscalYearId: st
       credit:      Number(e.credit),
       reference:   e.reference,
       lettrage:    e.lettrage ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pieceUrl:    (e as any).pieceUrl ?? null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pieceName:   (e as any).pieceName ?? null,
     })),
   }
 }
 
+/**
+ * Attache (ou détache) une pièce justificative à toutes les lignes d'une écriture
+ * (toutes les lignes du même pieceId reçoivent la même PJ — conformément à la
+ * réglementation comptable, une écriture comptable forme un tout indissociable).
+ */
+export async function attachPieceJustificative(
+  companyId: string,
+  pieceId: string,
+  data: { pieceUrl: string | null; pieceName: string | null },
+) {
+  // Garde-fou : l'écriture doit appartenir à l'entreprise et pas être sur un exercice clôturé
+  const sample = await prisma.journalEntry.findFirst({
+    where:   { companyId, pieceId },
+    select:  { fiscalYearId: true, fiscalYear: { select: { status: true } } },
+  })
+  if (!sample) {
+    throw new AppError(`Pièce ${pieceId} introuvable`, 404, 'PIECE_NOT_FOUND')
+  }
+  if (sample.fiscalYear.status === 'CLOSED') {
+    throw new AppError('Exercice clôturé — pièce justificative en lecture seule', 400, 'FISCAL_YEAR_CLOSED')
+  }
+
+  const updated = await prisma.journalEntry.updateMany({
+    where: { companyId, pieceId },
+    data:  {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pieceUrl:  data.pieceUrl,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pieceName: data.pieceName,
+    } as Parameters<typeof prisma.journalEntry.updateMany>[0]['data'],
+  })
+
+  return { pieceId, linesUpdated: updated.count, pieceUrl: data.pieceUrl, pieceName: data.pieceName }
+}
+
 // ── Lettrage ────────────────────────────────────────────────────────────────
 
-/** Assign a lettrage code to a set of journal entries (must all belong to same company). */
+/** Génère le prochain code de lettrage disponible (A → Z → AA → AZ → BA …). */
+function nextLettrageCode(existingCodes: string[]): string {
+  const used = new Set(existingCodes.map(c => c.toUpperCase()))
+  for (let i = 65; i <= 90; i++) {
+    const c = String.fromCharCode(i)
+    if (!used.has(c)) return c
+  }
+  for (let i = 65; i <= 90; i++) {
+    for (let j = 65; j <= 90; j++) {
+      const c = String.fromCharCode(i) + String.fromCharCode(j)
+      if (!used.has(c)) return c
+    }
+  }
+  throw new AppError('Tous les codes de lettrage (676) sont épuisés pour ce compte', 400, 'LETTRAGE_EXHAUSTED')
+}
+
+/**
+ * Retourne la liste des comptes de tiers (classe 4) présents dans l'exercice,
+ * avec les statistiques de lettrage pour chacun.
+ */
+export async function getComptesTiers(companyId: string, fiscalYearId: string) {
+  await getFiscalYear(companyId, fiscalYearId)
+
+  const entries = await prisma.journalEntry.findMany({
+    where:  { companyId, fiscalYearId, compte: { startsWith: '4' } },
+    select: { compte: true, debit: true, credit: true, lettrage: true },
+    orderBy: { compte: 'asc' },
+  })
+
+  const compteMap = new Map<string, { debit: number; credit: number; lettres: number; nonLettres: number }>()
+  for (const e of entries) {
+    const s = compteMap.get(e.compte) ?? { debit: 0, credit: 0, lettres: 0, nonLettres: 0 }
+    s.debit  += Number(e.debit)
+    s.credit += Number(e.credit)
+    if (e.lettrage) s.lettres++
+    else            s.nonLettres++
+    compteMap.set(e.compte, s)
+  }
+
+  const [plans, company] = await Promise.all([
+    prisma.accountPlan.findMany({ where: { companyId }, select: { numero: true, intitule: true } }),
+    prisma.company.findUnique({ where: { id: companyId }, select: { accountingZone: true } }),
+  ])
+  const companyLabelMap = new Map(plans.map(p => [p.numero, p.intitule]))
+  const staticLabelMap  = new Map(getPlanByZone(company?.accountingZone ?? 'FRANCE').map(p => [p.numero, p.intitule]))
+
+  return [...compteMap.entries()].map(([compte, s]) => ({
+    compte,
+    label:       lookupLabel(compte, companyLabelMap, staticLabelMap),
+    totalDebit:  s.debit,
+    totalCredit: s.credit,
+    solde:       s.debit - s.credit,
+    lettres:     s.lettres,
+    nonLettres:  s.nonLettres,
+  }))
+}
+
+/**
+ * Retourne toutes les écritures d'un compte de tiers dans un exercice,
+ * avec le code de lettrage de chaque ligne et le solde progressif.
+ */
+export async function getLettragePourCompte(companyId: string, fiscalYearId: string, compte: string) {
+  await getFiscalYear(companyId, fiscalYearId)
+
+  const entries = await prisma.journalEntry.findMany({
+    where:   { companyId, fiscalYearId, compte },
+    orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
+  })
+
+  let runningBalance = 0
+  const lignes = entries.map(e => {
+    const d = Number(e.debit)
+    const c = Number(e.credit)
+    runningBalance += d - c
+    return {
+      id:          e.id,
+      date:        e.date,
+      journalCode: e.journal,
+      pieceId:     e.pieceId,
+      label:       e.libelle,
+      reference:   e.reference,
+      debit:       d,
+      credit:      c,
+      solde:       runningBalance,
+      lettrage:    e.lettrage,
+    }
+  })
+
+  const totalDebit  = entries.reduce((s, e) => s + Number(e.debit),  0)
+  const totalCredit = entries.reduce((s, e) => s + Number(e.credit), 0)
+
+  return { fiscalYearId, compte, lignes, totalDebit, totalCredit, solde: totalDebit - totalCredit }
+}
+
+/**
+ * Lettrage réglementaire (SYSCOHADA / PCG) :
+ *  - Vérifie que les écritures appartiennent toutes au même compte de tiers (classe 4)
+ *  - Vérifie que Σ Débit = Σ Crédit (équilibre obligatoire)
+ *  - Génère automatiquement le prochain code disponible (A, B, …, AA, …)
+ *  - Interdit de lettrer une écriture déjà lettrée
+ */
+export async function lettrer(
+  companyId: string,
+  fiscalYearId: string,
+  entryIds: string[],
+): Promise<{ code: string; lettered: number }> {
+  if (entryIds.length < 2)
+    throw new AppError('Sélectionnez au moins 2 écritures à lettrer', 400, 'VALIDATION_ERROR')
+
+  const entries = await prisma.journalEntry.findMany({
+    where: { id: { in: entryIds }, companyId, fiscalYearId },
+  })
+  if (entries.length !== entryIds.length)
+    throw new AppError('Une ou plusieurs écritures introuvables', 404, 'NOT_FOUND')
+
+  // Même compte obligatoire
+  const comptes = [...new Set(entries.map(e => e.compte))]
+  if (comptes.length !== 1)
+    throw new AppError('Toutes les écritures doivent appartenir au même compte', 400, 'VALIDATION_ERROR')
+
+  const compte = comptes[0]!
+
+  // Classe 4 uniquement (comptes de tiers : clients 41x, fournisseurs 40x, …)
+  if (!/^4/.test(compte))
+    throw new AppError(
+      `Le lettrage s'applique aux comptes de tiers (classe 4). Compte sélectionné : ${compte}`,
+      400, 'VALIDATION_ERROR',
+    )
+
+  // Pas de re-lettrage
+  const alreadyLettered = entries.filter(e => e.lettrage)
+  if (alreadyLettered.length > 0) {
+    const codes = [...new Set(alreadyLettered.map(e => e.lettrage))].join(', ')
+    throw new AppError(
+      `Certaines écritures sont déjà lettrées (${codes}). Délettrez-les d'abord.`,
+      400, 'VALIDATION_ERROR',
+    )
+  }
+
+  // Équilibre débit = crédit
+  const totalD = entries.reduce((s, e) => s + Number(e.debit),  0)
+  const totalC = entries.reduce((s, e) => s + Number(e.credit), 0)
+  if (Math.abs(totalD - totalC) > 0.01)
+    throw new AppError(
+      `Déséquilibre : débit ${totalD.toFixed(2)} ≠ crédit ${totalC.toFixed(2)} (écart ${Math.abs(totalD - totalC).toFixed(2)})`,
+      400, 'DESEQUILIBRE',
+    )
+
+  // Prochain code libre pour ce compte dans cet exercice
+  const usedCodes = await prisma.journalEntry.findMany({
+    where:    { companyId, fiscalYearId, compte, lettrage: { not: null } },
+    select:   { lettrage: true },
+    distinct: ['lettrage'],
+  })
+  const code = nextLettrageCode(usedCodes.map(e => e.lettrage!))
+
+  await prisma.journalEntry.updateMany({
+    where: { id: { in: entryIds }, companyId },
+    data:  { lettrage: code },
+  })
+
+  return { code, lettered: entryIds.length }
+}
+
+/** Assign a lettrage code to a set of journal entries (kept for backward compat). */
 export async function setLettrage(
   companyId: string,
   entryIds: string[],
@@ -1117,13 +1305,9 @@ export async function setLettrage(
   if (!code.trim()) throw new AppError('Code de lettrage manquant', 400, 'VALIDATION_ERROR')
   const normalCode = code.trim().toUpperCase()
 
-  // Verify all entries belong to this company
-  const count = await prisma.journalEntry.count({
-    where: { id: { in: entryIds }, companyId },
-  })
-  if (count !== entryIds.length) {
+  const count = await prisma.journalEntry.count({ where: { id: { in: entryIds }, companyId } })
+  if (count !== entryIds.length)
     throw new AppError('Une ou plusieurs écritures introuvables', 404, 'NOT_FOUND')
-  }
 
   await prisma.journalEntry.updateMany({
     where: { id: { in: entryIds }, companyId },
@@ -1155,8 +1339,29 @@ export async function createJournalEntry(
   userId: string,
 ) {
   const fy = await getFiscalYear(companyId, fiscalYearId)
-  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
-    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  if (fy.status === 'CLOSED') {
+    throw new AppError('Exercice clôturé — lecture seule', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  if (data.journal.toUpperCase() === 'AN') {
+    throw new AppError('Le journal AN (À-nouveaux) est géré automatiquement — saisie manuelle interdite', 400, 'AN_JOURNAL_PROTECTED')
+  }
+  // Date strictement dans l'exercice (anti-saisie sur exercice clôturé via la date)
+  const fyStart = new Date(fy.startDate)
+  const fyEnd   = new Date(fy.endDate)
+  if (data.date < fyStart || data.date > fyEnd) {
+    const targetFy = await prisma.fiscalYear.findFirst({
+      where: { companyId, startDate: { lte: data.date }, endDate: { gte: data.date } },
+    })
+    if (targetFy && targetFy.status === 'CLOSED') {
+      throw new AppError(
+        `La date ${data.date.toISOString().slice(0,10)} appartient à l'exercice ${targetFy.year} qui est CLÔTURÉ — saisie interdite.`,
+        400, 'FISCAL_YEAR_CLOSED',
+      )
+    }
+    throw new AppError(
+      `La date ${data.date.toISOString().slice(0,10)} doit être comprise dans l'exercice ${fy.year} (${fyStart.toISOString().slice(0,10)} → ${fyEnd.toISOString().slice(0,10)}).`,
+      400, 'DATE_OUT_OF_RANGE',
+    )
   }
   return prisma.journalEntry.create({
     data: {
@@ -1164,7 +1369,7 @@ export async function createJournalEntry(
       fiscalYearId,
       date: data.date,
       journal: data.journal.toUpperCase(),
-      compte: data.compte,
+      compte: normalizeAccountCode(data.compte),
       libelle: data.libelle,
       debit: data.debit,
       credit: data.credit,
@@ -1192,35 +1397,44 @@ export async function createJournalEntryBatch(
   }
 
   const fy = await getFiscalYear(companyId, fiscalYearId)
-  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
-    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  if (fy.status === 'CLOSED') {
+    throw new AppError('Exercice clôturé — lecture seule', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  if (data.journal.toUpperCase() === 'AN') {
+    throw new AppError('Le journal AN (À-nouveaux) est géré automatiquement — saisie manuelle interdite', 400, 'AN_JOURNAL_PROTECTED')
   }
   if (data.lines.length < 2) {
     throw new AppError('Au moins 2 lignes sont requises pour une écriture comptable', 400, 'VALIDATION_ERROR')
   }
 
-  // ── Date within fiscal year ─────────────────────────────────────────────────
-  // Extournes are intentionally dated N+1 — only block dates clearly outside the
-  // fiscal year by more than 1 year (hard error) or warn for dates outside the
-  // FY period by up to 1 year (soft warning returned in response).
+  // ── Date strictement dans les bornes de l'exercice ─────────────────────────
+  // Règle réglementaire SYSCOHADA/PCG : une écriture comptable doit être datée
+  // dans l'intervalle [startDate, endDate] de l'exercice où elle est enregistrée.
+  // Si on accepte des dates hors exercice, l'utilisateur pourrait passer des
+  // écritures dans un exercice clôturé en sélectionnant la mauvaise date.
   const entryDate = data.date
   const fyStart   = new Date(fy.startDate)
   const fyEnd     = new Date(fy.endDate)
-  // Allow entries dated up to 12 months after FY end (covers Jan 1 N+1 extournes)
-  const hardCutoff = new Date(fyEnd)
-  hardCutoff.setFullYear(hardCutoff.getFullYear() + 1)
-  if (entryDate < new Date(fyStart.getFullYear() - 1, 0, 1)) {
+  if (entryDate < fyStart || entryDate > fyEnd) {
+    // Cherche si la date appartient à un autre exercice
+    const targetFy = await prisma.fiscalYear.findFirst({
+      where: { companyId, startDate: { lte: entryDate }, endDate: { gte: entryDate } },
+    })
+    if (targetFy && targetFy.status === 'CLOSED') {
+      throw new AppError(
+        `La date ${entryDate.toISOString().slice(0,10)} appartient à l'exercice ${targetFy.year} qui est CLÔTURÉ — saisie interdite.`,
+        400, 'FISCAL_YEAR_CLOSED',
+      )
+    }
+    if (targetFy) {
+      throw new AppError(
+        `La date ${entryDate.toISOString().slice(0,10)} appartient à l'exercice ${targetFy.year}, pas à l'exercice ${fy.year} sélectionné. Changez d'exercice avant de saisir.`,
+        400, 'DATE_WRONG_FY',
+      )
+    }
     throw new AppError(
-      `La date de l'écriture (${entryDate.toISOString().slice(0,10)}) est trop ancienne pour l'exercice ${fy.year}`,
-      400,
-      'DATE_OUT_OF_RANGE',
-    )
-  }
-  if (entryDate > hardCutoff) {
-    throw new AppError(
-      `La date de l'écriture (${entryDate.toISOString().slice(0,10)}) dépasse d'un an la fin de l'exercice ${fy.year}`,
-      400,
-      'DATE_OUT_OF_RANGE',
+      `La date ${entryDate.toISOString().slice(0,10)} doit être comprise dans l'exercice ${fy.year} (${fyStart.toISOString().slice(0,10)} → ${fyEnd.toISOString().slice(0,10)}).`,
+      400, 'DATE_OUT_OF_RANGE',
     )
   }
   const totalDebit  = data.lines.reduce((s, l) => s + l.debit,  0)
@@ -1312,12 +1526,41 @@ export async function updateJournalPiece(
   if (!existing) throw new AppError('Écriture introuvable', 404, 'NOT_FOUND')
 
   const fy = await getFiscalYear(companyId, existing.fiscalYearId)
-  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
-    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  if (fy.status === 'CLOSED') {
+    throw new AppError('Exercice clôturé — lecture seule', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  // Vérifier si la pièce appartient au journal AN (protégé)
+  const firstEntry = await prisma.journalEntry.findFirst({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    where: { companyId, pieceId: pieceId as any },
+    select: { journal: true },
+  })
+  if (firstEntry?.journal?.toUpperCase() === 'AN') {
+    throw new AppError('Le journal AN (À-nouveaux) est protégé — modification interdite', 400, 'AN_JOURNAL_PROTECTED')
   }
   if (data.lines.length < 2) {
     throw new AppError('Au moins 2 lignes sont requises', 400, 'VALIDATION_ERROR')
   }
+  // Date strictement dans l'exercice
+  const fyStart = new Date(fy.startDate)
+  const fyEnd   = new Date(fy.endDate)
+  if (data.date < fyStart || data.date > fyEnd) {
+    const targetFy = await prisma.fiscalYear.findFirst({
+      where: { companyId, startDate: { lte: data.date }, endDate: { gte: data.date } },
+    })
+    if (targetFy && targetFy.status === 'CLOSED') {
+      throw new AppError(
+        `La date ${data.date.toISOString().slice(0,10)} appartient à l'exercice ${targetFy.year} qui est CLÔTURÉ — modification interdite.`,
+        400, 'FISCAL_YEAR_CLOSED',
+      )
+    }
+    throw new AppError(
+      `La date ${data.date.toISOString().slice(0,10)} doit être comprise dans l'exercice ${fy.year} (${fyStart.toISOString().slice(0,10)} → ${fyEnd.toISOString().slice(0,10)}).`,
+      400, 'DATE_OUT_OF_RANGE',
+    )
+  }
+  // Normalise tous les numéros de compte avant validation
+  data = { ...data, lines: data.lines.map(l => ({ ...l, compte: normalizeAccountCode(l.compte) })) }
   const totalDebit  = data.lines.reduce((s, l) => s + l.debit,  0)
   const totalCredit = data.lines.reduce((s, l) => s + l.credit, 0)
   if (Math.abs(totalDebit - totalCredit) > 0.001) {
@@ -1362,8 +1605,16 @@ export async function deleteJournalPiece(companyId: string, pieceId: string) {
   if (!existing) throw new AppError('Écriture introuvable', 404, 'NOT_FOUND')
 
   const fy = await getFiscalYear(companyId, existing.fiscalYearId)
-  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
-    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  if (fy.status === 'CLOSED') {
+    throw new AppError('Exercice clôturé — lecture seule', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  const firstEntryDel = await prisma.journalEntry.findFirst({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    where: { companyId, pieceId: pieceId as any },
+    select: { journal: true },
+  })
+  if (firstEntryDel?.journal?.toUpperCase() === 'AN') {
+    throw new AppError('Le journal AN (À-nouveaux) est protégé — suppression interdite', 400, 'AN_JOURNAL_PROTECTED')
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return prisma.journalEntry.deleteMany({ where: { companyId, pieceId: pieceId as any } })
@@ -1377,8 +1628,12 @@ export async function deleteJournalEntry(companyId: string, entryId: string) {
   if (!entry) throw new AppError('Ligne introuvable', 404, 'NOT_FOUND')
 
   const fy = await getFiscalYear(companyId, entry.fiscalYearId)
-  if (fy.status === 'CLOSED' || fy.status === 'LOCKED') {
-    throw new AppError('Exercice clôturé ou verrouillé', 400, 'FISCAL_YEAR_CLOSED')
+  if (fy.status === 'CLOSED') {
+    throw new AppError('Exercice clôturé — lecture seule', 400, 'FISCAL_YEAR_CLOSED')
+  }
+  const fullEntry = await prisma.journalEntry.findUnique({ where: { id: entryId }, select: { journal: true } })
+  if (fullEntry?.journal?.toUpperCase() === 'AN') {
+    throw new AppError('Le journal AN (À-nouveaux) est protégé — suppression interdite', 400, 'AN_JOURNAL_PROTECTED')
   }
   return prisma.journalEntry.delete({ where: { id: entryId } })
 }
@@ -1478,11 +1733,13 @@ export async function getGrandLivreByFiscalYear(companyId: string, fiscalYearId:
           id:          e.id,
           date:        e.date,
           journalCode: e.journal,
+          pieceId:     e.pieceId,
           label:       e.libelle,
           debit:       d,
           credit:      c,
           solde:       runningBalance,
           reference:   e.reference,
+          lettrage:    e.lettrage,
         }
       })
       return { account, label: lookupLabel(account, companyLabelMap, staticLabelMap), lignes }
@@ -1505,8 +1762,8 @@ export async function reimpute(
   entryIds: string[],
   newAccount: string,
 ): Promise<{ updated: number; newAccount: string }> {
-  const normalized = newAccount.trim()
-  if (!normalized) throw new AppError('Le compte cible est requis', 400, 'VALIDATION_ERROR')
+  if (!newAccount?.trim()) throw new AppError('Le compte cible est requis', 400, 'VALIDATION_ERROR')
+  const normalized = normalizeAccountCode(newAccount)
 
   // Charger les écritures avec leur exercice
   const entries = await prisma.journalEntry.findMany({

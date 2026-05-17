@@ -5,15 +5,26 @@ export type LeaveType   = 'CP' | 'RTT' | 'SICK' | 'MATERNITY' | 'UNPAID'
 export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 export type ReviewStatus = 'DRAFT' | 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
 
+export type PaymentMethod = 'MOBILE_MONEY' | 'BANK_TRANSFER' | 'CASH' | 'CHECK'
+
 export interface Employee {
   id: string
   firstName: string
   lastName: string
   email: string
+  phone?: string | null
   employmentType: EmploymentType
   startDate: string
   endDate: string | null
   grossSalary: string
+  // Moyens de paiement
+  paymentMethod?:        PaymentMethod | null
+  mobileMoneyNumber?:    string | null
+  mobileMoneyProvider?:  string | null
+  bankName?:             string | null
+  bankAccountHolder?:    string | null
+  bankAccountNumber?:    string | null
+  bankSwiftCode?:        string | null
   createdAt: string
   updatedAt: string
 }
@@ -26,12 +37,20 @@ export interface EmployeeStats {
 }
 
 export interface CreateEmployeeDto {
-  firstName: string
-  lastName: string
-  email?: string
+  firstName:      string
+  lastName:       string
+  email?:         string
+  phone?:         string
   employmentType: EmploymentType
-  startDate: string
-  grossSalary: number
+  startDate:      string
+  grossSalary:    number
+  paymentMethod?:       PaymentMethod
+  mobileMoneyNumber?:   string
+  mobileMoneyProvider?: string
+  bankName?:            string
+  bankAccountHolder?:   string
+  bankAccountNumber?:   string
+  bankSwiftCode?:       string
 }
 
 export type UpdateEmployeeDto = Partial<CreateEmployeeDto>
@@ -182,6 +201,53 @@ export interface Payslip {
   totalCost: number
 }
 
+// ── Payroll (paie en lot mensuel) ────────────────────────────────────────────
+
+export type PayrollStatus = 'DRAFT' | 'POSTED' | 'PAID' | 'SENT' | 'CANCELLED'
+export type PayslipStatus = 'PENDING' | 'PAID' | 'FAILED'
+
+export interface PayslipRow {
+  id:               string
+  employeeId:       string
+  employeeName:     string
+  employeeEmail:    string | null
+  employmentType:   EmploymentType
+  daysWorked:       number
+  daysAbsentUnpaid: number
+  grossSalary:      string
+  cnpsSal:          string
+  cnpsEmp:          string
+  irpp:             string
+  cac:              string
+  netToPay:         string
+  totalCost:        string
+  paymentMethod:    PaymentMethod | null
+  paymentStatus:    PayslipStatus
+  paidAt:           string | null
+  emailSentAt:      string | null
+}
+
+export interface Payroll {
+  id:               string
+  year:             number
+  month:            number
+  status:           PayrollStatus
+  employeesCount:   number
+  totalGross:       string
+  totalNet:         string
+  totalCnpsSal:     string
+  totalCnpsEmp:     string
+  totalIrpp:        string
+  totalCac:         string
+  postedPieceId:    string | null
+  postedAt:         string | null
+  paidAt:           string | null
+  sentAt:           string | null
+  treasuryAccount:  string | null
+  payslips?:        PayslipRow[]
+  _count?:          { payslips: number }
+}
+
 const d = <T>(r: { data: { data: T } }) => r.data.data
 
 export const hrApi = {
@@ -215,6 +281,20 @@ export const hrApi = {
     create: (dto: CreateReviewDto) => api.post<{ data: AnnualReview }>('/reviews', dto).then(d),
     update: (id: string, dto: UpdateReviewDto) => api.patch<{ data: AnnualReview }>(`/reviews/${id}`, dto).then(d),
     remove: (id: string) => api.delete(`/reviews/${id}`),
+  },
+
+  // Payroll batch
+  payroll: {
+    list:      () => api.get<{ data: Payroll[] }>('/payroll').then(d),
+    get:       (id: string) => api.get<{ data: Payroll }>(`/payroll/${id}`).then(d),
+    calculate: (year: number, month: number) =>
+                 api.post<{ data: Payroll }>('/payroll/calculate', { year, month }).then(d),
+    post:      (id: string) =>
+                 api.post<{ data: { pieceId: string; reference: string; lines: number } }>(`/payroll/${id}/post`).then(d),
+    pay:       (id: string, treasuryAccount: string) =>
+                 api.post<{ data: { pieceId: string; paid: number; totalPaid: number; summary: Record<string, number> } }>(`/payroll/${id}/pay`, { treasuryAccount }).then(d),
+    send:      (id: string) =>
+                 api.post<{ data: { sent: number; skipped: number; total: number } }>(`/payroll/${id}/send`).then(d),
   },
 
   // Schedule

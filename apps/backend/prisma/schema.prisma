@@ -203,9 +203,13 @@ model Company {
   vatDeclarations  VatDeclaration[]
   workSchedules    WorkSchedule[]
   agences          Agence[]
+  loans            Loan[]
+  payrolls         Payroll[]
 
   // Security policy (JSON blob, per-company)
   securityPolicy Json? @map("security_policy")
+  // Paramètres écritures de paie (compte 641, 431, 447, 521 par défaut + journal PAY)
+  payrollConfig  Json? @map("payroll_config")
 
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
@@ -353,6 +357,7 @@ model FiscalYear {
   expenses        Expense[]
   purchaseOrders  PurchaseOrder[]
   vatDeclarations VatDeclaration[]
+  payrolls        Payroll[]
 
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
@@ -378,12 +383,15 @@ model Client {
   companyId String  @map("company_id")
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  nom       String  @map("name")
-  email     String?
-  telephone String? @map("phone")
-  adresse   String? @map("address")
-  siren     String?
-  isActive  Boolean @default(true) @map("is_active")
+  nom            String  @map("name")
+  email          String?
+  telephone      String? @map("phone")
+  adresse        String? @map("address")
+  siren          String?
+  // Compte comptable client (411xxx) — auto-généré ou saisi à la création.
+  // Synchronisé avec AccountPlan via ensureAccountInPlan.
+  accountingCode String? @map("accounting_code")
+  isActive       Boolean @default(true) @map("is_active")
 
   invoices          Invoice[]
   quotes            Quote[]
@@ -423,6 +431,10 @@ model Invoice {
   paidAt             DateTime?     @map("paid_at")
   description        String?       @map("notes")
   conditionsPaiement String?       @map("conditions_paiement")
+  // Comptabilisation : pièce générée dans le journal VTE quand statut → SENT
+  posted             Boolean       @default(false)
+  postedPieceId      String?       @map("posted_piece_id")
+  postedAt           DateTime?     @map("posted_at")
 
   lines              InvoiceLine[]
   quoteId            String?          @unique @map("quote_id")
@@ -446,14 +458,20 @@ model InvoiceLine {
   id            String   @id @default(cuid())
   invoiceId     String   @map("invoice_id")
   invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  // Article référencé (déclenche mouvement de stock SORTIE_VENTE à la comptabilisation)
+  articleId     String?  @map("article_id")
+  article       Article? @relation(fields: [articleId], references: [id], onDelete: SetNull)
   description   String
   quantite      Decimal  @db.Decimal(10, 3) @default(1)
   unite         String   @default("pièce")
   prixUnitaireHT Decimal @db.Decimal(12, 2) @map("prix_unitaire_ht")
   tvaRate       Decimal  @db.Decimal(5, 2) @default(0) @map("tva_rate")
   montantHT     Decimal  @db.Decimal(12, 2) @map("montant_ht")
+  // Compte de produit (7xx) — si nul, prend Article.compteVente puis 706 par défaut
+  compteVente   String?  @map("compte_vente")
 
   @@index([invoiceId])
+  @@index([articleId])
   @@map("invoice_lines")
 }
 
@@ -546,10 +564,25 @@ model Employee {
   nom            String         @map("last_name")
   prenom         String         @map("first_name")
   email          String
+  telephone      String?        @map("phone")
   contrat        EmploymentType @map("employment_type")
   salaireBrut    Decimal        @db.Decimal(12, 2) @map("gross_salary")
   dateEmbauche   DateTime       @map("start_date")
   dateFinContrat DateTime?      @map("end_date")
+
+  // ── Moyens de paiement ─────────────────────────────────────────────────
+  paymentMethod          PaymentMethod? @map("payment_method")
+  // Mobile Money (Orange Money, MTN MoMo, Express Union…)
+  mobileMoneyNumber      String?        @map("mobile_money_number")
+  mobileMoneyProvider    String?        @map("mobile_money_provider")  // ORANGE, MTN, EU, etc.
+  // Compte bancaire
+  bankName               String?        @map("bank_name")
+  bankAccountHolder      String?        @map("bank_account_holder")
+  bankAccountNumber      String?        @map("bank_account_number")    // RIB / IBAN
+  bankSwiftCode          String?        @map("bank_swift_code")
+
+  // ── Compte comptable de tiers (422xxxxx) ──────────────────────────────
+  accountingCode         String?        @map("accounting_code")
 
   annualReviews AnnualReview[]
   leaveRequests LeaveRequest[]
@@ -560,6 +593,117 @@ model Employee {
 
   @@index([companyId])
   @@map("employees")
+}
+
+enum PaymentMethod {
+  MOBILE_MONEY
+  BANK_TRANSFER
+  CASH
+  CHECK
+}
+
+// ─────────────────────────────────────────
+// PAIE — Lots mensuels
+// ─────────────────────────────────────────
+
+enum PayrollStatus {
+  DRAFT       // Calculée, non comptabilisée
+  POSTED      // Écritures journal PAY générées
+  PAID        // Paiements effectués + trésorerie mouvementée
+  SENT        // Bulletins envoyés par email
+  CANCELLED
+}
+
+enum PayslipStatus {
+  PENDING
+  PAID
+  FAILED
+}
+
+model Payroll {
+  id                  String        @id @default(cuid())
+  companyId           String        @map("company_id")
+  company             Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fiscalYearId        String?       @map("fiscal_year_id")
+  fiscalYear          FiscalYear?   @relation(fields: [fiscalYearId], references: [id])
+
+  // Période traitée
+  month               Int           // 1-12
+  year                Int
+
+  status              PayrollStatus @default(DRAFT)
+
+  // Comptabilisation
+  postedPieceId       String?       @map("posted_piece_id")
+  postedAt            DateTime?     @map("posted_at")
+  journalCode         String        @default("PAY") @map("journal_code")
+
+  // Paiements
+  treasuryAccount     String?       @map("treasury_account")   // 521xxxxx par défaut
+  paidAt              DateTime?     @map("paid_at")
+
+  // Email
+  sentAt              DateTime?     @map("sent_at")
+
+  // Totaux
+  totalGross          Decimal       @db.Decimal(15, 2) @default(0) @map("total_gross")
+  totalNet            Decimal       @db.Decimal(15, 2) @default(0) @map("total_net")
+  totalCnpsSal        Decimal       @db.Decimal(15, 2) @default(0) @map("total_cnps_sal")
+  totalCnpsEmp        Decimal       @db.Decimal(15, 2) @default(0) @map("total_cnps_emp")
+  totalIrpp           Decimal       @db.Decimal(15, 2) @default(0) @map("total_irpp")
+  totalCac            Decimal       @db.Decimal(15, 2) @default(0) @map("total_cac")
+  employeesCount      Int           @default(0) @map("employees_count")
+
+  notes               String?
+  createdBy           String?       @map("created_by")
+
+  payslips            Payslip[]
+
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
+
+  @@unique([companyId, year, month])
+  @@index([companyId, status])
+  @@map("payrolls")
+}
+
+model Payslip {
+  id                  String         @id @default(cuid())
+  payrollId           String         @map("payroll_id")
+  payroll             Payroll        @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+
+  employeeId          String         @map("employee_id")
+  employeeName        String         @map("employee_name")
+  employeeEmail       String?        @map("employee_email")
+  employmentType     EmploymentType  @map("employment_type")
+
+  // Données du mois
+  daysWorked          Int            @default(30) @map("days_worked")
+  daysAbsentUnpaid    Int            @default(0) @map("days_absent_unpaid")
+
+  // Calculs (denormalisés)
+  grossSalary         Decimal        @db.Decimal(15, 2) @map("gross_salary")
+  cnpsSal             Decimal        @db.Decimal(15, 2) @default(0) @map("cnps_sal")
+  cnpsEmp             Decimal        @db.Decimal(15, 2) @default(0) @map("cnps_emp")
+  irpp                Decimal        @db.Decimal(15, 2) @default(0)
+  cac                 Decimal        @db.Decimal(15, 2) @default(0)
+  netToPay            Decimal        @db.Decimal(15, 2) @map("net_to_pay")
+  totalCost           Decimal        @db.Decimal(15, 2) @map("total_cost")
+
+  // Paiement
+  paymentMethod       PaymentMethod? @map("payment_method")
+  paymentRef          String?        @map("payment_ref")
+  paymentStatus       PayslipStatus  @default(PENDING) @map("payment_status")
+  paidAt              DateTime?      @map("paid_at")
+
+  // Communication
+  emailSentAt         DateTime?      @map("email_sent_at")
+
+  createdAt           DateTime       @default(now()) @map("created_at")
+
+  @@unique([payrollId, employeeId])
+  @@index([employeeId])
+  @@map("payslips")
 }
 
 enum EmploymentType {
@@ -591,6 +735,9 @@ model JournalEntry {
   lettrage     String?
   invoiceId    String?    @map("invoice_id")
   expenseId    String?    @map("expense_id")
+  // Pièce justificative — toutes les lignes d'un même pieceId partagent la même PJ
+  pieceUrl     String?    @map("piece_url")
+  pieceName    String?    @map("piece_name")
   createdBy    String?    @map("created_by")
 
   createdAt    DateTime   @default(now()) @map("created_at")
@@ -786,9 +933,15 @@ model Article {
   isActive         Boolean      @default(true) @map("is_active")
   compteAchat      String?      @map("compte_achat")
   compteVente      String?      @map("compte_vente")
+  // Compte de stock (classe 3x) — défaut 311 (marchandises) pour les articles stockés
+  compteStock      String?      @map("compte_stock")
+  // Compte de variation de stock (603x ou 73x) — défaut 6031 pour merchandises
+  compteVariationStock String?  @map("compte_variation_stock")
 
   mouvements       StockMouvement[]
   lotsFifo         StockLot[]
+  invoiceLines     InvoiceLine[]
+  purchaseOrderLines PurchaseOrderLine[]
 
   createdAt        DateTime     @default(now()) @map("created_at")
   updatedAt        DateTime     @updatedAt @map("updated_at")
@@ -1135,6 +1288,11 @@ enum PurchaseOrderStatus {
   CANCELLED
 }
 
+enum PurchaseDocumentType {
+  ORDER     // Bon de commande — généré par nous (référence auto-incrémentée)
+  INVOICE   // Facture d'achat — reçue du fournisseur (référence saisie manuellement)
+}
+
 model PurchaseOrder {
   id           String              @id @default(cuid())
   companyId    String              @map("company_id")
@@ -1145,7 +1303,12 @@ model PurchaseOrder {
   fiscalYear   FiscalYear?         @relation(fields: [fiscalYearId], references: [id])
 
   reference    String              @map("number")
-  fournisseur  String
+  // Type de document : ORDER = bon de commande (généré par nous), INVOICE = facture d'achat
+  // (reçue du fournisseur — référence saisie manuellement, pas d'auto-incrément)
+  documentType PurchaseDocumentType @default(ORDER) @map("document_type")
+  fournisseur  String              // Nom textuel du fournisseur
+  // Compte comptable fournisseur (401xxx) — auto-créé dans AccountPlan si nouveau
+  supplierAccount String?          @map("supplier_account")
   objet        String
   status       PurchaseOrderStatus @default(DRAFT)
   date         DateTime
@@ -1155,6 +1318,13 @@ model PurchaseOrder {
   montantTTC   Decimal             @db.Decimal(12, 2) @map("montant_ttc")
   conditionsPaiement String?       @map("conditions_paiement")
   notes        String?
+  // Pièce justificative — fichier de la facture fournisseur uploadée ultérieurement
+  pieceUrl     String?             @map("piece_url")
+  pieceName    String?             @map("piece_name")
+  // Comptabilisation : pièce générée dans le journal ACH quand validée
+  posted          Boolean          @default(false)
+  postedPieceId   String?          @map("posted_piece_id")
+  postedAt        DateTime?        @map("posted_at")
 
   lines        PurchaseOrderLine[]
   createdAt    DateTime            @default(now()) @map("created_at")
@@ -1170,14 +1340,20 @@ model PurchaseOrderLine {
   id             String        @id @default(cuid())
   orderId        String        @map("order_id")
   order          PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // Article référencé (déclenche mouvement de stock ENTREE_ACHAT à la comptabilisation)
+  articleId      String?       @map("article_id")
+  article        Article?      @relation(fields: [articleId], references: [id], onDelete: SetNull)
   reference      String?
   designation    String
   quantite       Decimal       @db.Decimal(10, 3)
   unite          String        @default("pièce")
   prixUnitaireHT Decimal       @db.Decimal(12, 2) @map("prix_unitaire_ht")
   montantHT      Decimal       @db.Decimal(12, 2) @map("montant_ht")
+  // Compte de charge (6xx) — si nul, prend Article.compteAchat puis 604 par défaut
+  compteAchat    String?       @map("compte_achat")
 
   @@index([orderId])
+  @@index([articleId])
   @@map("purchase_order_lines")
 }
 
@@ -1836,4 +2012,58 @@ model PersonalCompte {
 
   @@index([userId])
   @@map("personal_comptes")
+}
+
+// ─────────────────────────────────────────
+// COMPTABILITÉ — EMPRUNTS (classe 16)
+// ─────────────────────────────────────────
+
+enum LoanAmortType {
+  CONSTANT_PAYMENT      // mensualité constante (annuité française)
+  CONSTANT_PRINCIPAL    // amortissement linéaire
+  IN_FINE               // remboursement du capital à l'échéance
+  BULLET                // remboursement unique (capital + intérêts à l'échéance)
+}
+
+enum LoanStatus {
+  ACTIVE
+  REPAID
+  IN_DEFAULT
+}
+
+// Modèle d'emprunt (compte SYSCOHADA 16x / PCG 16x).
+// Le tableau d'amortissement est calculé à la volée à partir des paramètres.
+model Loan {
+  id               String        @id @default(cuid())
+  companyId        String        @map("company_id")
+  company          Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  reference        String        // identifiant interne ex : EMP-2026-001
+  name             String        // libellé court
+  lender           String        // prêteur (banque, organisme)
+
+  principal        Decimal       @db.Decimal(15, 2)  // capital emprunté
+  rate             Decimal       @db.Decimal(7, 4)   // taux annuel nominal (0.085 = 8.5 %)
+  durationMonths   Int           @map("duration_months")
+
+  startDate        DateTime      @map("start_date")
+  firstPaymentDate DateTime      @map("first_payment_date")
+
+  amortType        LoanAmortType @default(CONSTANT_PAYMENT) @map("amort_type")
+  currency         String        @default("XAF")
+
+  account          String?       // compte comptable lié (ex : 162000000)
+  bankAccount      String?       @map("bank_account") // compte trésorerie associé (ex : 521000000)
+  interestAccount  String?       @map("interest_account") // compte de charge (ex : 671000000)
+
+  status           LoanStatus    @default(ACTIVE)
+  notes            String?       @db.Text
+
+  createdBy        String?       @map("created_by")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+
+  @@unique([companyId, reference])
+  @@index([companyId, status])
+  @@map("loans")
 }

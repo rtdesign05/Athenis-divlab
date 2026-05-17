@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type Article, type ArticleUnite } from '@/contexts/GestionContext'
+import { CompteCombobox } from '@/components/accounting/CompteCombobox'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -117,6 +119,8 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
     agence:      initial?.agence      ?? agenceNom ?? 'Siège',
     description: initial?.description ?? '',
     actif:       initial?.actif       ?? true,
+    compteAchat: initial?.compteAchat ?? '',
+    compteVente: initial?.compteVente ?? '',
   })
 
   const set    = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -201,6 +205,41 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
               <textarea value={form.description} onChange={set('description')} rows={2}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 resize-none" />
             </div>
+
+            {/* Comptabilité — comptes mouvementés à la facturation */}
+            <div className="col-span-2 mt-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-[11px] text-blue-800 leading-relaxed">
+              <p className="font-semibold mb-1">💡 Comptabilité SYSCOHADA</p>
+              <ul className="ml-3 list-disc space-y-0.5">
+                <li><strong>Compte de charge</strong> (classe 6) : utilisé dans les factures d'achat</li>
+                <li><strong>Compte de produit</strong> (classe 7) : utilisé dans les factures de vente</li>
+                <li>Si vide, défauts <code className="bg-blue-100 px-1 rounded">601</code> / <code className="bg-blue-100 px-1 rounded">701</code> appliqués</li>
+              </ul>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Compte de charge <span className="text-[10px] font-normal text-gray-400">(achats)</span>
+              </label>
+              <CompteCombobox
+                value={form.compteAchat}
+                onChange={v => setForm(f => ({ ...f, compteAchat: v }))}
+                onSelect={c => setForm(f => ({ ...f, compteAchat: c.code }))}
+                filterClasses={['6']}
+                placeholder="601 — Achats marchandises (par défaut)"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Compte de produit <span className="text-[10px] font-normal text-gray-400">(ventes)</span>
+              </label>
+              <CompteCombobox
+                value={form.compteVente}
+                onChange={v => setForm(f => ({ ...f, compteVente: v }))}
+                onSelect={c => setForm(f => ({ ...f, compteVente: c.code }))}
+                filterClasses={['7']}
+                placeholder="701 — Ventes marchandises (par défaut)"
+              />
+            </div>
+
             <div className="col-span-2 flex items-center gap-2">
               <input id="actif" type="checkbox" checked={form.actif} onChange={setBool('actif')}
                 className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500" />
@@ -242,6 +281,8 @@ export function ArticlesPage() {
   const [showCatModal, setShowCatModal] = useState(false)
   const [editing,      setEditing]      = useState<Article | null>(null)
   const [confirmDel,   setConfirmDel]   = useState<string | null>(null)
+  const [dateFrom,     setDateFrom]     = useState('')
+  const [dateTo,       setDateTo]       = useState('')
 
   const visible = useMemo(() => {
     let list = agenceNom ? articles.filter(a => a.agence === agenceNom) : articles
@@ -256,8 +297,10 @@ export function ArticlesPage() {
         a.description.toLowerCase().includes(q),
       )
     }
+    list = filterByDateRange(list, a => a.createdAt, dateFrom, dateTo)
     return list
-  }, [articles, agenceNom, catFilter, actifFilter, search])
+  }, [articles, agenceNom, catFilter, actifFilter, search, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   const enRupture     = visible.filter(a => a.stock <= a.stockMin && a.categorie !== 'Service').length
   const valeurStockHT = visible.reduce((s, a) => s + a.prixVenteHT * a.stock, 0)
@@ -328,7 +371,7 @@ export function ArticlesPage() {
 
       {/* Tableau */}
       <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5 flex-wrap">
           <div className="relative flex-1 min-w-[160px]">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -341,6 +384,13 @@ export function ArticlesPage() {
             <option value="actif">Actifs seulement</option>
             <option value="inactif">Inactifs seulement</option>
           </select>
+          <PeriodFilter
+            label="Créé entre"
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+            count={isFiltered ? `${visible.length} résultat${visible.length > 1 ? 's' : ''}` : null}
+          />
           <button onClick={() => setShowModal(true)}
             className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800 shrink-0">
             + Nouvel article
@@ -364,6 +414,7 @@ export function ArticlesPage() {
                   <th className="px-4 py-2.5 text-right">Prix vente HT</th>
                   <th className="px-4 py-2.5 text-right">Prix achat HT</th>
                   <th className="px-4 py-2.5 text-center">Stock</th>
+                  <th className="px-4 py-2.5 text-center" title="Comptes comptables (charge / produit)">Comptes</th>
                   <th className="px-4 py-2.5 text-center">Statut</th>
                   <th className="px-4 py-2.5"></th>
                 </tr>
@@ -398,6 +449,22 @@ export function ArticlesPage() {
                             {rupture && <span className="mr-1">⚠️</span>}{a.stock}
                           </span>
                         )}
+                      </td>
+                      <td className="px-4 py-2.5 text-center">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span
+                            title={a.compteAchat ? `Compte de charge : ${a.compteAchat}` : 'Compte de charge non défini — défaut 601'}
+                            className={`font-mono text-[10px] rounded px-1.5 py-0.5 ${a.compteAchat ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-300'}`}
+                          >
+                            🛒 {a.compteAchat ?? '—'}
+                          </span>
+                          <span
+                            title={a.compteVente ? `Compte de produit : ${a.compteVente}` : 'Compte de produit non défini — défaut 701'}
+                            className={`font-mono text-[10px] rounded px-1.5 py-0.5 ${a.compteVente ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-300'}`}
+                          >
+                            💰 {a.compteVente ?? '—'}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${a.actif ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>

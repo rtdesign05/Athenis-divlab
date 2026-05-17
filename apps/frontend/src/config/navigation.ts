@@ -35,6 +35,7 @@ export const APP_NAV_SECTIONS: NavSection[] = [
       { label: 'Balance',          path: '/app/accounting/balance',             icon: '⚖️' },
       { label: 'Comptes',          path: '/app/accounting/comptes',             icon: '🗂️' },
       { label: 'Immobilisations',  path: '/app/accounting/immobilisations',     icon: '🏗️' },
+      { label: 'Emprunts',         path: '/app/accounting/emprunts',            icon: '💰' },
       { label: 'Révision',         path: '/app/accounting/revision',            icon: '🔍' },
       { label: 'États financiers', path: '/app/accounting/etats-financiers',    icon: '📊' },
     ],
@@ -137,6 +138,7 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
     { label: 'Saisie',               to: '/app/accounting/journal',              end: true },
     { label: 'À lettrer',            to: '/app/accounting/journal/lettrage' },
     { label: 'Extournes',            to: '/app/accounting/journal/extournes' },
+    { label: 'Régularisations',      to: '/app/accounting/journal/regularisations' },
   ],
   '/app/accounting/immobilisations': [
     { label: 'Vue d\'ensemble',      to: '/app/accounting/immobilisations',                  end: true },
@@ -158,7 +160,8 @@ export const CONTEXTUAL_TABS: Record<string, ContextualTab[]> = {
     { label: 'Historique',           to: '/app/hr/conges/historique' },
   ],
   '/app/hr/paie': [
-    { label: 'Bulletins',            to: '/app/hr/paie',                         end: true },
+    { label: 'Lot mensuel',          to: '/app/hr/paie',                         end: true },
+    { label: 'Bulletin individuel',  to: '/app/hr/paie/bulletin' },
     { label: 'Virements',            to: '/app/hr/paie/virements' },
     { label: 'Déclarations sociales', to: '/app/hr/paie/declarations' },
   ],

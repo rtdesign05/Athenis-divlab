@@ -350,6 +350,23 @@ settingsRouter.put(
   },
 )
 
+// ── Payroll config (paramètres écritures de paie) ─────────────────────────────
+
+settingsRouter.get('/payroll-config', async (req, res, next) => {
+  try {
+    const data = await svc.getPayrollConfig(getCompanyId(req))
+    res.json({ success: true, data })
+  } catch (e) { next(e) }
+})
+
+settingsRouter.put('/payroll-config', async (req, res, next) => {
+  try {
+    requireAdmin(req)
+    const data = await svc.updatePayrollConfig(getCompanyId(req), req.body)
+    res.json({ success: true, data })
+  } catch (e) { next(e) }
+})
+
 settingsRouter.get('/security/audit', async (req, res, next) => {
   try {
     requireAdmin(req)

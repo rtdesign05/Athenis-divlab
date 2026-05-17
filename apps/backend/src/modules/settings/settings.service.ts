@@ -614,6 +614,61 @@ export async function updateSecurityPolicy(companyId: string, policy: Record<str
   return merged
 }
 
+// ── Paramètres écritures de paie ──────────────────────────────────────────────
+//
+// Conformément à SYSCOHADA / PCG, la paie utilise :
+//   • Journal PAY (à paramétrer)
+//   • Compte de charges salariales — 641 par défaut (Rémunérations directes versées)
+//   • Compte cotisations sociales — 431 par défaut (CNPS/CFC/FNE part sal + pat)
+//   • Compte impôts retenus — 447 par défaut (IRPP + CAC)
+//   • Compte trésorerie — 521 par défaut (Banque locale)
+
+const DEFAULT_PAYROLL_CONFIG = {
+  journalCode:         'PAY',
+  chargeAccount:       '641',  // Rémunérations directes versées
+  socialAccount:       '431',  // Cotisations CNPS / CFC / FNE
+  taxAccount:          '447',  // IRPP + CAC
+  treasuryAccount:     '521',  // Banques
+  // Comptes secondaires (utilisés si tu veux séparer les écritures par nature)
+  socialAccountPersonal:    '4311',  // CNPS part salariale
+  socialAccountEmployer:    '4312',  // CNPS part patronale
+  taxAccountIrpp:           '4471',  // IRPP
+  taxAccountCac:            '4472',  // CAC
+  splitContributions:       false,    // si true, utilise les comptes secondaires
+}
+
+export async function getPayrollConfig(companyId: string) {
+  const company = await prisma.company.findUnique({
+    where:  { id: companyId },
+    select: { payrollConfig: true },
+  })
+  if (!company) throw new AppError('Entreprise introuvable', 404, 'NOT_FOUND')
+  const stored = (company.payrollConfig ?? {}) as Record<string, unknown>
+  return { ...DEFAULT_PAYROLL_CONFIG, ...stored }
+}
+
+export async function updatePayrollConfig(companyId: string, config: Record<string, unknown>) {
+  const allowed = new Set(Object.keys(DEFAULT_PAYROLL_CONFIG))
+  const sanitised = Object.fromEntries(
+    Object.entries(config).filter(([k]) => allowed.has(k)),
+  )
+
+  const company = await prisma.company.findUnique({
+    where:  { id: companyId },
+    select: { payrollConfig: true },
+  })
+  if (!company) throw new AppError('Entreprise introuvable', 404, 'NOT_FOUND')
+
+  const current = (company.payrollConfig ?? {}) as Record<string, unknown>
+  const merged  = { ...DEFAULT_PAYROLL_CONFIG, ...current, ...sanitised }
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data:  { payrollConfig: merged },
+  })
+  return merged
+}
+
 // ── Audit Logs ────────────────────────────────────────────────────────────────
 
 export async function getAuditLogs(companyId: string, limit = 50) {

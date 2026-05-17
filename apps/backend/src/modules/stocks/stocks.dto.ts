@@ -28,6 +28,8 @@ export const CreateArticleDto = z.object({
   emplacement:      z.string().max(100).optional(),
   compteAchat:      z.string().max(20).optional(),
   compteVente:      z.string().max(20).optional(),
+  compteStock:           z.string().max(20).optional(),
+  compteVariationStock:  z.string().max(20).optional(),
 })
 
 export const UpdateArticleDto = CreateArticleDto.omit({ stockInitial: true }).partial()

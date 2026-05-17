@@ -7,6 +7,9 @@ import { printDocument } from '@/lib/printDocument'
 import { generateQRDataUrl, buildFactureAchatQR } from '@/lib/qrCode'
 import { ScanAiModal } from '@/features/scan/ScanAiModal'
 import { uploadFileForScan, type ScannedInvoice } from '@/services/scanApi'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
+import { ArticleCombobox } from '@/components/gestion/ArticleCombobox'
+import { attachmentsApi } from '@/services/attachmentsApi'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -252,6 +255,15 @@ function ImportModal({ defaultVat, defaultAgence, onImport, onClose }: ImportMod
 
 // ── Modal nouvelle facture achat ──────────────────────────────────────────────
 
+interface LineForm {
+  id:             string
+  articleId:      string
+  description:    string
+  quantite:       string
+  unite:          string
+  prixUnitaireHT: string
+}
+
 interface ModalFactureAchatProps {
   achats:         { id: string; fournisseur: string; agence: string; montant: number }[]
   agenceNom:      string | null
@@ -263,38 +275,36 @@ interface ModalFactureAchatProps {
 
 function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onSave, onClose }: ModalFactureAchatProps) {
   const today = new Date().toISOString().slice(0, 10)
-
-  const availableAchats = useMemo(
-    () => agenceNom ? achats.filter(a => a.agence === agenceNom) : achats,
-    [achats, agenceNom],
-  )
+  const { articles, fournisseurs } = useGestion()
+  // achats prop reste passé pour compat (lien éventuel à un bon de commande dans le futur)
+  void achats
 
   const [showScan, setShowScan] = useState(false)
+  const [showNewFournisseur, setShowNewFournisseur] = useState(false)
+  const [newFournisseurNom, setNewFournisseurNom] = useState('')
+  /** Si true → la facture est immédiatement validée à la création
+   *  (statut Validée → comptabilisation auto journal ACH + mouvement stock) */
+  const [validateOnCreate, setValidateOnCreate] = useState(true)
 
   const [form, setForm] = useState(() => {
     const base = {
-      commande:    availableAchats[0]?.id ?? '',
-      fournisseur: availableAchats[0]?.fournisseur ?? '',
-      agence:      agenceNom ?? availableAchats[0]?.agence ?? 'Siège',
-      date:        today,
-      echeance:    '',
-      montantHT:   availableAchats[0]?.montant ? Math.round(availableAchats[0].montant / (1 + defaultVatRate / 100)) : 0,
-      tva:         defaultVatRate,
+      numeroFacture: '',                                            // numéro saisi par l'utilisateur (du fournisseur)
+      commande:    '',
+      fournisseur: initialScan?.vendorName ?? '',
+      agence:      agenceNom ?? 'Siège',
+      date:        initialScan?.invoiceDate ?? today,
+      echeance:    initialScan?.dueDate     ?? '',
+      tva:         initialScan?.taxRate     ?? defaultVatRate,
       statut:      'À valider' as FactureAchatStatut,
-      notes:       '',
+      notes:       [initialScan?.vendorNiu ? `NIU : ${initialScan.vendorNiu}` : '', initialScan?.notes ?? '']
+                     .filter(Boolean).join(' · '),
     }
-    if (!initialScan) return base
-    return {
-      ...base,
-      fournisseur: initialScan.vendorName  ?? base.fournisseur,
-      date:        initialScan.invoiceDate ?? base.date,
-      echeance:    initialScan.dueDate     ?? base.echeance,
-      montantHT:   initialScan.subtotal    != null ? Math.round(initialScan.subtotal) : base.montantHT,
-      tva:         initialScan.taxRate     ?? base.tva,
-      notes:       [initialScan.vendorNiu ? `NIU : ${initialScan.vendorNiu}` : '', initialScan.notes ?? '']
-                     .filter(Boolean).join(' · ') || base.notes,
-    }
+    return base
   })
+
+  const [lignes, setLignes] = useState<LineForm[]>([
+    { id: `ln-${Date.now()}`, articleId: '', description: '', quantite: '1', unite: 'pièce', prixUnitaireHT: '' },
+  ])
 
   /** Pré-remplissage depuis ScanAI */
   function applyScan(data: ScannedInvoice) {
@@ -303,43 +313,89 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
       fournisseur: data.vendorName  ?? f.fournisseur,
       date:        data.invoiceDate ?? f.date,
       echeance:    data.dueDate     ?? f.echeance,
-      montantHT:   data.subtotal    != null ? Math.round(data.subtotal) : f.montantHT,
       tva:         data.taxRate     ?? f.tva,
       notes:       [data.vendorNiu ? `NIU : ${data.vendorNiu}` : '', data.notes ?? '']
                      .filter(Boolean).join(' · ') || f.notes,
     }))
+    // Si le scan donne un total HT, créer une ligne par défaut
+    if (data.subtotal != null && data.subtotal > 0) {
+      setLignes([{
+        id: `ln-${Date.now()}`,
+        articleId: '',
+        description: data.notes ?? 'Facture importée',
+        quantite: '1', unite: 'pièce',
+        prixUnitaireHT: String(Math.round(data.subtotal)),
+      }])
+    }
   }
 
-  const montantTTC = useMemo(
-    () => Math.round(form.montantHT * (1 + form.tva / 100)),
-    [form.montantHT, form.tva],
+  // Totaux calculés depuis les lignes
+  const montantHT = useMemo(
+    () => lignes.reduce((s, l) => s + (parseFloat(l.quantite) || 0) * (parseFloat(l.prixUnitaireHT) || 0), 0),
+    [lignes],
   )
+  const montantTTC = useMemo(() => Math.round(montantHT * (1 + form.tva / 100)), [montantHT, form.tva])
 
-  function handleCommandeChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const cmd = availableAchats.find(a => a.id === e.target.value)
-    setForm(f => ({
-      ...f,
-      commande:    e.target.value,
-      fournisseur: cmd?.fournisseur ?? f.fournisseur,
-      agence:      agenceNom ?? cmd?.agence ?? f.agence,
-      montantHT:   cmd ? Math.round(cmd.montant / (1 + f.tva / 100)) : f.montantHT,
-    }))
+  function updateLigne(idx: number, patch: Partial<LineForm>) {
+    setLignes(prev => prev.map((l, i) => i === idx ? { ...l, ...patch } : l))
   }
+  function addLigne() {
+    setLignes(prev => [...prev, { id: `ln-${Date.now()}-${prev.length}`, articleId: '', description: '', quantite: '1', unite: 'pièce', prixUnitaireHT: '' }])
+  }
+  function removeLigne(idx: number) {
+    setLignes(prev => prev.filter((_, i) => i !== idx))
+  }
+  function selectArticle(idx: number, art: import('@/contexts/GestionContext').Article) {
+    updateLigne(idx, {
+      articleId: art.id,
+      description: art.nom,
+      unite: art.unite,
+      prixUnitaireHT: String(art.prixAchatHT || art.prixVenteHT),
+    })
+  }
+
+  // Validation
+  const lineErrors: { idx: number; msg: string }[] = []
+  lignes.forEach((l, idx) => {
+    const qty = parseFloat(l.quantite) || 0
+    const pu  = parseFloat(l.prixUnitaireHT) || 0
+    if (qty <= 0)            lineErrors.push({ idx, msg: 'Quantité requise' })
+    else if (!l.articleId)   lineErrors.push({ idx, msg: 'Article non sélectionné' })
+    else if (pu <= 0)        lineErrors.push({ idx, msg: 'Prix unitaire requis' })
+  })
+  const hasErrors = lineErrors.length > 0
+                 || !form.fournisseur.trim()
+                 || !form.numeroFacture.trim()
+                 || !form.echeance
+                 || lignes.length === 0
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.fournisseur.trim() || form.montantHT <= 0 || !form.echeance) return
+    if (hasErrors) return
+    // Si "Valider et comptabiliser" est coché, on force le statut 'Validée'
+    // → déclenche le posting backend (journal ACH + mouvement stock)
+    const statut: FactureAchatStatut = validateOnCreate ? 'Validée' : form.statut
     onSave({
-      commande:    form.commande,
+      // Le numéro de facture fournisseur est stocké dans 'commande' (sert de reference backend)
+      commande:    form.numeroFacture.trim(),
       fournisseur: form.fournisseur.trim(),
       agence:      form.agence,
       date:        form.date,
       echeance:    form.echeance,
-      montantHT:   form.montantHT,
+      montantHT,
       tva:         form.tva,
       montantTTC,
-      statut:      form.statut,
-      lignes:      [],
+      statut,
+      lignes:      lignes.map((l, i) => ({
+        id:             `l${i + 1}`,
+        ...(l.articleId ? { articleId: l.articleId } : {}),
+        description:    l.description,
+        quantite:       parseFloat(l.quantite) || 0,
+        unite:          l.unite,
+        prixUnitaireHT: parseFloat(l.prixUnitaireHT) || 0,
+        tvaRate:        form.tva,
+        montantHT:      (parseFloat(l.quantite) || 0) * (parseFloat(l.prixUnitaireHT) || 0),
+      })),
       notes:       form.notes.trim(),
     })
   }
@@ -353,8 +409,8 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
       />
     )}
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+      <div className="w-full max-w-4xl rounded-2xl bg-white shadow-xl max-h-[90vh] flex flex-col">
+        <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-900">
             {initialScan ? '🤖 Vérification OCR' : 'Nouvelle facture achat'}
           </h2>
@@ -380,32 +436,21 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
             </p>
           </div>
         )}
-        <form onSubmit={handleSubmit} className="px-5 py-4 space-y-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Commande fournisseur</label>
-            {availableAchats.length > 0 ? (
-              <select value={form.commande} onChange={handleCommandeChange}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                <option value="">— saisie libre —</option>
-                {availableAchats.map(a => (
-                  <option key={a.id} value={a.id}>{a.id} — {a.fournisseur}</option>
-                ))}
-              </select>
-            ) : (
-              <input value={form.commande}
-                onChange={e => setForm(f => ({ ...f, commande: e.target.value }))}
-                placeholder="ACH-xxxx"
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Fournisseur *</label>
-            <input value={form.fournisseur}
-              onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))} required
-              placeholder="Nom du fournisseur"
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          {/* Numéro fournisseur + Date + Échéance */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">N° facture fournisseur *</label>
+              <input
+                value={form.numeroFacture}
+                onChange={e => setForm(f => ({ ...f, numeroFacture: e.target.value }))}
+                required
+                placeholder="ex. F2026-1234"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500/30"
+              />
+              <p className="mt-1 text-[10px] text-gray-400">À reporter du numéro fourni par le fournisseur — pas d'auto-incrément</p>
+            </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Date facture *</label>
               <input type="date" value={form.date}
@@ -418,22 +463,145 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
                 onChange={e => setForm(f => ({ ...f, echeance: e.target.value }))} required
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Montant HT (XAF) *</label>
-              <input type="number" min={1} value={form.montantHT}
-                onChange={e => setForm(f => ({ ...f, montantHT: Number(e.target.value) }))} required
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+          </div>
+
+          {/* Fournisseur — sélecteur + bouton "Nouveau" */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Fournisseur *</label>
+            {!showNewFournisseur ? (
+              <div className="flex gap-2">
+                <select value={form.fournisseur}
+                  onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))}
+                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
+                  <option value="">— Sélectionner un fournisseur —</option>
+                  {fournisseurs
+                    .filter(fo => !agenceNom || fo.agence === agenceNom)
+                    .map(fo => (
+                      <option key={fo.id} value={fo.nom}>{fo.nom}</option>
+                    ))}
+                </select>
+                <button type="button"
+                  onClick={() => { setShowNewFournisseur(true); setNewFournisseurNom('') }}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-green-700 hover:bg-green-50">
+                  + Nouveau
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={newFournisseurNom}
+                  onChange={e => setNewFournisseurNom(e.target.value)}
+                  placeholder="Nom du nouveau fournisseur"
+                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                />
+                <button type="button"
+                  onClick={() => {
+                    const nom = newFournisseurNom.trim()
+                    if (nom) {
+                      setForm(f => ({ ...f, fournisseur: nom }))
+                      setShowNewFournisseur(false)
+                    }
+                  }}
+                  className="rounded-lg bg-green-700 px-3 py-2 text-xs font-medium text-white hover:bg-green-800">
+                  Ajouter
+                </button>
+                <button type="button"
+                  onClick={() => setShowNewFournisseur(false)}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">
+                  Annuler
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Lignes d'articles */}
+          <div>
+            <p className="text-xs font-semibold text-gray-600 mb-2">Lignes d'articles</p>
+            <div className="rounded-lg border border-gray-200 overflow-visible">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr className="text-left text-gray-500">
+                    <th className="px-3 py-2 font-semibold min-w-[340px]">Article</th>
+                    <th className="px-2 py-2 font-semibold w-16">Qté</th>
+                    <th className="px-2 py-2 font-semibold w-20">Unité</th>
+                    <th className="px-2 py-2 font-semibold w-24">P.U. HT</th>
+                    <th className="px-2 py-2 font-semibold w-24 text-right">Total HT</th>
+                    <th className="px-2 py-2 w-8" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {lignes.map((l, idx) => {
+                    const lineError = lineErrors.find(e => e.idx === idx)
+                    const qtyNum = parseFloat(l.quantite) || 0
+                    const total  = qtyNum * (parseFloat(l.prixUnitaireHT) || 0)
+                    return (
+                      <tr key={l.id} className={lineError ? 'bg-red-50/30' : ''}>
+                        <td className="px-3 py-1.5 pb-5">
+                          <ArticleCombobox
+                            articles={articles}
+                            selectedId={l.articleId}
+                            text={l.description}
+                            quantite={qtyNum}
+                            onSelect={art => selectArticle(idx, art)}
+                            onTextChange={t => updateLigne(idx, { description: t, articleId: '' })}
+                            placeholder="Tapez les premières lettres…"
+                            compact
+                          />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="number" min={0} step="any" value={l.quantite}
+                            onChange={e => updateLigne(idx, { quantite: e.target.value })}
+                            className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <select value={l.unite}
+                            onChange={e => updateLigne(idx, { unite: e.target.value })}
+                            className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30">
+                            {['pièce', 'kg', 'litre', 'm²', 'heure', 'forfait'].map(u => <option key={u}>{u}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="number" min={0} step="any" value={l.prixUnitaireHT}
+                            onChange={e => updateLigne(idx, { prixUnitaireHT: e.target.value })}
+                            placeholder="0"
+                            className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-medium text-gray-700 tabular-nums">
+                          {total.toLocaleString('fr-FR')}
+                        </td>
+                        <td className="px-2 py-1.5 text-center">
+                          <button type="button" onClick={() => removeLigne(idx)}
+                            className="text-gray-400 hover:text-red-500" title="Supprimer">🗑</button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <div className="border-t border-gray-100 px-3 py-2">
+                <button type="button" onClick={addLigne}
+                  className="text-xs text-green-700 font-medium hover:text-green-800">
+                  + Ajouter une ligne
+                </button>
+              </div>
             </div>
+          </div>
+
+          {/* Totaux + TVA */}
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">TVA (%)</label>
               <input type="number" min={0} max={100} step={0.01} value={form.tva}
                 onChange={e => setForm(f => ({ ...f, tva: Number(e.target.value) }))}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
             </div>
-          </div>
-          <div className="rounded-lg bg-gray-50 px-3 py-2 flex items-center justify-between">
-            <span className="text-xs text-gray-500">Montant TTC calculé</span>
-            <span className="text-sm font-semibold text-gray-900">{montantTTC.toLocaleString('fr-FR')} XAF</span>
+            <div className="col-span-2 flex items-center gap-4 rounded-lg bg-gray-50 px-3 py-2">
+              <span className="text-xs text-gray-500">Total HT</span>
+              <span className="text-sm font-medium text-gray-700 tabular-nums">{montantHT.toLocaleString('fr-FR')} XAF</span>
+              <span className="ml-auto text-xs text-gray-500">TTC</span>
+              <span className="text-sm font-semibold text-gray-900 tabular-nums">{montantTTC.toLocaleString('fr-FR')} XAF</span>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -464,16 +632,48 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
               placeholder="Remarques…"
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-green-500/30" />
           </div>
-          <div className="flex gap-2 pt-1">
+        </div>
+
+        <div className="shrink-0 border-t border-gray-100 px-5 py-4 space-y-3">
+          {lineErrors.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <span className="font-semibold">Impossible de créer la facture — </span>
+              {lineErrors.map(e => `Ligne ${e.idx + 1} : ${e.msg}`).join(' · ')}
+            </div>
+          )}
+          {!form.fournisseur.trim() && (
+            <p className="text-xs text-red-600">⚠ Sélectionner ou créer un fournisseur</p>
+          )}
+          {!form.numeroFacture.trim() && (
+            <p className="text-xs text-red-600">⚠ Saisir le N° de facture fournisseur</p>
+          )}
+          {/* Toggle Valider et comptabiliser */}
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={validateOnCreate}
+              onChange={e => setValidateOnCreate(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-green-700"
+            />
+            <span className="text-xs text-gray-700 leading-snug">
+              <strong className="text-gray-800">Valider et comptabiliser immédiatement</strong>
+              <span className="block text-[11px] text-gray-500">
+                La facture passe en statut <em>Validée</em> et sera enregistrée dans le journal des achats (ACH) avec mouvement de stock.
+                Décochez pour la conserver en <em>À valider</em> (modifiable, non comptabilisée).
+              </span>
+            </span>
+          </label>
+          <div className="flex gap-2">
             <button type="button" onClick={onClose}
               className="flex-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50">
               Annuler
             </button>
-            <button type="submit"
-              className="flex-1 rounded-lg bg-green-700 py-2 text-xs font-semibold text-white hover:bg-green-800">
-              Créer la facture
+            <button type="submit" disabled={hasErrors}
+              className="flex-1 rounded-lg bg-green-700 py-2 text-xs font-semibold text-white hover:bg-green-800 disabled:opacity-40 disabled:cursor-not-allowed">
+              {validateOnCreate ? 'Créer et comptabiliser' : 'Enregistrer en brouillon'}
             </button>
           </div>
+        </div>
         </form>
       </div>
     </div>
@@ -484,15 +684,18 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
 // ── Vue FACTURE ACHAT (document) ──────────────────────────────────────────────
 
 interface FAViewProps {
-  fa:          FactureAchat
-  companyName: string
-  address:     string
-  fmtCurrency: (n: number) => string
-  onClose:     () => void
+  fa:           FactureAchat
+  fournisseur?: { nom: string; adresse?: string; telephone?: string; email?: string; siren?: string; vatNumber?: string } | null
+  companyName:  string
+  address:      string
+  fmtCurrency:  (n: number) => string
+  onClose:      () => void
   onChangeStatut: (statut: FactureAchatStatut) => void
+  onAttachPiece?: (file: File) => Promise<void>
+  onRemovePiece?: () => Promise<void>
 }
 
-function FAView({ fa, companyName, address, fmtCurrency, onClose, onChangeStatut }: FAViewProps) {
+function FAView({ fa, fournisseur, companyName, address, fmtCurrency, onClose, onChangeStatut, onAttachPiece, onRemovePiece }: FAViewProps) {
   const printRef = useRef<HTMLDivElement>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   useEffect(() => {
@@ -536,6 +739,39 @@ function FAView({ fa, companyName, address, fmtCurrency, onClose, onChangeStatut
           </select>
         </div>
         <div className="flex items-center gap-2">
+          {/* Pièce justificative (PDF/image de la facture fournisseur) */}
+          {fa.pieceUrl ? (
+            <div className="flex items-center gap-1 rounded-lg border border-green-200 bg-green-50 px-2 py-1">
+              <a href={fa.pieceUrl} target="_blank" rel="noreferrer"
+                title={`Ouvrir : ${fa.pieceName ?? 'pièce'}`}
+                className="text-xs font-medium text-green-700 hover:underline">
+                📎 {fa.pieceName?.slice(0, 20) ?? 'Pièce jointe'}
+              </a>
+              {onRemovePiece && (
+                <button
+                  onClick={() => {
+                    if (confirm(`Retirer la pièce "${fa.pieceName}" ?`)) {
+                      void onRemovePiece()
+                    }
+                  }}
+                  title="Retirer la pièce"
+                  className="text-gray-400 hover:text-red-500 text-xs">×</button>
+              )}
+            </div>
+          ) : onAttachPiece && (
+            <label
+              title="Attacher la facture du fournisseur (PDF, image)"
+              className="cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100">
+              <input type="file" className="sr-only"
+                accept=".pdf,.png,.jpg,.jpeg,.webp"
+                onChange={ev => {
+                  const f = ev.target.files?.[0]
+                  if (f) void onAttachPiece(f)
+                  ev.target.value = ''
+                }} />
+              📎 Joindre la pièce
+            </label>
+          )}
           <button onClick={() => printDocument(printRef.current, `FACTURE ACHAT ${fa.id}`)}
             className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800">
             🖨️ Imprimer / PDF
@@ -547,17 +783,34 @@ function FAView({ fa, companyName, address, fmtCurrency, onClose, onChangeStatut
       <div className="flex-1 min-h-0 overflow-auto p-6">
         <div ref={printRef} className="mx-auto max-w-2xl bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
 
-          {/* En-tête société */}
+          {/* En-tête FOURNISSEUR (émetteur de la facture d'achat) */}
           <div className="bg-[#1a3a2a] px-8 py-6">
-            <div className="flex items-start justify-between">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xl font-bold text-white">{companyName}</p>
-                {address && <p className="mt-1 text-xs text-white/70">{address}</p>}
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60 mb-1">Émetteur — Fournisseur</p>
+                <p className="text-xl font-bold text-white">{fournisseur?.nom ?? fa.fournisseur}</p>
+                {fournisseur?.adresse && <p className="mt-1 text-xs text-white/70">{fournisseur.adresse}</p>}
+                {(fournisseur?.telephone || fournisseur?.email) && (
+                  <p className="mt-0.5 text-[11px] text-white/60">
+                    {fournisseur?.telephone}{fournisseur?.telephone && fournisseur?.email ? ' · ' : ''}{fournisseur?.email}
+                  </p>
+                )}
               </div>
               <div className="text-right">
                 <p className="text-xs font-bold text-white/80 uppercase tracking-wider">Facture Achat</p>
                 <p className="mt-1 text-lg font-mono font-bold text-white">{fa.id}</p>
                 <p className="mt-1 text-xs text-white/70">Date : {fmtDate(fa.date)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Bandeau acquéreur (notre société) */}
+          <div className="bg-gray-50 border-b border-gray-200 px-8 py-3">
+            <div className="flex items-center justify-between gap-4 text-xs">
+              <div>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Acquéreur</span>
+                <span className="ml-2 font-semibold text-gray-800">{companyName}</span>
+                {address && <span className="ml-2 text-gray-500">— {address}</span>}
               </div>
             </div>
           </div>
@@ -664,7 +917,7 @@ function FAView({ fa, companyName, address, fmtCurrency, onClose, onChangeStatut
             {/* Pied de page + QR Code */}
             <div className="mt-8 pt-4 border-t border-gray-100 flex items-end justify-between gap-4">
               <p className="text-xs text-gray-400">
-                © {new Date().getFullYear()} {companyName} — {address} — Document généré par Athenis
+                Document enregistré le {fmtDate(fa.date)} par {companyName} — Athenis
               </p>
               {qrDataUrl && (
                 <div className="flex flex-col items-center shrink-0">
@@ -686,7 +939,7 @@ function FAView({ fa, companyName, address, fmtCurrency, onClose, onChangeStatut
 export function FacturesAchatsPage() {
   const { fmt, defaultVatRate } = useCurrency()
   const { user }                = useAuth()
-  const { facturesAchats, achats, updateFactureAchatStatut, addFactureAchat } = useGestion()
+  const { facturesAchats, achats, fournisseurs, updateFactureAchatStatut, attachPieceToFactureAchat, addFactureAchat } = useGestion()
   const { vatRate, company }    = useCompanySettings()
 
   const agenceNom    = user?.agenceNom ?? null
@@ -698,6 +951,8 @@ export function FacturesAchatsPage() {
   const [importModal,  setImportModal]  = useState(false)
   const [importToast,  setImportToast]  = useState<string | null>(null)
   const [selected,     setSelected]     = useState<FactureAchat | null>(null)
+  const [dateFrom,     setDateFrom]     = useState('')
+  const [dateTo,       setDateTo]       = useState('')
 
   // ── OCR auto-import ──────────────────────────────────────────────────────────
   const ocrFileRef                              = useRef<HTMLInputElement>(null)
@@ -771,8 +1026,10 @@ export function FacturesAchatsPage() {
         f.id.toLowerCase().includes(q),
       )
     }
+    list = filterByDateRange(list, f => f.date, dateFrom, dateTo)
     return list
-  }, [facturesAchats, agenceNom, statutFilter, search])
+  }, [facturesAchats, agenceNom, statutFilter, search, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   // Sync selected with live state
   const selectedLive = useMemo(
@@ -879,13 +1136,21 @@ export function FacturesAchatsPage() {
 
         {/* Liste */}
         <div className={`flex flex-col rounded-xl border border-gray-200 bg-white overflow-hidden transition-all ${selectedLive ? 'w-80 shrink-0' : 'flex-1'}`}>
-          <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+          <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5 flex-wrap">
             <div className="relative flex-1 min-w-0">
               <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
               <input value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Fournisseur, N° facture…"
                 className="w-full rounded-lg border border-gray-200 bg-white pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30" />
             </div>
+            {!selectedLive && (
+              <PeriodFilter
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+                count={isFiltered ? `${items.length} résultat${items.length > 1 ? 's' : ''}` : null}
+              />
+            )}
             {!selectedLive && (
               <select value={statutFilter}
                 onChange={e => setStatutFilter(e.target.value as FactureAchatStatut | 'all')}
@@ -964,11 +1229,27 @@ export function FacturesAchatsPage() {
         {selectedLive && (
           <FAView
             fa={selectedLive}
+            fournisseur={fournisseurs.find(f => f.nom === selectedLive.fournisseur) ?? null}
             companyName={companyName}
             address={address}
             fmtCurrency={fmt}
             onClose={() => setSelected(null)}
             onChangeStatut={s => updateFactureAchatStatut(selectedLive.id, s)}
+            onAttachPiece={async file => {
+              try {
+                const [att] = await attachmentsApi.upload([file], {})
+                if (!att) throw new Error('Upload failed')
+                await attachPieceToFactureAchat(
+                  selectedLive.id,
+                  attachmentsApi.fileUrl(att.id),
+                  att.fileName,
+                )
+              } catch (e) {
+                console.error('[FA] attach piece failed', e)
+                alert('Échec de l\'upload de la pièce')
+              }
+            }}
+            onRemovePiece={() => attachPieceToFactureAchat(selectedLive.id, null, null)}
           />
         )}
       </div>
@@ -979,7 +1260,19 @@ export function FacturesAchatsPage() {
           achats={achats}
           agenceNom={agenceNom}
           defaultVatRate={effectiveVat}
-          onSave={data => { addFactureAchat(data); setModal(false) }}
+          onSave={async data => {
+            try {
+              const result = await addFactureAchat(data)
+              // Si statut !== 'À valider', déclencher la comptabilisation backend
+              if (data.statut && data.statut !== 'À valider') {
+                updateFactureAchatStatut(result.id, data.statut)
+              }
+              setModal(false)
+            } catch (e) {
+              console.error('Création facture échouée', e)
+              alert("Échec de la création de la facture. Vérifiez les données et réessayez.")
+            }
+          }}
           onClose={() => setModal(false)}
         />
       )}
@@ -989,7 +1282,18 @@ export function FacturesAchatsPage() {
           agenceNom={agenceNom}
           defaultVatRate={effectiveVat}
           initialScan={ocrPreFill}
-          onSave={data => { addFactureAchat(data); setOcrReviewModal(false); setOcrPreFill(null) }}
+          onSave={async data => {
+            try {
+              const result = await addFactureAchat(data)
+              if (data.statut && data.statut !== 'À valider') {
+                updateFactureAchatStatut(result.id, data.statut)
+              }
+              setOcrReviewModal(false); setOcrPreFill(null)
+            } catch (e) {
+              console.error('Création facture (OCR) échouée', e)
+              alert("Échec de la création de la facture.")
+            }
+          }}
           onClose={() => { setOcrReviewModal(false); setOcrPreFill(null) }}
         />
       )}

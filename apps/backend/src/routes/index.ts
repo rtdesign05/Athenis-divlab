@@ -5,6 +5,7 @@ import { quotesRouter } from '../modules/quotes/quotes.routes.js'
 import { clientsRouter } from '../modules/clients/clients.routes.js'
 import { expensesRouter } from '../modules/expenses/expenses.routes.js'
 import { employeesRouter } from '../modules/employees/employees.routes.js'
+import { payrollRouter } from '../modules/payroll/payroll.routes.js'
 import { accountingRouter } from '../modules/accounting/accounting.routes.js'
 import { esgRouter } from '../modules/esg/esg.routes.js'
 import { bankRouter } from '../modules/bank/bank.routes.js'
@@ -38,6 +39,7 @@ router.use('/quotes', quotesRouter)
 router.use('/clients', clientsRouter)
 router.use('/expenses', expensesRouter)
 router.use('/employees', employeesRouter)
+router.use('/payroll',   payrollRouter)
 router.use('/accounting', accountingRouter)
 router.use('/bank', bankRouter)
 router.use('/purchases', purchasesRouter)

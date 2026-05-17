@@ -13,18 +13,17 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
-import { settingsApi } from '@/services/settingsApi'
+import { settingsApi, type PayrollConfig } from '@/services/settingsApi'
 import type { FiscalYear } from '@/services/accountingApi'
 import {
   useFiscalYears,
   useCreateFiscalYear,
   useCloseFiscalYear,
   useLockFiscalYear,
-  useReopenFiscalYear,
-  useGenerateOpeningEntries,
   useCanCreateFiscalYear,
 } from '@/hooks/useFiscalYear'
 
@@ -32,7 +31,7 @@ import {
 
 type AccountingZone = 'OHADA' | 'FRANCE' | 'IFRS'
 type FiscalYearStatus = 'DRAFT' | 'OPEN' | 'LOCKED' | 'CLOSED'
-type TabId = 'referentiel' | 'exercices' | 'cloture' | 'journaux'
+type TabId = 'referentiel' | 'exercices' | 'cloture' | 'journaux' | 'paie'
 
 interface SyscohadaConfig {
   system:  'NORMAL' | 'MINIMAL'
@@ -76,24 +75,28 @@ const OHADA_COUNTRIES = [
   'Mali', 'Niger', 'RDC', 'Sénégal', 'Tchad', 'Togo',
 ]
 
+// Codes canoniques alignés sur ceux que le backend utilise lors de la
+// comptabilisation automatique (posting.service.ts) : ACH, VTE, BNQ, CAI, PAY.
+// Indispensable pour que les filtres « Ventes / Achats / Banque » du Journal
+// trouvent les écritures correspondantes.
 const OHADA_DEFAULT_JOURNALS: JournalEntry[] = [
-  { code: 'AC',  label: 'Journal des achats',          type: 'ACHAT',    isActive: true },
-  { code: 'VT',  label: 'Journal des ventes',          type: 'VENTE',    isActive: true },
-  { code: 'BQ',  label: 'Journal de banque',           type: 'BANQUE',   isActive: true },
-  { code: 'CA',  label: 'Journal de caisse',           type: 'CAISSE',   isActive: true },
+  { code: 'ACH', label: 'Journal des achats',          type: 'ACHAT',    isActive: true },
+  { code: 'VTE', label: 'Journal des ventes',          type: 'VENTE',    isActive: true },
+  { code: 'BNQ', label: 'Journal de banque',           type: 'BANQUE',   isActive: true },
+  { code: 'CAI', label: 'Journal de caisse',           type: 'CAISSE',   isActive: true },
   { code: 'OD',  label: 'Opérations diverses',         type: 'OD',       isActive: true },
-  { code: 'AN',  label: 'À Nouveaux (ouverture)',      type: 'OUVERTURE',isActive: true },
-  { code: 'SA',  label: 'Salaires & charges sociales', type: 'OD',       isActive: true },
+  { code: 'AN',  label: 'À-Nouveaux (ouverture)',      type: 'OUVERTURE',isActive: true },
+  { code: 'PAY', label: 'Salaires & charges sociales', type: 'OD',       isActive: true },
   { code: 'IM',  label: 'Immobilisations',             type: 'OD',       isActive: true },
 ]
 
 const FRANCE_DEFAULT_JOURNALS: JournalEntry[] = [
   { code: 'ACH', label: 'Journal des achats',          type: 'ACHAT',    isActive: true },
   { code: 'VTE', label: 'Journal des ventes',          type: 'VENTE',    isActive: true },
-  { code: 'BQ',  label: 'Journal de banque',           type: 'BANQUE',   isActive: true },
+  { code: 'BNQ', label: 'Journal de banque',           type: 'BANQUE',   isActive: true },
   { code: 'CAI', label: 'Journal de caisse',           type: 'CAISSE',   isActive: true },
   { code: 'OD',  label: 'Opérations diverses',         type: 'OD',       isActive: true },
-  { code: 'AN',  label: 'À Nouveaux',                  type: 'OUVERTURE',isActive: true },
+  { code: 'AN',  label: 'À-Nouveaux',                  type: 'OUVERTURE',isActive: true },
   { code: 'NDF', label: 'Notes de frais',              type: 'ACHAT',    isActive: true },
   { code: 'PAY', label: 'Paie',                        type: 'OD',       isActive: true },
 ]
@@ -114,6 +117,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'exercices',   label: 'Exercices comptables' },
   { id: 'cloture',     label: 'Paramètres de clôture' },
   { id: 'journaux',    label: 'Journaux comptables' },
+  { id: 'paie',        label: 'Écritures de paie' },
 ]
 
 // ── Helpers localStorage ─────────────────────────────────────────────────────
@@ -566,9 +570,10 @@ function ModalCloseFiscalYear({ fy, zone, onClose }: ModalCloseProps) {
           <svg className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
           </svg>
-          <p className="text-sm text-amber-800">
-            <strong>Cette opération est irréversible</strong> sauf réouverture manuelle par un administrateur.
-          </p>
+          <div className="text-sm text-amber-800 space-y-1">
+            <p><strong>Cette opération est définitivement irréversible.</strong></p>
+            <p className="text-xs">Les à-nouveaux seront générés automatiquement dans l'exercice suivant.</p>
+          </div>
         </div>
 
         {/* Checklist */}
@@ -637,9 +642,7 @@ interface TabExercicesProps {
 function TabExercices({ zone }: TabExercicesProps) {
   const { selectedYear, setSelectedYear } = useFiscalYear()
   const { data: years = [], isLoading, isError } = useFiscalYears()
-  const lockMutation   = useLockFiscalYear()
-  const reopenMutation = useReopenFiscalYear()
-  const anMutation     = useGenerateOpeningEntries()
+  const lockMutation = useLockFiscalYear()
 
   const [showNewModal,   setShowNewModal]   = useState(false)
   const [closingFy,      setClosingFy]      = useState<FiscalYear | null>(null)
@@ -678,20 +681,10 @@ function TabExercices({ zone }: TabExercicesProps) {
         </button>
       </div>
 
-      {/* Erreurs mutations verrouillage / réouverture */}
+      {/* Erreur mutation verrouillage */}
       {lockMutation.isError && (
         <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
           ⚠️ {(lockMutation.error as { message?: string })?.message ?? 'Erreur lors du (dé)verrouillage.'}
-        </div>
-      )}
-      {reopenMutation.isError && (
-        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
-          ⚠️ {(reopenMutation.error as { message?: string })?.message ?? 'Erreur lors de la réouverture.'}
-        </div>
-      )}
-      {anMutation.isError && (
-        <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-2.5 text-sm text-red-700">
-          ⚠️ {(anMutation.error as { message?: string })?.message ?? 'Erreur lors de la génération des à-nouveaux.'}
         </div>
       )}
 
@@ -774,35 +767,9 @@ function TabExercices({ zone }: TabExercicesProps) {
                       </button>
                     )}
                     {fy.status === 'CLOSED' && (
-                      <>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Générer (ou régénérer) les à-nouveaux de l'exercice ${fy.year + 1} à partir des soldes de ${fy.year} ?`)) {
-                              anMutation.mutate(fy.id, {
-                                onSuccess: (data) => alert(`✅ ${data.generated} écriture(s) à-nouveaux générée(s) dans le journal AN de ${data.nextYear}.`),
-                                onError:   (e)    => alert(`⚠️ ${e instanceof Error ? e.message : 'Erreur'}`),
-                              })
-                            }
-                          }}
-                          disabled={anMutation.isPending}
-                          className="rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors"
-                          title={`Générer les écritures d'à-nouveaux dans l'exercice ${fy.year + 1}`}
-                        >
-                          {anMutation.isPending ? '…' : 'Générer AN'}
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Réouvrir l'exercice ${fy.year} ? Cette opération doit être utilisée avec précaution.`)) {
-                              reopenMutation.mutate(fy.id)
-                            }
-                          }}
-                          disabled={reopenMutation.isPending}
-                          className="rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
-                          title="Réouvrir l'exercice (attention)"
-                        >
-                          Réouvrir
-                        </button>
-                      </>
+                      <span className="text-xs text-gray-400 italic">
+                        Clôturé — À-nouveaux générés automatiquement
+                      </span>
                     )}
                   </div>
                 </td>
@@ -1156,6 +1123,298 @@ function TabJournaux({ zone, config, onChange }: TabJournauxProps) {
   )
 }
 
+// ── Onglet 5 : Écritures de paie ────────────────────────────────────────────
+
+function TabPaie({ zone }: { zone: AccountingZone }) {
+  const qc = useQueryClient()
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['settings', 'payroll-config'],
+    queryFn:  () => settingsApi.getPayrollConfig(),
+  })
+
+  // État local — initialisé à partir des données reçues
+  const [form, setForm] = useState<PayrollConfig | null>(null)
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
+
+  useEffect(() => {
+    if (data) setForm(data)
+  }, [data])
+
+  const mutation = useMutation({
+    mutationFn: (body: Partial<PayrollConfig>) => settingsApi.updatePayrollConfig(body),
+    onSuccess: (res) => {
+      setForm(res)
+      setSavedAt(new Date())
+      qc.invalidateQueries({ queryKey: ['settings', 'payroll-config'] })
+    },
+  })
+
+  if (isLoading) return <Spinner />
+  if (isError || !form) return (
+    <div className="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+      Impossible de charger la configuration de paie.
+    </div>
+  )
+
+  function update<K extends keyof PayrollConfig>(key: K, value: PayrollConfig[K]) {
+    setForm(f => f ? { ...f, [key]: value } : f)
+  }
+
+  function handleSave() {
+    if (!form) return
+    mutation.mutate(form)
+  }
+
+  function handleResetDefaults() {
+    if (!confirm('Réinitialiser tous les paramètres aux valeurs SYSCOHADA par défaut ?')) return
+    setForm({
+      journalCode:           'PAY',
+      chargeAccount:         '641',
+      socialAccount:         '431',
+      taxAccount:            '447',
+      treasuryAccount:       '521',
+      splitContributions:    false,
+      socialAccountPersonal: '4311',
+      socialAccountEmployer: '4312',
+      taxAccountIrpp:        '4471',
+      taxAccountCac:         '4472',
+    })
+  }
+
+  const rowsMain: { key: keyof PayrollConfig; label: string; description: string; placeholder: string }[] = [
+    {
+      key:         'chargeAccount',
+      label:       'Charges de personnel',
+      description: 'Rémunérations directes versées (SYSCOHADA 641)',
+      placeholder: '641',
+    },
+    {
+      key:         'socialAccount',
+      label:       'Cotisations sociales (CNPS / CFC / FNE)',
+      description: 'Compte global de cotisations à reverser aux organismes (431)',
+      placeholder: '431',
+    },
+    {
+      key:         'taxAccount',
+      label:       'Impôts retenus (IRPP + CAC)',
+      description: 'Compte État — Impôts retenus à la source sur salaires (447)',
+      placeholder: '447',
+    },
+    {
+      key:         'treasuryAccount',
+      label:       'Compte de trésorerie',
+      description: 'Banque utilisée pour le virement des salaires nets (521)',
+      placeholder: '521',
+    },
+  ]
+
+  const rowsSplit: { key: keyof PayrollConfig; label: string; description: string; placeholder: string }[] = [
+    {
+      key:         'socialAccountPersonal',
+      label:       'CNPS — part salariale',
+      description: 'Précompte salarial (4311)',
+      placeholder: '4311',
+    },
+    {
+      key:         'socialAccountEmployer',
+      label:       'CNPS — part patronale',
+      description: 'Cotisations à la charge de l\'employeur (4312)',
+      placeholder: '4312',
+    },
+    {
+      key:         'taxAccountIrpp',
+      label:       'IRPP — Impôt sur le revenu',
+      description: 'Impôt sur le revenu des personnes physiques (4471)',
+      placeholder: '4471',
+    },
+    {
+      key:         'taxAccountCac',
+      label:       'CAC — Centimes additionnels communaux',
+      description: 'Centimes additionnels communaux (4472)',
+      placeholder: '4472',
+    },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-800">Paramètres des écritures de paie</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Comptes et journal utilisés lors de la comptabilisation mensuelle de la paie.
+            La configuration est appliquée à toutes les paies futures.
+          </p>
+        </div>
+        <button
+          onClick={handleResetDefaults}
+          className="shrink-0 rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50 transition-colors"
+        >
+          ↺ Valeurs par défaut
+        </button>
+      </div>
+
+      {/* Journal de paie */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-2">
+        <label className="block text-xs font-semibold text-gray-700">Journal de paie</label>
+        <input
+          type="text"
+          value={form.journalCode}
+          onChange={e => update('journalCode', e.target.value.toUpperCase().slice(0, 5))}
+          className="w-32 rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+          placeholder="PAY"
+        />
+        <p className="text-[11px] text-gray-400">
+          Code du journal dans lequel les écritures de paie seront passées chaque mois (ex. <code>PAY</code>, <code>SA</code>).
+          Doit exister dans l'onglet <strong>Journaux comptables</strong>.
+        </p>
+      </div>
+
+      {/* Comptes globaux */}
+      <div>
+        <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+          Comptes principaux
+        </h3>
+        <div className="rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Poste</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">N° de compte</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rowsMain.map(row => (
+                <tr key={row.key} className="hover:bg-gray-50/50">
+                  <td className="px-4 py-3 font-medium text-gray-800">{row.label}</td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{row.description}</td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="text"
+                      value={String(form[row.key] ?? '')}
+                      onChange={e => update(row.key, e.target.value as PayrollConfig[typeof row.key])}
+                      placeholder={row.placeholder}
+                      className="w-24 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-mono text-center focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Toggle ventilation détaillée */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={form.splitContributions}
+            onChange={e => update('splitContributions', e.target.checked)}
+            className="mt-0.5 accent-forest-600 h-4 w-4"
+          />
+          <div className="flex-1">
+            <span className="block text-sm font-semibold text-gray-800">
+              Ventilation détaillée des cotisations et impôts
+            </span>
+            <span className="block text-xs text-gray-500 mt-0.5">
+              Si activé, les cotisations sociales sont scindées en <strong>part salariale</strong> (4311) et <strong>part patronale</strong> (4312),
+              et les impôts retenus en <strong>IRPP</strong> (4471) et <strong>CAC</strong> (4472).
+              Sinon, les écritures utilisent les comptes globaux <code>{form.socialAccount}</code> et <code>{form.taxAccount}</code>.
+            </span>
+          </div>
+        </label>
+      </div>
+
+      {/* Comptes détaillés */}
+      {form.splitContributions && (
+        <div>
+          <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+            Comptes détaillés
+          </h3>
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Poste</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">N° de compte</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rowsSplit.map(row => (
+                  <tr key={row.key} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 font-medium text-gray-800">{row.label}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{row.description}</td>
+                    <td className="px-4 py-3">
+                      <input
+                        type="text"
+                        value={String(form[row.key] ?? '')}
+                        onChange={e => update(row.key, e.target.value as PayrollConfig[typeof row.key])}
+                        placeholder={row.placeholder}
+                        className="w-24 rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-mono text-center focus:outline-none focus:ring-2 focus:ring-forest-500/30"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Info réglementaire */}
+      {zone === 'OHADA' && (
+        <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="font-semibold mb-1">Référence SYSCOHADA révisé (Cameroun)</p>
+          <ul className="text-xs space-y-0.5 list-disc list-inside">
+            <li><strong>641</strong> — Rémunérations directes versées au personnel national</li>
+            <li><strong>431</strong> — Sécurité sociale (CNPS, CFC, FNE)</li>
+            <li><strong>447</strong> — État, impôts retenus à la source (IRPP, CAC)</li>
+            <li><strong>422</strong> — Personnel — Rémunérations dues (net à payer)</li>
+            <li><strong>521</strong> — Banques (paiement du net)</li>
+          </ul>
+        </div>
+      )}
+      {zone === 'FRANCE' && (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-4 text-sm text-indigo-800">
+          <p className="font-semibold mb-1">Référence PCG France</p>
+          <ul className="text-xs space-y-0.5 list-disc list-inside">
+            <li><strong>641</strong> — Rémunérations du personnel</li>
+            <li><strong>431</strong> — Sécurité sociale</li>
+            <li><strong>437</strong> — Autres organismes sociaux</li>
+            <li><strong>421</strong> — Personnel — Rémunérations dues</li>
+            <li><strong>512</strong> — Banques</li>
+          </ul>
+        </div>
+      )}
+
+      {/* Erreur mutation */}
+      {mutation.isError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Impossible d'enregistrer les paramètres. Vérifiez vos droits d'administrateur.
+        </div>
+      )}
+
+      {/* Barre de sauvegarde */}
+      <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+        {savedAt && !mutation.isPending && (
+          <span className="text-xs text-green-600">
+            ✓ Enregistré à {savedAt.toLocaleTimeString('fr-FR')}
+          </span>
+        )}
+        <button
+          onClick={handleSave}
+          disabled={mutation.isPending}
+          className="rounded-lg bg-forest-700 px-4 py-2 text-sm font-medium text-white hover:bg-forest-800 disabled:opacity-50 transition-colors"
+        >
+          {mutation.isPending ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Page principale ──────────────────────────────────────────────────────────
 
 export function ComptabiliteParamPage() {
@@ -1176,8 +1435,13 @@ export function ComptabiliteParamPage() {
   // Config locale — chargée depuis localStorage
   const [config, setConfig] = useState<AccountingLocalConfig>(() => loadConfig(apiZone))
 
-  // Onglet actif
-  const [activeTab, setActiveTab] = useState<TabId>('referentiel')
+  // Onglet actif — peut être initialisé via le paramètre URL ?tab=exercices
+  const [searchParams] = useSearchParams()
+  const initialTab     = (searchParams.get('tab') as TabId) ?? 'referentiel'
+  const validTab: TabId = ['referentiel', 'exercices', 'cloture', 'journaux', 'paie'].includes(initialTab)
+    ? initialTab
+    : 'referentiel'
+  const [activeTab, setActiveTab] = useState<TabId>(validTab)
 
   // Mutation changement de zone
   const zoneMutation = useMutation({
@@ -1280,6 +1544,10 @@ export function ComptabiliteParamPage() {
           config={config}
           onChange={setConfig}
         />
+      )}
+
+      {activeTab === 'paie' && (
+        <TabPaie zone={zone} />
       )}
     </div>
   )

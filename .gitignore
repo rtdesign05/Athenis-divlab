@@ -29,3 +29,12 @@ infra/nginx/certs/*.key
 # Backups
 *.sql.gz
 *.sql.bak
+
+# Claude Code internal files
+.claude/scheduled_tasks.lock
+.claude/debug/
+
+# Token / credential dumps (never commit auth tokens)
+UsersadminAppDataLocalTemptoken.json
+**/Temptoken.json
+*token.json

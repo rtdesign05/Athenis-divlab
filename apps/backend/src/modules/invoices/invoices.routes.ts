@@ -119,7 +119,8 @@ invoicesRouter.patch(
   validateRequest({ body: UpdateStatusDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.updateInvoiceStatus(getCompanyId(req), req.params.id!, req.body.status)
+      const userId = req.user?.sub
+      const data = await svc.updateInvoiceStatus(getCompanyId(req), req.params.id!, req.body.status, userId)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },

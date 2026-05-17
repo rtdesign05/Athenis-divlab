@@ -7,6 +7,7 @@ import {
   type MouvementStock,
   type MouvementType,
 } from '@/contexts/GestionContext'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -166,6 +167,8 @@ export function StockPage() {
   const [filterStatut, setFilterStatut] = useState<string>('tous')
   const [filterType,   setFilterType]   = useState<string>('tous')
   const [modal,        setModal]        = useState(false)
+  const [dateFrom,     setDateFrom]     = useState('')
+  const [dateTo,       setDateTo]       = useState('')
 
   const allArticles = useMemo(
     () => agenceNom ? articles.filter(a => a.agence === agenceNom) : articles,
@@ -204,15 +207,18 @@ export function StockPage() {
     })
   }, [allArticles, search, filterCat, filterStatut])
 
-  // Mouvements filtrés
+  // Mouvements filtrés (avec filtre période)
   const mouvements = useMemo(() => {
     const q = search.toLowerCase()
-    return allMouvements.filter(m => {
+    let list = allMouvements.filter(m => {
       if (filterType !== 'tous' && m.type !== filterType) return false
       if (!q) return true
       return m.articleNom.toLowerCase().includes(q) || m.reference.toLowerCase().includes(q)
     })
-  }, [allMouvements, search, filterType])
+    list = filterByDateRange(list, m => m.date, dateFrom, dateTo)
+    return list
+  }, [allMouvements, search, filterType, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   return (
     <div className="flex flex-col h-full">
@@ -293,13 +299,21 @@ export function StockPage() {
         )}
 
         {tab === 'mouvements' && (
-          <select value={filterType} onChange={e => setFilterType(e.target.value)}
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-            <option value="tous">Tous types</option>
-            <option value="Entrée">Entrées</option>
-            <option value="Sortie">Sorties</option>
-            <option value="Ajustement">Ajustements</option>
-          </select>
+          <>
+            <select value={filterType} onChange={e => setFilterType(e.target.value)}
+              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
+              <option value="tous">Tous types</option>
+              <option value="Entrée">Entrées</option>
+              <option value="Sortie">Sorties</option>
+              <option value="Ajustement">Ajustements</option>
+            </select>
+            <PeriodFilter
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+              count={isFiltered ? `${mouvements.length} résultat${mouvements.length > 1 ? 's' : ''}` : null}
+            />
+          </>
         )}
 
         <span className="ml-auto text-xs text-gray-400">

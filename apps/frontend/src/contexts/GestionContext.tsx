@@ -1,8 +1,9 @@
 import { createContext, useContext, useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import * as purchasesApi from '@/services/purchasesApi'
 import * as invoicesApi  from '@/services/invoicesApi'
 import { clientsApi }    from '@/services/clientsApi'
-import { loadInvoiceConfig, buildDocNumber } from '@/lib/invoiceConfig'
+import { stocksApi }     from '@/services/stocksApi'
 
 // ── Helpers ventes récurrentes ────────────────────────────────────────────────
 
@@ -106,6 +107,10 @@ export interface Article {
   description:  string
   actif:        boolean
   createdAt:    string   // ISO date
+  /** Compte de charge SYSCOHADA (classe 6) — utilisé lors des factures d'achat */
+  compteAchat?: string
+  /** Compte de produit SYSCOHADA (classe 7) — utilisé lors des factures de vente */
+  compteVente?: string
 }
 
 // ── Types clients / fournisseurs ──────────────────────────────────────────────
@@ -153,6 +158,8 @@ export interface CompteTiers {
 
 export interface LigneFacture {
   id:             string
+  /** ID de l'article (référence vers Article) — obligatoire pour les ventes */
+  articleId?:     string
   description:    string
   quantite:       number
   unite:          string
@@ -249,6 +256,9 @@ export type FactureAchatStatut = 'À valider' | 'Validée' | 'Payée' | 'En reta
 
 export interface LigneFactureAchat {
   id:             string
+  /** ID de l'article backend (CUID) — déclenche un mouvement de stock ENTREE_ACHAT
+   *  lors de la comptabilisation. Optionnel pour les achats de services. */
+  articleId?:     string
   description:    string
   quantite:       number
   unite:          string
@@ -270,6 +280,9 @@ export interface FactureAchat {
   statut:      FactureAchatStatut
   lignes:      LigneFactureAchat[]
   notes:       string
+  /** URL du PDF/image de la facture fournisseur (uploadée après création) */
+  pieceUrl?:   string
+  pieceName?:  string
 }
 
 // ── Mouvements de stock ───────────────────────────────────────────────────────
@@ -456,6 +469,44 @@ function apiOrderToAchat(o: purchasesApi.ApiPurchaseOrder): Achat {
       prixUnitaireHT: Number(l.prixUnitaireHT),
       montantHT:      Number(l.montantHT),
     })),
+  }
+}
+
+/** Convertit un PurchaseOrder backend en FactureAchat frontend. */
+function apiOrderToFactureAchat(o: purchasesApi.ApiPurchaseOrder): FactureAchat {
+  // Status mapping pour les factures d'achat
+  const statutMap: Record<purchasesApi.PurchaseStatus, FactureAchatStatut> = {
+    DRAFT:     'À valider',
+    SENT:      'Validée',
+    RECEIVED:  'Validée',
+    PARTIAL:   'Validée',
+    CANCELLED: 'Annulée',
+  }
+  const vatRate = Number(o.vatRate) || 19.25
+  return {
+    id:          o.reference,
+    commande:    o.reference,
+    fournisseur: o.fournisseur,
+    agence:      o.agence?.nom ?? 'Siège',
+    date:        o.date.slice(0, 10),
+    echeance:    o.receptionAt?.slice(0, 10) ?? o.date.slice(0, 10),
+    montantHT:   Number(o.montantHT),
+    tva:         vatRate,
+    montantTTC:  Number(o.montantTTC),
+    statut:      statutMap[o.status] ?? 'À valider',
+    lignes:      o.lines.map(l => ({
+      id:             l.id,
+      ...(l.articleId ? { articleId: l.articleId } : {}),
+      description:    l.designation,
+      quantite:       Number(l.quantite),
+      unite:          l.unite,
+      prixUnitaireHT: Number(l.prixUnitaireHT),
+      tvaRate:        vatRate,
+      montantHT:      Number(l.montantHT),
+    })),
+    notes:       o.notes ?? '',
+    ...(o.pieceUrl ? { pieceUrl: o.pieceUrl } : {}),
+    ...(o.pieceName ? { pieceName: o.pieceName } : {}),
   }
 }
 
@@ -1137,7 +1188,7 @@ interface GestionContextValue {
   addMouvementStock(m: Omit<MouvementStock, 'id'>): MouvementStock
   addBonLivraison(b: Omit<BonLivraison, 'id'>): BonLivraison
   addRetourClient(r: Omit<RetourClient, 'id'>): RetourClient
-  addFactureAchat(f: Omit<FactureAchat, 'id'>): FactureAchat
+  addFactureAchat(f: Omit<FactureAchat, 'id'>): Promise<FactureAchat>
   addBonReception(b: Omit<BonReception, 'id'>): BonReception
   addArticle(a: Omit<Article, 'id' | 'createdAt'>): Article
   updateArticle(id: string, patch: Partial<Omit<Article, 'id' | 'createdAt'>>): void
@@ -1157,6 +1208,7 @@ interface GestionContextValue {
   updateBLStatut(id: string, statut: BLStatut): void
   updateRetourStatut(id: string, statut: RetourStatut): void
   updateFactureAchatStatut(id: string, statut: FactureAchatStatut): void
+  attachPieceToFactureAchat(id: string, pieceUrl: string | null, pieceName: string | null): Promise<void>
   updateBRStatut(id: string, statut: BRStatut): void
   updateBonReception(id: string, patch: Partial<Omit<BonReception, 'id'>>): void
   deleteBonReception(id: string): void
@@ -1171,6 +1223,8 @@ const GestionContext = createContext<GestionContextValue | null>(null)
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function GestionProvider({ children }: { children: ReactNode }) {
+  // QueryClient pour invalider les caches comptabilité/dashboard après mutations
+  const qc = useQueryClient()
   const [commandes,      setCommandes]      = useState<Commande[]>(INIT_COMMANDES)
   // achats chargés depuis l'API ; INIT_ACHATS sert de fallback si la requête échoue
   const [achats,         setAchats]         = useState<Achat[]>([])
@@ -1178,11 +1232,14 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   const achatDbIds   = useRef<Record<string, string>>({})
   // Map interne reference → UUID pour les factures ventes
   const invoiceDbIds = useRef<Record<string, string>>({})
+  // Map interne reference → UUID pour les factures d'achat (PurchaseOrder backend)
+  const factureAchatDbIds = useRef<Record<string, string>>({})
   // Map nom client (lowercase) → UUID en base
   const clientNomToId = useRef<Record<string, string>>({})
 
   useEffect(() => {
-    purchasesApi.listOrders({ limit: 200 })
+    // Bons de commande : documentType=ORDER
+    purchasesApi.listOrders({ limit: 100, documentType: 'ORDER' })
       .then(({ items }) => {
         const idMap: Record<string, string> = {}
         const list = items.map(o => {
@@ -1198,6 +1255,56 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       })
   }, [])
 
+  // Factures d'achat : documentType=INVOICE (saisies manuellement ou importées,
+  // numéro de référence imposé par le fournisseur)
+  useEffect(() => {
+    purchasesApi.listOrders({ limit: 100, documentType: 'INVOICE' })
+      .then(({ items }) => {
+        const idMap: Record<string, string> = {}
+        const list = items.map(o => {
+          idMap[o.reference] = o.id
+          return apiOrderToFactureAchat(o)
+        })
+        factureAchatDbIds.current = idMap
+        setFacturesAchats(list)
+      })
+      .catch(() => {
+        // Fallback démo
+        setFacturesAchats(INIT_FACTURES_ACHATS)
+      })
+  }, [])
+
+  // Articles : chargés depuis l'API. Si succès → uniquement les vrais articles
+  // backend (CUIDs valides pour les FK et le décrément de stock). Si échec
+  // (offline, démo) → fallback sur INIT_ARTICLES.
+  useEffect(() => {
+    stocksApi.listArticles({ limit: 100 })
+      .then(({ items }) => {
+        const list: Article[] = (items ?? []).map(a => ({
+          id:           a.id,                                          // ← CUID backend (valide pour FK)
+          reference:    a.reference ?? '',
+          nom:          a.designation,
+          categorie:    (a.famille?.nom ?? 'Marchandise') as ArticleCategorie,
+          unite:        (a.unite ?? 'pièce') as ArticleUnite,
+          prixVenteHT:  Number(a.prixVente ?? 0),
+          prixAchatHT:  Number(a.prixAchat ?? 0),
+          stock:        Number(a.stockActuel ?? 0),
+          stockMin:     Number(a.stockMin ?? 0),
+          agence:       'Siège',
+          description:  a.description ?? '',
+          actif:        a.isActive ?? true,
+          createdAt:    a.createdAt ?? new Date().toISOString(),
+          ...(a.compteAchat ? { compteAchat: a.compteAchat } : {}),
+          ...(a.compteVente ? { compteVente: a.compteVente } : {}),
+        }))
+        setArticles(list)  // toujours définir, même si liste vide (DB sans articles)
+      })
+      .catch(err => {
+        console.error('[articles] listArticles API error — fallback INIT_ARTICLES', err)
+        setArticles(INIT_ARTICLES)
+      })
+  }, [])
+
   // Factures ventes + clients DB (pour le lookup clientId)
   useEffect(() => {
     // Charger les clients en base pour la résolution nom → UUID
@@ -1208,7 +1315,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     }).catch(() => { /* non bloquant */ })
 
     // Charger les factures depuis l'API
-    invoicesApi.listInvoices({ limit: 200 })
+    invoicesApi.listInvoices({ limit: 100 })
       .then(({ items }) => {
         const idMap: Record<string, string> = {}
         const list = items.map(inv => {
@@ -1225,7 +1332,11 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   // Utiliser la forme fonctionnelle de useState pour ne lire localStorage qu'une seule fois
   const [clients,        setClients]        = useState<Client[]>(() => applyComptes(INIT_CLIENTS, loadComptesFromLS()))
   const [fournisseurs,   setFournisseurs]   = useState<Fournisseur[]>(() => applyComptes(INIT_FOURNISSEURS, loadComptesFromLS()))
-  const [articles,       setArticles]       = useState<Article[]>(INIT_ARTICLES)
+  // Articles initialisés à vide — peuplés par l'API au mount (cf. useEffect plus bas).
+  // INIT_ARTICLES sert UNIQUEMENT de fallback si la connexion API échoue,
+  // pour éviter que l'autocomplete propose des articles inexistants en DB
+  // (ce qui empêchait le décrément de stock lors de la facturation).
+  const [articles,       setArticles]       = useState<Article[]>([])
   // Factures ventes : chargées depuis l'API (fallback sur données démo)
   const [facturesVentes, setFacturesVentes] = useState<FactureVente[]>([])
 
@@ -1286,13 +1397,51 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     return next
   }
 
-  function addFactureAchat(f: Omit<FactureAchat, 'id'>): FactureAchat {
-    const last = facturesAchats[0]?.id ?? 'FAA-0000'
-    const num  = parseInt(last.replace('FAA-', ''), 10) + 1
-    const id   = `FAA-${String(num).padStart(4, '0')}`
-    const next: FactureAchat = { id, ...f }
+  async function addFactureAchat(f: Omit<FactureAchat, 'id'>): Promise<FactureAchat> {
+    // Création immédiate dans l'état local (réactivité UI)
+    const localId = `FAA-LOCAL-${Date.now()}`
+    const next: FactureAchat = { id: localId, ...f }
     setFacturesAchats(prev => [next, ...prev])
-    return next
+
+    // Persistance backend (PurchaseOrder = bon de commande + facture d'achat).
+    // Le numéro fourni par l'utilisateur (f.id si rempli, sinon f.commande, sinon généré
+    // par le backend) sert de référence. Articles avec CUID seulement (les ART-xxx locaux
+    // sont strippés pour éviter une erreur de FK).
+    try {
+      const order = await purchasesApi.createOrder({
+      documentType: 'INVOICE',                                            // ← facture d'achat (pas un bon)
+      // Numéro saisi manuellement par l'utilisateur (numéro du fournisseur)
+      ...(f.commande?.trim() ? { reference: f.commande.trim() } : {}),
+      fournisseur: f.fournisseur,
+      objet:       f.notes?.trim() || `Facture ${f.fournisseur}`,
+      date:        f.date,
+      receptionAt: f.echeance,                                            // échéance stockée dans receptionAt
+      montantHT:   f.montantHT,
+      vatRate:     f.tva,
+      montantTTC:  f.montantTTC,
+      ...(f.notes ? { notes: f.notes } : {}),
+      lines: (f.lignes ?? []).map(l => ({
+        designation:    l.description,
+        quantite:       l.quantite,
+        unite:          l.unite,
+        prixUnitaireHT: l.prixUnitaireHT,
+        montantHT:      l.montantHT,
+        // articleId : seul un CUID backend est valide pour la FK
+        ...((l as LigneFactureAchat & { articleId?: string }).articleId
+          && !/^ART-/i.test((l as LigneFactureAchat & { articleId?: string }).articleId!)
+          ? { articleId: (l as LigneFactureAchat & { articleId?: string }).articleId! }
+          : {}),
+      })),
+      })
+      // Remplace l'entrée locale par l'entrée backend (avec sa référence finale)
+      factureAchatDbIds.current[order.reference] = order.id
+      const realFa: FactureAchat = { ...next, id: order.reference }
+      setFacturesAchats(prev => prev.map(x => x.id === localId ? realFa : x))
+      return realFa
+    } catch (err) {
+      console.error('[facturesAchats] addFactureAchat API error', err)
+      throw err  // propage l'erreur pour que l'UI puisse l'afficher
+    }
   }
 
   function addBonReception(b: Omit<BonReception, 'id'>): BonReception {
@@ -1318,19 +1467,80 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   }
 
   function addArticle(a: Omit<Article, 'id' | 'createdAt'>): Article {
-    const num  = articles.length + 1
-    const id   = `ART-${String(num).padStart(3, '0')}`
-    const next: Article = { id, ...a, createdAt: new Date().toISOString().slice(0, 10) }
+    // Création immédiate locale (UI réactive), puis persistance backend.
+    const num     = articles.length + 1
+    const localId = `ART-${String(num).padStart(3, '0')}`
+    const next: Article = { id: localId, ...a, createdAt: new Date().toISOString().slice(0, 10) }
     setArticles(prev => [next, ...prev])
+
+    // Persistance backend : nécessaire pour que les écritures comptables
+    // (factures vente/achat) puissent référencer l'article via son CUID.
+    stocksApi.createArticle({
+      designation:  a.nom,
+      reference:    a.reference,
+      unite:        a.unite,
+      prixAchat:    a.prixAchatHT,
+      prixVente:    a.prixVenteHT,
+      tvaAchat:     0.1925,
+      tvaVente:     0.1925,
+      stockInitial: a.stock,
+      stockMin:     a.stockMin,
+      methodeValuation: 'CMUP',
+      ...(a.description ? { description: a.description } : {}),
+      ...(a.compteAchat?.trim() ? { compteAchat: a.compteAchat.trim() } : {}),
+      ...(a.compteVente?.trim() ? { compteVente: a.compteVente.trim() } : {}),
+    })
+      .then(created => {
+        // Remplace l'entrée locale par celle du backend (avec son CUID)
+        setArticles(prev => prev.map(x => {
+          if (x.id !== localId) return x
+          const updated: Article = {
+            ...x,
+            id:        created.id,
+            reference: created.reference,
+          }
+          if (created.compteAchat) updated.compteAchat = created.compteAchat
+          if (created.compteVente) updated.compteVente = created.compteVente
+          return updated
+        }))
+      })
+      .catch(err => {
+        console.error('[articles] addArticle API error', err)
+      })
     return next
   }
 
   function updateArticle(id: string, patch: Partial<Omit<Article, 'id' | 'createdAt'>>) {
     setArticles(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a))
+
+    // Si l'id ressemble à un CUID backend (commence par 'c' et pas 'ART-'),
+    // on synchronise la modification côté backend.
+    if (!/^ART-/.test(id)) {
+      const apiPatch: Parameters<typeof stocksApi.updateArticle>[1] = {}
+      if (patch.nom         !== undefined) apiPatch.designation  = patch.nom
+      if (patch.reference   !== undefined) apiPatch.reference    = patch.reference
+      if (patch.unite       !== undefined) apiPatch.unite        = patch.unite
+      if (patch.prixVenteHT !== undefined) apiPatch.prixVente    = patch.prixVenteHT
+      if (patch.prixAchatHT !== undefined) apiPatch.prixAchat    = patch.prixAchatHT
+      if (patch.stockMin    !== undefined) apiPatch.stockMin     = patch.stockMin
+      if (patch.description !== undefined) apiPatch.description  = patch.description
+      if (patch.compteAchat !== undefined) apiPatch.compteAchat  = patch.compteAchat
+      if (patch.compteVente !== undefined) apiPatch.compteVente  = patch.compteVente
+      if (Object.keys(apiPatch).length > 0) {
+        stocksApi.updateArticle(id, apiPatch).catch(err =>
+          console.error('[articles] updateArticle API error', err),
+        )
+      }
+    }
   }
 
   function deleteArticle(id: string) {
     setArticles(prev => prev.filter(a => a.id !== id))
+    if (!/^ART-/.test(id)) {
+      stocksApi.deleteArticle(id).catch(err =>
+        console.error('[articles] deleteArticle API error', err),
+      )
+    }
   }
 
   function addCommande(c: Omit<Commande, 'id'>): Commande {
@@ -1396,22 +1606,27 @@ export function GestionProvider({ children }: { children: ReactNode }) {
           prixUnitaireHT: l.prixUnitaireHT,
           tvaRate:        l.tvaRate,
           montantHT:      l.montantHT,
+          // articleId : seul un CUID backend est valide pour la FK.
+          // Les IDs locaux hardcodés (ART-xxx) doivent être omis pour éviter
+          // un échec P2003 sur invoice_lines_article_id_fkey.
+          ...(l.articleId && !/^ART-/i.test(l.articleId) ? { articleId: l.articleId } : {}),
         })),
       }
       const created = await invoicesApi.createInvoice(payload)
       invoiceDbIds.current[created.reference] = created.id
       const next = apiInvoiceToFactureVente(created)
       setFacturesVentes(prev => [next, ...prev])
+      // Invalide les vues consommatrices (liste factures, dashboard) — important
+      // pour que la nouvelle facture apparaisse immédiatement après création.
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['billing'] })
+      qc.invalidateQueries({ queryKey: ['dashboard'] })
       return next
     } catch (err) {
-      // Fallback local si l'API échoue
+      // Échec API : on remonte l'erreur au lieu d'un fallback local silencieux
+      // (qui créait des factures fantômes perdues au prochain refresh).
       console.error('[invoices] addFactureVente API error', err)
-      const invoiceCfg = loadInvoiceConfig()
-      const numCfg     = invoiceCfg.numbering['FV']
-      const localId    = buildDocNumber(numCfg, numCfg.startNumber + Date.now() % 10000)
-      const next: FactureVente = { id: localId, ...f }
-      setFacturesVentes(prev => [next, ...prev])
-      return next
+      throw err
     }
   }
 
@@ -1490,9 +1705,20 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     const dbId  = invoiceDbIds.current[id]
     const status = invoicesApi.STATUT_TO_STATUS[statut]
     if (dbId && status) {
-      invoicesApi.updateInvoiceStatus(dbId, status).catch(err =>
-        console.error('[invoices] updateFactureVenteStatut API error', err),
-      )
+      invoicesApi.updateInvoiceStatus(dbId, status)
+        .then(() => {
+          // Le passage en SENT/PAID déclenche la comptabilisation (postSaleInvoice)
+          // côté backend → on rafraîchit toutes les vues comptables, dashboard et stocks.
+          ;[
+            'journal', 'balance-journal', 'grand-livre-journal', 'grand-livre-situation',
+            'financial-statements', 'etats-financiers', 'comptes', 'comptes-tiers',
+            'billing', 'dashboard', 'invoices', 'fiscal-years',
+            'stocks', 'stocks-articles',  // stock peut bouger via inventaire permanent
+          ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+        })
+        .catch(err =>
+          console.error('[invoices] updateFactureVenteStatut API error', err),
+        )
     }
   }
 
@@ -1506,6 +1732,41 @@ export function GestionProvider({ children }: { children: ReactNode }) {
 
   function updateFactureAchatStatut(id: string, statut: FactureAchatStatut) {
     setFacturesAchats(prev => prev.map(f => f.id === id ? { ...f, statut } : f))
+    // Persistance backend → déclenche postPurchaseOrder (journal ACH + stock)
+    const dbId = factureAchatDbIds.current[id]
+    const status = purchasesApi.STATUT_TO_STATUS[statut]
+    if (dbId && status) {
+      purchasesApi.updateOrder(dbId, { status })
+        .then(() => {
+          // Invalidation des vues comptables et dashboard
+          ;[
+            'journal', 'balance-journal', 'grand-livre-journal', 'grand-livre-situation',
+            'financial-statements', 'etats-financiers', 'comptes', 'comptes-tiers',
+            'billing', 'dashboard', 'invoices', 'fiscal-years',
+            'stocks', 'stocks-articles',
+          ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+        })
+        .catch(err =>
+          console.error('[facturesAchats] updateFactureAchatStatut API error', err),
+        )
+    }
+  }
+
+  /** Attache (ou détache si pieceUrl=null) le fichier justificatif d'une facture d'achat. */
+  async function attachPieceToFactureAchat(id: string, pieceUrl: string | null, pieceName: string | null): Promise<void> {
+    const dbId = factureAchatDbIds.current[id]
+    if (!dbId) {
+      console.warn('[facturesAchats] attachPiece : facture introuvable en base', id)
+      return
+    }
+    const patch: purchasesApi.UpdateOrderPayload = {}
+    if (pieceUrl)  patch.pieceUrl  = pieceUrl
+    if (pieceName) patch.pieceName = pieceName
+    await purchasesApi.updateOrder(dbId, patch)
+    setFacturesAchats(prev => prev.map(f => f.id === id
+      ? { ...f, ...(pieceUrl ? { pieceUrl, pieceName: pieceName ?? '' } : {}) }
+      : f,
+    ))
   }
 
   function updateBRStatut(id: string, statut: BRStatut) {
@@ -1562,7 +1823,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       addFournisseur, updateFournisseur, deleteFournisseur,
       updateCommandeStatut, updateAchatStatut,
       updateFactureVenteStatut, updateBLStatut, updateRetourStatut,
-      updateFactureAchatStatut, updateBRStatut,
+      updateFactureAchatStatut, attachPieceToFactureAchat, updateBRStatut,
       updateBonReception, deleteBonReception,
       updateAchat, deleteAchat,
       updateFactureAchat, deleteFactureAchat,

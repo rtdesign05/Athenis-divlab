@@ -119,8 +119,10 @@ const router = createBrowserRouter([
             { index: true, lazy: lz(() => import('@/pages/app/accounting/JournalPage'), 'JournalPage') },
             { path: 'lettrage',  lazy: lz(() => import('@/pages/app/accounting/JournalLettragehPage'), 'JournalLettragehPage') },
             { path: 'extournes', lazy: lz(() => import('@/pages/app/accounting/JournalExtournesPage'), 'JournalExtournesPage') },
+            { path: 'regularisations', lazy: lz(() => import('@/pages/app/accounting/JournalRegularisationsPage'), 'JournalRegularisationsPage') },
           ]},
           { path: 'grand-livre', lazy: lz(() => import('@/pages/app/accounting/GrandLivrePage'),       'GrandLivrePage') },
+          { path: 'emprunts',    lazy: lz(() => import('@/pages/app/accounting/EmpruntsPage'),         'EmpruntsPage') },
           { path: 'balance',     lazy: lz(() => import('@/pages/app/accounting/BalancePage'),           'BalancePage') },
           { path: 'comptes',    lazy: lz(() => import('@/pages/app/accounting/ComptesPage'),          'ComptesPage') },
           { path: 'etats-financiers', lazy: lz(() => import('@/pages/app/accounting/EtatsFinanciersPage'), 'EtatsFinanciersPage') },
@@ -162,7 +164,8 @@ const router = createBrowserRouter([
           {
             path: 'paie',
             children: [
-              { index: true,          lazy: lz(() => import('@/pages/app/hr/PayslipPage'),              'PayslipPage') },
+              { index: true,          lazy: lz(() => import('@/pages/app/hr/PaiePage'),                  'PaiePage') },
+              { path: 'bulletin',     lazy: lz(() => import('@/pages/app/hr/PayslipPage'),              'PayslipPage') },
               { path: 'virements',    lazy: lz(() => import('@/pages/app/hr/VirementsPage'),            'VirementsPage') },
               { path: 'declarations', lazy: lz(() => import('@/pages/app/hr/DeclarationsSocialesPage'), 'DeclarationsSocialesPage') },
             ],

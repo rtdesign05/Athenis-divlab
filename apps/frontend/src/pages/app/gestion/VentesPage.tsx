@@ -4,6 +4,7 @@ import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type CommandeStatut } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 // ── Styles statut commandes ───────────────────────────────────────────────────
 
@@ -144,12 +145,16 @@ export function VentesPage() {
   const agenceNom = user?.agenceNom ?? null
   const [agenceFilter, setAgenceFilter] = useState<string>('all')
   const [modal, setModal] = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo,   setDateTo]   = useState('')
 
   const commandes = useMemo(() => {
     let list = agenceNom ? allCommandes.filter(c => c.agence === agenceNom) : allCommandes
     if (!agenceNom && agenceFilter !== 'all') list = list.filter(c => c.agence === agenceFilter)
+    list = filterByDateRange(list, c => c.date, dateFrom, dateTo)
     return list
-  }, [allCommandes, agenceNom, agenceFilter])
+  }, [allCommandes, agenceNom, agenceFilter, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   const totalCA   = commandes.filter(c => c.statut !== 'Annulée').reduce((s, c) => s + c.montant, 0)
   const enCours   = commandes.filter(c => c.statut === 'En cours').length
@@ -210,13 +215,19 @@ export function VentesPage() {
 
       {/* Tableau commandes */}
       <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-        <div className="shrink-0 flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
+        <div className="shrink-0 flex items-center justify-between border-b border-gray-100 px-4 py-2.5 flex-wrap gap-2">
           <h2 className="text-sm font-semibold text-gray-900">
             Commandes récentes
             {agenceFilter !== 'all' && !agenceNom && (
               <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700">{agenceFilter}</span>
             )}
           </h2>
+          <PeriodFilter
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+            count={isFiltered ? `${commandes.length} résultat${commandes.length > 1 ? 's' : ''}` : null}
+          />
           <input type="search" placeholder="Rechercher…"
             className="rounded-lg border border-gray-200 px-3 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30" />
         </div>

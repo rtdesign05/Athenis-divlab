@@ -36,14 +36,57 @@ export interface CompteComboboxProps {
   disableCreate?: boolean
 }
 
-// ── Normalisation du numéro de compte ─────────────────────────────────────────
-// • Purement numérique (tous chiffres) → complète à 9 caractères avec des 0 à droite
-// • Alphanumérique (contient une lettre) → conserve tel quel, longueur libre
-//   (ex : comptes tiers libres comme "401CLIENT1", "41DUPONT")
+// ── Normalisation du numéro de compte (règles miroir backend) ─────────────────
+//
+// • Purement numérique → padding à droite jusqu'à 9 caractères (601 → 601000000)
+// • Alphanumérique → AUTORISÉ UNIQUEMENT pour les comptes de tiers :
+//     fournisseurs 401, clients 411, personnel 421/422
+//   Longueur 3 à 9 caractères, MAJUSCULES, chiffres et lettres uniquement.
+// • Autres codes (avec lettres mais hors tiers) → conservés tels quels par cette
+//   fonction (validation à la création seulement, levée par le backend).
+
+export const ACCOUNT_TARGET_LENGTH = 9
+export const TIERS_PREFIXES = ['401', '411', '421', '422'] as const
+
+export function isPurelyNumericCode(code: string): boolean {
+  return /^\d+$/.test(code)
+}
+
+export function isAllowedAlphanumericCode(code: string): boolean {
+  if (!/^[A-Z0-9]+$/.test(code)) return false
+  return TIERS_PREFIXES.some(p => code.startsWith(p))
+}
+
+/** Retourne le code normalisé. Pour numérique pur : pad à 9. Pour le reste : uppercase. */
 export function normalizeCompteCode(code: string): string {
-  const c = code.trim()
+  const c = code.trim().toUpperCase().replace(/\s+/g, '')
   if (!c) return c
-  return /^\d+$/.test(c) ? c.padEnd(9, '0') : c
+  if (isPurelyNumericCode(c)) {
+    return c.length >= ACCOUNT_TARGET_LENGTH
+      ? c.slice(0, ACCOUNT_TARGET_LENGTH)
+      : c.padEnd(ACCOUNT_TARGET_LENGTH, '0')
+  }
+  return c.slice(0, ACCOUNT_TARGET_LENGTH)
+}
+
+/**
+ * Validation côté UI : retourne null si OK, sinon un message d'erreur lisible.
+ * Le backend re-valide systématiquement, mais ceci fournit un feedback immédiat.
+ */
+export function validateCompteCode(code: string): string | null {
+  const c = code.trim().toUpperCase().replace(/\s+/g, '')
+  if (!c) return 'Numéro de compte requis'
+  if (isPurelyNumericCode(c)) {
+    if (c.length > ACCOUNT_TARGET_LENGTH) return `Maximum ${ACCOUNT_TARGET_LENGTH} chiffres`
+    return null
+  }
+  if (!/^[A-Z0-9]+$/.test(c)) return 'Caractères invalides (autorisés : chiffres et lettres A-Z)'
+  if (!isAllowedAlphanumericCode(c)) {
+    return `Code alphanumérique réservé aux tiers (préfixes ${TIERS_PREFIXES.join(', ')})`
+  }
+  if (c.length < 3) return 'Minimum 3 caractères'
+  if (c.length > ACCOUNT_TARGET_LENGTH) return `Maximum ${ACCOUNT_TARGET_LENGTH} caractères`
+  return null
 }
 
 // ── Badge couleur par type ────────────────────────────────────────────────────

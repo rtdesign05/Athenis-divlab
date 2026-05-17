@@ -10,6 +10,7 @@ import {
 } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { printDocument } from '@/lib/printDocument'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -495,6 +496,8 @@ export function AchatsPage() {
   const [selected,     setSelected]     = useState<Achat | null>(null)
   const [modal,        setModal]        = useState<'create' | 'edit' | null>(null)
   const [confirmAnnul, setConfirmAnnul] = useState(false)
+  const [dateFrom,     setDateFrom]     = useState('')
+  const [dateTo,       setDateTo]       = useState('')
 
   const achats = useMemo(() => {
     let list = agenceNom ? allAchats.filter(a => a.agence === agenceNom) : allAchats
@@ -507,8 +510,10 @@ export function AchatsPage() {
         (a.objet ?? '').toLowerCase().includes(q)
       )
     }
+    list = filterByDateRange(list, a => a.date, dateFrom, dateTo)
     return list
-  }, [allAchats, agenceNom, agenceFilter, search])
+  }, [allAchats, agenceNom, agenceFilter, search, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   // Sync selected with live state
   const selectedLive = useMemo(
@@ -600,13 +605,19 @@ export function AchatsPage() {
 
         {/* Liste */}
         <div className={`flex flex-col rounded-xl border border-gray-200 bg-white overflow-hidden transition-all ${selectedLive ? 'w-80 shrink-0' : 'flex-1'}`}>
-          <div className="shrink-0 flex items-center justify-between border-b border-gray-100 px-4 py-2.5">
+          <div className="shrink-0 flex items-center justify-between border-b border-gray-100 px-4 py-2.5 flex-wrap gap-2">
             <h2 className="text-sm font-semibold text-gray-900">
               Commandes
               {agenceFilter !== 'all' && !agenceNom && (
                 <span className="ml-2 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium text-green-700">{agenceFilter}</span>
               )}
             </h2>
+            <PeriodFilter
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+              count={isFiltered ? `${achats.length} résultat${achats.length > 1 ? 's' : ''}` : null}
+            />
             <input type="search" value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Rechercher…"
               className="rounded-lg border border-gray-200 px-3 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30 w-36" />

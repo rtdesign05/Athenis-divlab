@@ -153,6 +153,15 @@ export const accountingApi = {
   }) => api.put<{ data: unknown[] }>(`/accounting/journal/piece/${pieceId}`, data).then(d),
   deleteJournalPiece: (pieceId: string) =>
     api.delete(`/accounting/journal/piece/${pieceId}`),
+  /**
+   * Attache (ou détache) une pièce justificative à toutes les lignes d'une
+   * écriture (même pieceId). Passer pieceUrl=null pour détacher.
+   */
+  attachJustificative: (pieceId: string, data: { pieceUrl: string | null; pieceName: string | null }) =>
+    api.put<{ data: { pieceId: string; linesUpdated: number; pieceUrl: string | null; pieceName: string | null } }>(
+      `/accounting/journal/piece/${pieceId}/justificative`,
+      data,
+    ).then(d),
   deleteJournalEntry: (id: string) =>
     api.delete(`/accounting/journal/${id}`),
   reimpute: (entryIds: string[], newAccount: string) =>
@@ -161,6 +170,47 @@ export const accountingApi = {
     api.put<{ data: { updated: number; code: string } }>('/accounting/journal/lettrage', { entryIds, code }).then(d),
   deleteLettrage: (code: string, fiscalYearId: string) =>
     api.delete<{ data: { unlettered: number } }>(`/accounting/journal/lettrage/${encodeURIComponent(code)}`, { params: { fiscalYearId } }).then(d),
+  /** Liste les comptes de tiers (classe 4) présents dans l'exercice avec stats de lettrage */
+  getComptesTiers: (fiscalYearId: string) =>
+    api.get<{ data: ComptesTiersRow[] }>('/accounting/comptes-tiers', { params: { fiscalYearId } }).then(d),
+  /** Écritures d'un compte de tiers avec codes de lettrage et solde progressif */
+  getLettragePourCompte: (fiscalYearId: string, compte: string) =>
+    api.get<{ data: LettrageCompteData }>('/accounting/lettrage-compte', { params: { fiscalYearId, compte } }).then(d),
+  /** Lettrage réglementaire : valide D=C, génère le code auto (A, B, …) */
+  lettrer: (fiscalYearId: string, entryIds: string[]) =>
+    api.post<{ data: { code: string; lettered: number } }>('/accounting/lettrer', { fiscalYearId, entryIds }).then(d),
+  /** Délettrage : supprime un code sur toutes ses écritures dans l'exercice */
+  delettrer: (code: string, fiscalYearId: string) =>
+    api.delete<{ data: { unlettered: number } }>(`/accounting/lettrage/${encodeURIComponent(code)}`, { params: { fiscalYearId } }).then(d),
+  /** Liste les régularisations CCA / PCA / FNP / FAE de l'exercice */
+  listRegularizations: (fiscalYearId: string) =>
+    api.get<{ data: Regularization[] }>('/accounting/regularizations', { params: { fiscalYearId } }).then(d),
+  /** Crée une régularisation et optionnellement sa contre-passation N+1 */
+  createRegularization: (payload: CreateRegularizationPayload) =>
+    api.post<{ data: { main: { pieceId: string; created: number }; extourne: { pieceId: string; fiscalYearId: string; created: number } | null; reference: string } }>('/accounting/regularizations', payload).then(d),
+  /** Supprime une régularisation (et sa contre-passation éventuelle) */
+  deleteRegularization: (pieceId: string) =>
+    api.delete<{ data: { deleted: number; deletedExtourne: number } }>(`/accounting/regularizations/${encodeURIComponent(pieceId)}`).then(d),
+  /** Liste les régularisations N-1 à extourner dans l'exercice N, avec leur statut */
+  listExtournes: (fiscalYearId: string) =>
+    api.get<{ data: ExtourneListResponse }>('/accounting/extournes', { params: { fiscalYearId } }).then(d),
+  /** Crée l'extourne d'une régularisation N-1 dans l'exercice N */
+  createExtourne: (payload: { fiscalYearId: string; regPieceId: string; date?: string }) =>
+    api.post<{ data: { pieceId: string; reference: string; created: number } }>('/accounting/extournes', payload).then(d),
+  /** Crée toutes les extournes manquantes en lot */
+  createAllPendingExtournes: (fiscalYearId: string) =>
+    api.post<{ data: { processed: number; created: number; errors: { reference: string; error: string }[] } }>('/accounting/extournes/all-pending', { fiscalYearId }).then(d),
+  /** Supprime une extourne */
+  deleteExtourne: (pieceId: string) =>
+    api.delete<{ data: { deleted: number } }>(`/accounting/extournes/${encodeURIComponent(pieceId)}`).then(d),
+  // ── Emprunts ───────────────────────────────────────────────────────────────
+  listLoans:   () => api.get<{ data: Loan[] }>('/accounting/loans').then(d),
+  getLoan:     (id: string) => api.get<{ data: LoanWithSchedule }>(`/accounting/loans/${id}`).then(d),
+  createLoan:  (payload: CreateLoanPayload) =>
+    api.post<{ data: Loan }>('/accounting/loans', payload).then(d),
+  updateLoan:  (id: string, payload: Partial<CreateLoanPayload> & { status?: LoanStatus }) =>
+    api.put<{ data: Loan }>(`/accounting/loans/${id}`, payload).then(d),
+  deleteLoan:  (id: string) => api.delete<{ data: { deleted: number } }>(`/accounting/loans/${id}`).then(d),
   getBalanceByFiscalYear: (fiscalYearId: string) =>
     api.get<{ data: BalanceData }>('/accounting/balance-journal', { params: { fiscalYearId } }).then(d),
   getGrandLivreByFiscalYear: (fiscalYearId: string) =>
@@ -244,6 +294,10 @@ export interface JournalEntryRow {
   credit:      number
   reference:   string | null
   lettrage:    string | null
+  /** URL de la pièce justificative (toutes les lignes du pieceId la partagent) */
+  pieceUrl?:   string | null
+  /** Nom de la pièce justificative (fichier) */
+  pieceName?:  string | null
 }
 
 export interface JournalData {
@@ -276,11 +330,181 @@ export interface GrandLivreLigne {
   id:          string
   date:        string
   journalCode: string
+  pieceId:     string | null
   label:       string
   debit:       number
   credit:      number
   solde:       number
   reference:   string | null
+  lettrage:    string | null
+}
+
+// ── Emprunts (classe 16) ──────────────────────────────────────────────────────
+
+export type LoanAmortType = 'CONSTANT_PAYMENT' | 'CONSTANT_PRINCIPAL' | 'IN_FINE' | 'BULLET'
+export type LoanStatus = 'ACTIVE' | 'REPAID' | 'IN_DEFAULT'
+
+export interface LoanScheduleLine {
+  period:           number
+  date:             string
+  openingPrincipal: number
+  payment:          number
+  interest:         number
+  capital:          number
+  closingPrincipal: number
+}
+
+export interface LoanSummary {
+  totalPayments:      number
+  totalInterest:      number
+  totalPrincipal:     number
+  monthlyPayment:     number
+  effectiveRate:      number
+  paidPrincipal:      number
+  paidInterest:       number
+  remainingPrincipal: number
+  nextDueDate:        string | null
+  nextDueAmount:      number
+}
+
+export interface Loan {
+  id:               string
+  companyId:        string
+  reference:        string
+  name:             string
+  lender:           string
+  principal:        number
+  rate:             number
+  durationMonths:   number
+  startDate:        string
+  firstPaymentDate: string
+  amortType:        LoanAmortType
+  currency:         string
+  account:          string | null
+  bankAccount:      string | null
+  interestAccount:  string | null
+  status:           LoanStatus
+  notes:            string | null
+  createdAt:        string
+  updatedAt:        string
+  summary?:         LoanSummary
+}
+
+export interface LoanWithSchedule extends Loan {
+  schedule: LoanScheduleLine[]
+  summary:  LoanSummary
+}
+
+export interface CreateLoanPayload {
+  name:             string
+  lender:           string
+  principal:        number
+  rate:             number
+  durationMonths:   number
+  startDate:        string
+  firstPaymentDate: string
+  amortType?:       LoanAmortType
+  currency?:        string
+  account?:         string | null
+  bankAccount?:     string | null
+  interestAccount?: string | null
+  notes?:           string | null
+  reference?:       string | null
+}
+
+// ── Régularisations d'inventaire (CCA / PCA / FNP / FAE) ──────────────────────
+
+export type RegularizationType = 'CCA' | 'PCA' | 'FNP' | 'FAE' | 'CAP' | 'PAR' | 'CD'
+
+export interface RegularizationLine {
+  id:     string
+  compte: string
+  debit:  number
+  credit: number
+}
+
+export interface Regularization {
+  pieceId:            string
+  reference:          string | null
+  type:               RegularizationType | 'XXX'
+  date:               string
+  libelle:            string
+  montant:            number
+  lignes:             RegularizationLine[]
+  hasContrepassation: boolean
+}
+
+export interface CreateRegularizationPayload {
+  fiscalYearId:         string
+  type:                 RegularizationType
+  date:                 string       // ISO yyyy-mm-dd
+  contrepartie:         string       // compte 6xx ou 7xx
+  libelle:              string
+  montant:              number
+  reference?:           string | null
+  autoContrepassation:  boolean
+}
+
+// ── Extournes (contre-passations N-1 → N) ─────────────────────────────────────
+
+export interface ExtourneRegularization {
+  pieceId:    string
+  reference:  string | null
+  type:       RegularizationType | 'XXX'
+  date:       string
+  libelle:    string
+  montant:    number
+  lignes:     RegularizationLine[]
+  extourne:   {
+    pieceId: string | null
+    date:    string | null
+    lignes:  RegularizationLine[]
+  } | null
+}
+
+export interface ExtourneListResponse {
+  previousFyExists: boolean
+  previousYear:     number
+  previousFyStatus?: string
+  currentYear:      number
+  currentFyStatus?: string
+  regularizations:  ExtourneRegularization[]
+  totalPending?:    number
+  totalDone?:       number
+}
+
+// ── Lettrage des comptes de tiers ─────────────────────────────────────────────
+
+export interface ComptesTiersRow {
+  compte:      string
+  label:       string
+  totalDebit:  number
+  totalCredit: number
+  solde:       number
+  lettres:     number
+  nonLettres:  number
+}
+
+export interface LettrageEntry {
+  id:          string
+  date:        string
+  journalCode: string
+  pieceId:     string | null
+  label:       string
+  reference:   string | null
+  debit:       number
+  credit:      number
+  solde:       number
+  lettrage:    string | null
+}
+
+export interface LettrageCompteData {
+  fiscalYearId: string
+  compte:       string
+  lignes:       LettrageEntry[]
+  totalDebit:   number
+  totalCredit:  number
+  solde:        number
 }
 
 export interface GrandLivreCompte {

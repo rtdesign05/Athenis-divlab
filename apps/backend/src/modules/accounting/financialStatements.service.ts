@@ -344,8 +344,12 @@ function buildOhada(
   // ── Bilan — Passif ────────────────────────────────────────────────────────
   const capitalSoc    = p(['101', '102', '103', '104'], false)
   const primes        = p(['105', '106'], false)
-  const reserves      = p(['11'], false)
-  const reportAN      = ps(['119', '129'], false)  // signé
+  // Réserves : comptes 111-118 uniquement (hors report à nouveau 110/119)
+  const reserves      = p(['111', '112', '113', '114', '115', '116', '117', '118'], false)
+  // Report à nouveau : 110 (créditeur) + 119 (débiteur) — signés
+  // compte 110 → créditeur normal (bénéfice reporté) → positif
+  // compte 119 → débiteur normal (perte reportée) → négatif
+  const reportAN      = ps(['110', '119', '129'], false)
   // Résultat net = résultat calculé P&L (pas compte 13)
   const resultatNet   = resultatPL
   const subvInv       = p(['14'], false)
@@ -375,9 +379,17 @@ function buildOhada(
     nm1: avancesRec.nm1 + dettesFourn.nm1 + dettesFisSoc.nm1,
   }
 
+  // Trésorerie-Passif (SYSCOHADA B7) : soldes créditeurs des comptes de trésorerie
+  // = découverts bancaires, crédits de trésorerie (comptes 50-58 en position créditrice)
+  const tresoCredits  = p(['50', '51', '52', '53', '54', '55', '56', '57', '58'], false)
+  const totalTresoPassif: Pair = {
+    n:   tresoCredits.n,
+    nm1: tresoCredits.nm1,
+  }
+
   const totalPassif: Pair = {
-    n:   totalResStables.n + totalPassifCirc.n,
-    nm1: totalResStables.nm1 + totalPassifCirc.nm1,
+    n:   totalResStables.n + totalPassifCirc.n + totalTresoPassif.n,
+    nm1: totalResStables.nm1 + totalPassifCirc.nm1 + totalTresoPassif.nm1,
   }
 
   // ── TAFIRE ────────────────────────────────────────────────────────────────
@@ -450,6 +462,8 @@ function buildOhada(
         dettesFournisseurs:           dettesFourn,
         dettesFiscalesSociales:       dettesFisSoc,
         totalPassifCirculant:         totalPassifCirc,
+        tresoBanquesPassif:           tresoCredits,
+        totalTresoreriePassif:        totalTresoPassif,
         totalPassif,
       },
     },

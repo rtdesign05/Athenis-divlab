@@ -375,7 +375,13 @@ export function AppDashboard() {
           <Kpi
             label={periodMode === 'full' ? 'CA exercice' : periodMode === 'month' ? `CA — ${MONTH_LABELS[selectedMonth - 1]}` : 'CA semaine'}
             value={stL ? '…' : fmt(stats?.revenue.current ?? 0)}
-            sub={stats?.revenue.growth != null ? `${stats.revenue.growth >= 0 ? '▲' : '▼'} ${Math.abs(stats.revenue.growth).toFixed(1)}% vs N-1` : undefined}
+            sub={
+              stats?.revenue.growth != null
+                ? `${stats.revenue.growth >= 0 ? '▲' : '▼'} ${Math.abs(stats.revenue.growth).toFixed(1)}% vs N-1`
+                : stats?.salesCount
+                  ? `${stats.salesCount} facture${stats.salesCount > 1 ? 's' : ''} émise${stats.salesCount > 1 ? 's' : ''}`
+                  : undefined
+            }
             accent={stats?.revenue.growth != null && stats.revenue.growth >= 0 ? 'green' : 'red'}
           />
           <Kpi

@@ -6,6 +6,7 @@ import {
   type BonReception,
   type LigneBR,
 } from '@/contexts/GestionContext'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { SendEmailModal } from '@/components/gestion/SendEmailModal'
 import { printDocument } from '@/lib/printDocument'
@@ -670,6 +671,8 @@ export function BonsReceptionPage() {
   const [modal,       setModal]       = useState<'create' | 'edit' | null>(null)
   const [selectedId,  setSelectedId]  = useState<string | null>(null)
   const [editTarget,  setEditTarget]  = useState<BonReception | null>(null)
+  const [dateFrom,    setDateFrom]    = useState('')
+  const [dateTo,      setDateTo]      = useState('')
 
   // Liste filtrée
   const items = useMemo(() => {
@@ -683,8 +686,10 @@ export function BonsReceptionPage() {
         b.commande.toLowerCase().includes(q),
       )
     }
+    list = filterByDateRange(list, b => b.dateCreation, dateFrom, dateTo)
     return list
-  }, [bonsReception, agenceNom, search, statutFilter])
+  }, [bonsReception, agenceNom, search, statutFilter, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   const selectedBR    = items.find(b => b.id === selectedId) ?? null
   const selectedIndex = items.findIndex(b => b.id === selectedId)
@@ -791,7 +796,7 @@ export function BonsReceptionPage() {
 
       {/* Tableau */}
       <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5 flex-wrap">
           <div className="relative flex-1 min-w-[160px]">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
             <input value={search} onChange={e => setSearch(e.target.value)}
@@ -804,6 +809,12 @@ export function BonsReceptionPage() {
             <option value="all">Tous les statuts</option>
             {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+          <PeriodFilter
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+            count={isFiltered ? `${items.length} résultat${items.length > 1 ? 's' : ''}` : null}
+          />
         </div>
         <div className="flex-1 min-h-0 overflow-auto">
           <table className="w-full text-sm">

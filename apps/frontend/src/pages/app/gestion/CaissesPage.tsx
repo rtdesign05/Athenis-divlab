@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useTresorerie } from '@/contexts/TresorerieContext'
@@ -295,6 +295,9 @@ export function CaissesPage() {
   const [showAddCaisse, setShowAddCaisse] = useState(false)
   const [showAddOp, setShowAddOp]         = useState(false)
   const [editingOp, setEditingOp]         = useState<Operation | null>(null)
+  // Filtre par date sur les mouvements (yyyy-mm-dd, inclusif)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo]     = useState('')
 
   // Filtrer les caisses accessibles à cet utilisateur
   const caissesVisibles = agenceNom ? caisses.filter(c => c.agence === agenceNom) : caisses
@@ -304,6 +307,18 @@ export function CaissesPage() {
 
   const selected   = caissesVisibles.find(c => c.id === selectedId) ?? caissesVisibles[0]!
   const totalSolde = caissesVisibles.reduce((s, c) => s + c.solde, 0)
+
+  // Filtre par date sur les mouvements du compte sélectionné
+  const filteredOperations = useMemo(() => {
+    if (!selected) return []
+    return selected.operations.filter(op => {
+      if (dateFrom && op.date < dateFrom) return false
+      if (dateTo   && op.date > dateTo)   return false
+      return true
+    })
+  }, [selected, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
+  const filteredTotal = filteredOperations.reduce((s, o) => s + o.montant, 0)
 
   // Grouper par agence
   const agencesPresentes = Array.from(new Set(caissesVisibles.map(c => c.agence)))
@@ -464,24 +479,54 @@ export function CaissesPage() {
 
         {/* Opérations */}
         <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-          <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+          <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-b border-gray-100 flex-wrap gap-2">
             <h2 className="text-sm font-semibold text-gray-900">
               Opérations
               <span className="ml-2 text-xs font-normal text-gray-400">
-                {selected.operations.length} mouvement{selected.operations.length !== 1 ? 's' : ''}
+                {isFiltered
+                  ? `${filteredOperations.length} / ${selected.operations.length}`
+                  : selected.operations.length} mouvement{(isFiltered ? filteredOperations.length : selected.operations.length) !== 1 ? 's' : ''}
               </span>
             </h2>
-            <button
-              onClick={() => setShowAddOp(true)}
-              className="flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800"
-            >
-              <span className="text-base leading-none">+</span> Saisir une opération
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Filtre par date */}
+              <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1">
+                <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">Du</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={e => setDateFrom(e.target.value)}
+                  className="text-xs bg-transparent focus:outline-none text-gray-700"
+                />
+                <span className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">au</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={e => setDateTo(e.target.value)}
+                  className="text-xs bg-transparent focus:outline-none text-gray-700"
+                />
+                {isFiltered && (
+                  <button
+                    onClick={() => { setDateFrom(''); setDateTo('') }}
+                    title="Réinitialiser le filtre"
+                    className="ml-0.5 rounded text-gray-400 hover:text-red-500 px-1 text-sm leading-none"
+                  >×</button>
+                )}
+              </div>
+              <button
+                onClick={() => setShowAddOp(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-green-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-800"
+              >
+                <span className="text-base leading-none">+</span> Saisir une opération
+              </button>
+            </div>
           </div>
 
-          {selected.operations.length === 0 ? (
+          {filteredOperations.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
-              Aucune opération enregistrée
+              {selected.operations.length === 0
+                ? 'Aucune opération enregistrée'
+                : `Aucune opération entre ${dateFrom || '—'} et ${dateTo || '—'}`}
             </div>
           ) : (
             <div className="flex-1 min-h-0 overflow-auto">
@@ -496,7 +541,7 @@ export function CaissesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {selected.operations.map(op => (
+                  {filteredOperations.map(op => (
                     <tr key={op.id} className="group hover:bg-gray-50/60">
                       <td className="px-4 py-2.5 text-xs text-gray-400 whitespace-nowrap">
                         {new Date(op.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -548,6 +593,17 @@ export function CaissesPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {isFiltered && filteredOperations.length > 0 && (
+            <div className="shrink-0 flex items-center justify-between px-4 py-2 border-t border-gray-100 bg-gray-50 text-xs">
+              <span className="text-gray-500">
+                Total période : <strong className="text-gray-700">{filteredOperations.length}</strong> opération{filteredOperations.length > 1 ? 's' : ''}
+              </span>
+              <span className={`font-semibold ${filteredTotal >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                Solde net : {fmt(filteredTotal)}
+              </span>
             </div>
           )}
         </div>

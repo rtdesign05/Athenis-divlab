@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type RetourStatut } from '@/contexts/GestionContext'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 const STATUT_STYLE: Record<RetourStatut, string> = {
   'En cours':  'bg-amber-100 text-amber-700',
@@ -166,6 +167,8 @@ export function RetoursClientsPage() {
   const agenceNom = user?.agenceNom ?? null
   const [search, setSearch] = useState('')
   const [modal,  setModal]  = useState(false)
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo,   setDateTo]   = useState('')
 
   const items = useMemo(() => {
     let list = agenceNom ? retoursClients.filter(r => r.agence === agenceNom) : retoursClients
@@ -177,8 +180,10 @@ export function RetoursClientsPage() {
         r.motif.toLowerCase().includes(q),
       )
     }
+    list = filterByDateRange(list, r => r.date, dateFrom, dateTo)
     return list
-  }, [retoursClients, agenceNom, search])
+  }, [retoursClients, agenceNom, search, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   const facturesForModal = useMemo(
     () => agenceNom
@@ -233,13 +238,19 @@ export function RetoursClientsPage() {
 
       {/* Tableau */}
       <div className="flex-1 min-h-0 rounded-xl border border-gray-200 bg-white overflow-hidden flex flex-col">
-        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+        <div className="shrink-0 flex items-center gap-2 border-b border-gray-100 px-4 py-2.5 flex-wrap">
           <div className="relative flex-1 min-w-[160px]">
             <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Client, N° retour, motif…"
               className="w-full rounded-lg border border-gray-200 bg-white pl-7 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30" />
           </div>
+          <PeriodFilter
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+            count={isFiltered ? `${items.length} résultat${items.length > 1 ? 's' : ''}` : null}
+          />
         </div>
         <div className="flex-1 min-h-0 overflow-auto">
           <table className="w-full text-sm">

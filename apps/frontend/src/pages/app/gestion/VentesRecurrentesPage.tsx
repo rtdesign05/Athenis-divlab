@@ -9,6 +9,7 @@ import {
   type LigneFacture,
 } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 // ── Fallback pour erreurs de rendu ────────────────────────────────────────────
 
@@ -175,9 +176,11 @@ function VentesRecurrentesPageInner() {
   const [filterClient,  setFilterClient]  = useState('')
   const [filterFreq,    setFilterFreq]    = useState<VenteRecurrenteFrequence | ''>('')
   const [searchQuery,   setSearchQuery]   = useState('')
+  const [dateFrom,      setDateFrom]      = useState('')
+  const [dateTo,        setDateTo]        = useState('')
 
   const filtered = useMemo(() => {
-    return ventesRecurrentes.filter(vr => {
+    let list = ventesRecurrentes.filter(vr => {
       if (filterStatut && vr.statut !== filterStatut) return false
       if (filterFreq   && vr.frequence !== filterFreq) return false
       if (filterClient && vr.client !== filterClient) return false
@@ -187,7 +190,11 @@ function VentesRecurrentesPageInner() {
       }
       return true
     })
-  }, [ventesRecurrentes, filterStatut, filterClient, filterFreq, searchQuery])
+    // Filtre période sur la prochaine échéance
+    list = filterByDateRange(list, vr => vr.prochaineEcheance, dateFrom, dateTo)
+    return list
+  }, [ventesRecurrentes, filterStatut, filterClient, filterFreq, searchQuery, dateFrom, dateTo])
+  const isFiltered = dateFrom !== '' || dateTo !== ''
 
   // ── KPIs ─────────────────────────────────────────────────────────────────────
 
@@ -420,6 +427,14 @@ function VentesRecurrentesPageInner() {
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+
+        <PeriodFilter
+          label="Prochaine éch."
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+          count={isFiltered ? `${filtered.length} résultat${filtered.length > 1 ? 's' : ''}` : null}
+        />
 
         <div className="ml-auto">
           <button

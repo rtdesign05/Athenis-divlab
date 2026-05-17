@@ -30,6 +30,7 @@ export async function listPurchaseOrders(companyId: string, query: ListPurchaseO
     companyId,
     ...(user ? getAgenceFilter(user) : {}),
     ...(status ? { status } : {}),
+    ...(query.documentType ? { documentType: query.documentType } : {}),
     ...(search ? {
       OR: [
         { fournisseur: { contains: search, mode: 'insensitive' } },
@@ -72,13 +73,28 @@ export async function createPurchaseOrder(
   const agenceId = user?.agenceId ?? null
 
   return prisma.$transaction(async (tx) => {
-    const reference = await nextOrderReference(companyId, tx)
+    // Si l'utilisateur fournit un numéro de facture (cas typique des factures
+    // d'achat — le numéro vient du fournisseur), on l'utilise tel quel après
+    // vérification d'unicité. Sinon, on génère un numéro auto-incrémenté.
+    let reference: string
+    if (data.reference?.trim()) {
+      reference = data.reference.trim()
+      const existing = await tx.purchaseOrder.findUnique({
+        where: { companyId_reference: { companyId, reference } },
+      })
+      if (existing) {
+        throw new AppError(`Le numéro ${reference} existe déjà pour cette société`, 409, 'DUPLICATE_REFERENCE')
+      }
+    } else {
+      reference = await nextOrderReference(companyId, tx)
+    }
     return tx.purchaseOrder.create({
       data: {
         companyId,
         ...(agenceId     ? { agenceId }              : {}),
         ...(data.fiscalYearId ? { fiscalYearId: data.fiscalYearId } : {}),
         reference,
+        documentType:       data.documentType ?? 'ORDER',
         fournisseur:        data.fournisseur,
         objet:              data.objet,
         status:             'DRAFT',
@@ -89,6 +105,8 @@ export async function createPurchaseOrder(
         montantTTC:         new Prisma.Decimal(data.montantTTC),
         conditionsPaiement: data.conditionsPaiement ?? null,
         notes:              data.notes ?? null,
+        pieceUrl:           data.pieceUrl ?? null,
+        pieceName:          data.pieceName ?? null,
         lines: {
           create: data.lines.map(l => ({
             reference:      l.reference ?? null,
@@ -97,6 +115,8 @@ export async function createPurchaseOrder(
             unite:          l.unite,
             prixUnitaireHT: new Prisma.Decimal(l.prixUnitaireHT),
             montantHT:      new Prisma.Decimal(l.montantHT),
+            ...(l.articleId   ? { articleId: l.articleId }     : {}),
+            ...(l.compteAchat ? { compteAchat: l.compteAchat } : {}),
           })),
         },
       },
@@ -109,10 +129,11 @@ export async function updatePurchaseOrder(
   companyId: string,
   id:        string,
   data:      UpdatePurchaseOrderInput,
+  userId?:   string,
 ) {
-  await getPurchaseOrder(companyId, id)
+  const existing = await getPurchaseOrder(companyId, id)
 
-  return prisma.purchaseOrder.update({
+  const updated = await prisma.purchaseOrder.update({
     where: { id },
     data:  {
       ...(data.fournisseur        !== undefined ? { fournisseur: data.fournisseur }                          : {}),
@@ -125,6 +146,8 @@ export async function updatePurchaseOrder(
       ...(data.montantTTC         !== undefined ? { montantTTC: new Prisma.Decimal(data.montantTTC) }        : {}),
       ...(data.conditionsPaiement !== undefined ? { conditionsPaiement: data.conditionsPaiement ?? null }    : {}),
       ...(data.notes              !== undefined ? { notes: data.notes ?? null }                              : {}),
+      ...(data.pieceUrl           !== undefined ? { pieceUrl: data.pieceUrl ?? null }                        : {}),
+      ...(data.pieceName          !== undefined ? { pieceName: data.pieceName ?? null }                      : {}),
       ...(data.lines ? {
         lines: {
           deleteMany: {},
@@ -135,12 +158,28 @@ export async function updatePurchaseOrder(
             unite:          l.unite,
             prixUnitaireHT: new Prisma.Decimal(l.prixUnitaireHT),
             montantHT:      new Prisma.Decimal(l.montantHT),
+            ...(l.articleId   ? { articleId: l.articleId }     : {}),
+            ...(l.compteAchat ? { compteAchat: l.compteAchat } : {}),
           })),
         },
       } : {}),
     },
     include: LINES_INCLUDE,
   })
+
+  // ── Comptabilisation automatique au passage en RECEIVED ─────────────────
+  // (Facture d'achat reçue → journal ACH)
+  if (data.status === 'RECEIVED' && !existing.posted) {
+    try {
+      const { postPurchaseOrder } = await import('../accounting/posting.service.js')
+      await postPurchaseOrder(companyId, id, userId ?? 'system')
+    } catch (e) {
+      console.error('[Posting] Échec comptabilisation commande', id, e)
+      throw e
+    }
+  }
+
+  return updated
 }
 
 export async function deletePurchaseOrder(companyId: string, id: string) {

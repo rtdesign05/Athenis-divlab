@@ -72,6 +72,7 @@ export interface CreateInvoicePayload {
     prixUnitaireHT: number
     tvaRate:        number
     montantHT:      number
+    articleId?:     string
   }>
 }
 

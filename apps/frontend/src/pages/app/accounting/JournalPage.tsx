@@ -1,23 +1,50 @@
-import { useState, useMemo, useEffect, Fragment } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { accountingApi } from '@/services/accountingApi'
-import type { FiscalYear } from '@/services/accountingApi'
+import { attachmentsApi } from '@/services/attachmentsApi'
+import { PeriodFilter } from '@/components/gestion/PeriodFilter'
 import { useCurrency } from '@/hooks/useCurrency'
+import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
 import { CompteCombobox, normalizeCompteCode } from '@/components/accounting/CompteCombobox'
 import type { CompteOption } from '@/components/accounting/CompteCombobox'
 
 // ── Dynamic journal options (read from accounting config stored in localStorage) ──
 
+/**
+ * Mapping des codes journal "courts" (config UI legacy) vers les codes canoniques
+ * effectivement utilisés par le backend lors de la comptabilisation.
+ * Sans ce mapping, l'utilisateur qui filtre sur "VT" (Ventes) ne voit rien
+ * car les écritures sont stockées avec le code "VTE".
+ */
+const JOURNAL_ALIASES: Record<string, string> = {
+  AC:  'ACH',  // Achats
+  VT:  'VTE',  // Ventes
+  BQ:  'BNQ',  // Banque
+  CA:  'CAI',  // Caisse
+  SA:  'PAY',  // Salaires & charges sociales
+  NDF: 'ACH',  // Notes de frais → comptabilisées en Achats
+}
+
+/** Convertit un code journal en sa forme canonique reconnue par le backend. */
+export function canonicalJournalCode(code: string): string {
+  const c = code.trim().toUpperCase()
+  return JOURNAL_ALIASES[c] ?? c
+}
+
 const DEFAULT_JOURNAL_OPTIONS = [
   { code: 'VTE', label: 'Ventes' },
   { code: 'ACH', label: 'Achats' },
-  { code: 'BQ',  label: 'Banque' },
+  { code: 'BNQ', label: 'Banque' },
   { code: 'CAI', label: 'Caisse' },
   { code: 'OD',  label: 'Opérations diverses' },
+  { code: 'PAY', label: 'Paie' },
+  { code: 'AN',  label: 'À-nouveaux' },
 ]
 
 /** Reads active journal codes from ComptabiliteParamPage settings (Tab 4).
- *  Falls back to the defaults above if nothing is configured. */
+ *  Falls back to the defaults above if nothing is configured.
+ *  Normalise les alias (VT→VTE, AC→ACH, BQ→BNQ, CA→CAI, SA→PAY) pour aligner
+ *  l'UI sur ce que le backend écrit réellement. */
 function loadJournalOptions(): { code: string; label: string }[] {
   try {
     const raw = localStorage.getItem('athenis:accounting-config')
@@ -25,14 +52,23 @@ function loadJournalOptions(): { code: string; label: string }[] {
     const cfg = JSON.parse(raw) as { journals?: { code: string; label: string; active?: boolean }[] }
     const active = (cfg.journals ?? [])
       .filter(j => j.active !== false && j.code?.trim())
-      .map(j => ({ code: j.code.trim().toUpperCase(), label: j.label || j.code }))
-    return active.length > 0 ? active : DEFAULT_JOURNAL_OPTIONS
+      .map(j => ({ code: canonicalJournalCode(j.code), label: j.label || j.code }))
+    // Dedupe par code canonique (en gardant le premier libellé)
+    const seen = new Set<string>()
+    const deduped: { code: string; label: string }[] = []
+    for (const opt of active) {
+      if (seen.has(opt.code)) continue
+      seen.add(opt.code)
+      deduped.push(opt)
+    }
+    return deduped.length > 0 ? deduped : DEFAULT_JOURNAL_OPTIONS
   } catch {
     return DEFAULT_JOURNAL_OPTIONS
   }
 }
 
 const JOURNAL_COLOR: Record<string, string> = {
+  AN:  'bg-sky-100 text-sky-700',
   VTE: 'bg-green-100 text-green-700',
   ACH: 'bg-red-100 text-red-700',
   BQ:  'bg-blue-100 text-blue-700',
@@ -43,6 +79,7 @@ const JOURNAL_COLOR: Record<string, string> = {
 
 // Couleur de la bordure gauche par journal (identifie visuellement le journal de la pièce)
 const JOURNAL_BORDER: Record<string, string> = {
+  AN:  'border-l-sky-400',
   VTE: 'border-l-green-400',
   ACH: 'border-l-red-400',
   BQ:  'border-l-blue-400',
@@ -92,11 +129,21 @@ function newLine(): EntryLine {
 function makeEmptyForm(
   initialJournal?: string,
   opts: { code: string }[] = DEFAULT_JOURNAL_OPTIONS,
+  fyStartDate?: string,
+  fyEndDate?: string,
 ): EntryForm {
   const journal = initialJournal ?? opts[0]?.code ?? 'VTE'
   const isKnown = opts.some(o => o.code === journal)
+  // Date par défaut : aujourd'hui si dans l'exercice, sinon début d'exercice
+  const today = todayISO()
+  let defaultDate = today
+  if (fyStartDate && fyEndDate) {
+    const start = fyStartDate.slice(0, 10)
+    const end   = fyEndDate.slice(0, 10)
+    if (today < start || today > end) defaultDate = start
+  }
   return {
-    date: todayISO(),
+    date: defaultDate,
     journal: isKnown ? journal : 'AUTRE',
     customJournal: isKnown ? '' : journal,
     reference: '',
@@ -110,6 +157,8 @@ interface NewEntryModalProps {
   fiscalYearId: string
   fyStatus:     string   // statut live de l'exercice — bloque la soumission si ≠ OPEN
   fyYear:       number   // pour l'affichage dans les messages d'erreur
+  fyStartDate:  string   // bornes du picker de date (ISO yyyy-mm-dd ou complète)
+  fyEndDate:    string
   onClose: () => void
   initialJournal?: string
   // Edit mode
@@ -122,7 +171,7 @@ interface NewEntryModalProps {
   }
 }
 
-function NewEntryModal({ fiscalYearId, fyStatus, fyYear, onClose, initialJournal, editPieceId, editData }: NewEntryModalProps) {
+function NewEntryModal({ fiscalYearId, fyStatus, fyYear, fyStartDate, fyEndDate, onClose, initialJournal, editPieceId, editData }: NewEntryModalProps) {
   const isEditMode = !!editPieceId
   const queryClient = useQueryClient()
 
@@ -147,7 +196,7 @@ function NewEntryModal({ fiscalYearId, fyStatus, fyYear, onClose, initialJournal
         lines: editData.lines.map(l => ({ ...l, id: Math.random().toString(36).slice(2) })),
       }
     }
-    return makeEmptyForm(initialJournal, opts)
+    return makeEmptyForm(initialJournal, opts, fyStartDate, fyEndDate)
   })
   const [error, setError] = useState<string | null>(null)
 
@@ -215,13 +264,13 @@ function NewEntryModal({ fiscalYearId, fyStatus, fyYear, onClose, initialJournal
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    // Vérification côté client : exercice doit être OPEN
+    // Vérification côté client : seuls les exercices clôturés sont bloqués
     if (fyStatus === 'CLOSED') {
       setError(`L'exercice ${fyYear} est clôturé. Aucune écriture ne peut être saisie.`)
       return
     }
-    if (fyStatus === 'LOCKED') {
-      setError(`L'exercice ${fyYear} est verrouillé. Déverrouillez-le avant de saisir des écritures.`)
+    if (resolvedJournal === 'AN') {
+      setError('Le journal AN (À-nouveaux) est généré automatiquement à la clôture — saisie manuelle interdite.')
       return
     }
     if (!resolvedJournal) { setError('Veuillez saisir un code journal.'); return }
@@ -276,7 +325,13 @@ function NewEntryModal({ fiscalYearId, fyStatus, fyYear, onClose, initialJournal
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">Date</label>
-                <input type="date" value={form.date} onChange={e => setHeader('date', e.target.value)} required className={INPUT} />
+                <input type="date" value={form.date}
+                  min={fyStartDate.slice(0, 10)}
+                  max={fyEndDate.slice(0, 10)}
+                  onChange={e => setHeader('date', e.target.value)} required className={INPUT} />
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  Doit être dans l'exercice {fyYear} : {fyStartDate.slice(0,10)} → {fyEndDate.slice(0,10)}
+                </p>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-700">
@@ -514,23 +569,6 @@ function ConfirmDeleteModal({ lineCount, onConfirm, onCancel, isPending }: {
   )
 }
 
-// ── Fiscal year selector badge ───────────────────────────────────────────────
-
-function FYStatusBadge({ status }: { status: FiscalYear['status'] }) {
-  const map: Record<string, { label: string; cls: string }> = {
-    OPEN:   { label: 'Ouvert',     cls: 'bg-green-100 text-green-700' },
-    LOCKED: { label: 'Verrouillé', cls: 'bg-amber-100 text-amber-700' },
-    CLOSED: { label: 'Clôturé',    cls: 'bg-blue-100 text-blue-700' },
-    DRAFT:  { label: 'Brouillon',  cls: 'bg-gray-100 text-gray-500' },
-  }
-  const { label, cls } = map[status] ?? { label: status, cls: 'bg-gray-100 text-gray-600' }
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
-      {label}
-    </span>
-  )
-}
-
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export function JournalPage() {
@@ -542,6 +580,9 @@ export function JournalPage() {
   const [showModal, setShowModal]       = useState(false)
   const [modalJournal, setModalJournal] = useState<string | undefined>(undefined)
   const [hoveredKey, setHoveredKey]     = useState<string | null>(null)
+  // Filtre par date sur les écritures du journal (yyyy-mm-dd, inclusif)
+  const [dateFrom, setDateFrom]         = useState('')
+  const [dateTo,   setDateTo]           = useState('')
 
   // Edit state
   const [editPieceId, setEditPieceId]   = useState<string | undefined>(undefined)
@@ -550,49 +591,10 @@ export function JournalPage() {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; pieceId: string | null; lineCount: number } | null>(null)
 
-  // ── Sélecteur d'exercice local ─────────────────────────────────────────────
-  // staleTime:0 + refetchInterval:15s pour toujours avoir le statut réel des exercices.
-  // Évite l'affichage d'un exercice CLOSED comme OPEN dans le sélecteur.
-  const { data: allYears = [], isLoading: yearsLoading } = useQuery({
-    queryKey: ['fiscal-years'],
-    queryFn:  () => accountingApi.listFiscalYears(),
-    staleTime: 0,               // toujours considéré périmé → refetch à chaque montage
-    refetchInterval: 15_000,    // polling 15s : détecte une clôture externe sans refresh page
-    refetchOnWindowFocus: true, // mise à jour dès que l'utilisateur revient sur l'onglet
-  })
-
-  // Seuls les exercices OPEN et LOCKED sont sélectionnables pour la saisie.
-  // Les exercices CLOSED ne sont PAS accessibles dans le journal pour saisir.
-  const selectableYears = useMemo(() => {
-    return allYears
-      .filter(y => y.status === 'OPEN' || y.status === 'LOCKED')
-      .sort((a, b) => {
-        const rank = (s: string) => s === 'OPEN' ? 0 : 1
-        if (rank(a.status) !== rank(b.status)) return rank(a.status) - rank(b.status)
-        return b.year - a.year
-      })
-  }, [allYears])
-
-  const [selectedFyId, setSelectedFyId] = useState<string | null>(null)
-
-  // Initialise avec le premier exercice OPEN (ou LOCKED s'il n'y a pas d'OPEN)
-  useEffect(() => {
-    if (selectedFyId === null && selectableYears.length > 0) {
-      setSelectedFyId(selectableYears[0]!.id)
-    }
-  }, [selectableYears, selectedFyId])
-
-  // Si l'exercice sélectionné vient d'être clôturé (plus dans selectableYears),
-  // bascule automatiquement sur le premier exercice disponible.
-  useEffect(() => {
-    if (selectedFyId !== null && selectableYears.length > 0) {
-      const stillAvailable = selectableYears.some(y => y.id === selectedFyId)
-      if (!stillAvailable) setSelectedFyId(selectableYears[0]!.id)
-    }
-  }, [selectableYears, selectedFyId])
-
-  const fyData = selectableYears.find(y => y.id === selectedFyId) ?? selectableYears[0] ?? null
-  const isReadOnly = fyData?.status !== 'OPEN' // LOCKED ou autre → lecture seule
+  // ── Exercice sélectionné via le sélecteur global (bandeau AccountingLayout) ─
+  // CLOSED → lecture seule. OPEN et LOCKED → saisie et modification autorisées.
+  const fyData     = useSelectedFiscalYearData()
+  const isReadOnly = fyData?.status === 'CLOSED'
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['journal', fyData?.id],
@@ -600,6 +602,44 @@ export function JournalPage() {
     enabled:  !!fyData?.id,
     staleTime: 30_000,
   })
+
+  // ── À-nouveaux provisoires : exercice N-1 non clôturé ──────────────────────
+  // Si l'exercice N-1 est OPEN ou LOCKED (pas encore clôturé), on calcule les
+  // À-nouveaux provisoires à partir de ses soldes actuels, affichés en lecture seule.
+  const { data: allYears = [] } = useFiscalYears()
+
+  const prevOpenFY = useMemo(() => {
+    if (!fyData) return null
+    // N-1 doit exister et ne pas être CLOSED (AN réels générés à la clôture)
+    return allYears.find(y => y.year === fyData.year - 1 && y.status !== 'CLOSED') ?? null
+  }, [fyData, allYears])
+
+  const { data: prevJournalData } = useQuery({
+    queryKey: ['journal', prevOpenFY?.id, 'provisional-an'],
+    queryFn:  () => prevOpenFY ? accountingApi.getJournal(prevOpenFY.id) : Promise.reject(new Error('no prev fy')),
+    enabled:  !!prevOpenFY?.id,
+    staleTime: 30_000,
+  })
+
+  // Calcule les soldes de bilan de N-1 (classes 1-5) → AN provisoires pour N
+  const provisionalAN = useMemo(() => {
+    if (!prevJournalData) return []
+    const balances = new Map<string, { compte: string; intitule: string; debit: number; credit: number }>()
+    for (const e of prevJournalData.entries) {
+      if (!/^[12345]/.test(e.account)) continue  // classes 6/7/8 = résultat, non reporté
+      const b = balances.get(e.account) ?? { compte: e.account, intitule: e.label, debit: 0, credit: 0 }
+      b.debit  += e.debit
+      b.credit += e.credit
+      balances.set(e.account, b)
+    }
+    const result: { compte: string; intitule: string; debit: number; credit: number }[] = []
+    for (const [compte, b] of balances) {
+      const solde = b.debit - b.credit
+      if (Math.abs(solde) < 0.001) continue
+      result.push({ compte, intitule: b.intitule, debit: solde > 0 ? solde : 0, credit: solde < 0 ? -solde : 0 })
+    }
+    return result.sort((a, b) => a.compte.localeCompare(b.compte))
+  }, [prevJournalData])
 
   const deleteMutation = useMutation({
     mutationFn: ({ pieceId, entryId }: { pieceId: string | null; entryId?: string }) =>
@@ -612,19 +652,68 @@ export function JournalPage() {
     },
   })
 
+  // ── Attache d'une pièce justificative à toutes les lignes d'une écriture ──────
+  const attachPjMutation = useMutation({
+    mutationFn: async ({ pieceId, file }: { pieceId: string; file: File }) => {
+      const [att] = await attachmentsApi.upload([file], {})
+      if (!att) throw new Error('Échec de l\'upload')
+      return accountingApi.attachJustificative(pieceId, {
+        pieceUrl:  attachmentsApi.fileUrl(att.id),
+        pieceName: att.fileName,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['journal', fyData?.id] })
+    },
+  })
+
+  const detachPjMutation = useMutation({
+    mutationFn: (pieceId: string) =>
+      accountingApi.attachJustificative(pieceId, { pieceUrl: null, pieceName: null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['journal', fyData?.id] })
+    },
+  })
+
   // Build dynamic filter tabs: configured journals + any extra codes in actual data
+  // Tous les codes sont NORMALISÉS (canonique backend) — pour éviter le bug
+  // où "VT" (config) ne matche jamais "VTE" (data).
   const journalOptions = useMemo(() => loadJournalOptions(), [])
   const entries = data?.entries ?? []
   const filterOptions = useMemo(() => {
     const configCodes = new Set(journalOptions.map(j => j.code))
-    const dataCodes = [...new Set(entries.map(e => e.journalCode))].filter(c => !configCodes.has(c))
+    const dataCodes = [...new Set(entries.map(e => canonicalJournalCode(e.journalCode)))]
+      .filter(c => !configCodes.has(c))
     return [
       ...journalOptions,
       ...dataCodes.map(c => ({ code: c, label: c })),
     ]
   }, [journalOptions, entries])
 
-  const visible = filter === 'ALL' ? entries : entries.filter(e => e.journalCode === filter)
+  // Tri par date décroissante (puis pieceId stable) — les écritures récentes
+  // apparaissent en haut, idéal pour les utilisateurs qui veulent voir leur
+  // dernière saisie en premier. Le backend reste en ordre chronologique pour
+  // les rapports (balance, grand livre, états financiers).
+  // Le filtre compare avec le code CANONIQUE pour que "VT" matche "VTE", etc.
+  const visible = (
+    filter === 'ALL'
+      ? entries
+      : entries.filter(e => canonicalJournalCode(e.journalCode) === canonicalJournalCode(filter))
+  )
+    // Filtre par plage de dates (inclusif). YYYY-MM-DD compare lexicographique = chronologique.
+    .filter(e => {
+      const d = (e.date || '').slice(0, 10)
+      if (dateFrom && d < dateFrom) return false
+      if (dateTo   && d > dateTo)   return false
+      return true
+    })
+    .slice()
+    .sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1   // date desc
+      const pa = a.pieceId ?? '', pb = b.pieceId ?? ''
+      return pa < pb ? 1 : pa > pb ? -1 : 0                    // pieceId desc tie-break
+    })
+  const isDateFiltered = dateFrom !== '' || dateTo !== ''
   const groups  = groupEntries(visible)
 
   const totalDebit  = visible.reduce((s, e) => s + e.debit,  0)
@@ -672,41 +761,14 @@ export function JournalPage() {
         )}
       </div>
 
-      {/* ── Sélecteur exercice ── */}
-      {!yearsLoading && (
-        selectableYears.length === 0
-          ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Aucun exercice ouvert ou verrouillé. Créez ou ouvrez un exercice dans{' '}
-              <strong>Paramètres → Exercices comptables</strong> pour saisir des écritures.
-              Les exercices clôturés ne sont pas accessibles dans le journal.
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              {selectableYears.map(fy => (
-                <button
-                  key={fy.id}
-                  onClick={() => { setSelectedFyId(fy.id); setFilter('ALL') }}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
-                    fyData?.id === fy.id
-                      ? 'border-forest-600 bg-forest-50 text-forest-800 shadow-sm'
-                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  <span>Exercice {fy.year}</span>
-                  <FYStatusBadge status={fy.status} />
-                </button>
-              ))}
-              {isReadOnly && fyData && (
-                <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                  🔒 Exercice verrouillé — consultation seule
-                </span>
-              )}
-            </div>
-          )
+      {/* ── Bannière lecture seule (exercice clôturé) ── */}
+      {isReadOnly && fyData && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          🔒 Exercice {fyData.year} clôturé — consultation seule. Aucune écriture ne peut être saisie ou modifiée.
+        </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <select
           value={filter}
           onChange={e => setFilter(e.target.value)}
@@ -717,6 +779,14 @@ export function JournalPage() {
             <option key={j.code} value={j.code}>{j.code} — {j.label}</option>
           ))}
         </select>
+
+        {/* Filtre par période */}
+        <PeriodFilter
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={r => { setDateFrom(r.dateFrom); setDateTo(r.dateTo) }}
+          count={isDateFiltered ? `${visible.length} ligne${visible.length > 1 ? 's' : ''}` : null}
+        />
         {!isReadOnly && fyData && (
           <div className="relative group">
             <button onClick={() => openNewModal('')} title="Ajouter un journal"
@@ -730,11 +800,68 @@ export function JournalPage() {
         )}
       </div>
 
-      {(yearsLoading || isLoading) && <Spinner />}
+      {/* ── À-nouveaux provisoires (N-1 non clôturé) ─────────────────────────── */}
+      {prevOpenFY && provisionalAN.length > 0 && (filter === 'ALL' || filter === 'AN') && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50/50 overflow-hidden">
+          <div className="flex items-center gap-2.5 bg-sky-100/70 px-4 py-2.5 border-b border-sky-200">
+            <span className="text-lg">📋</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-sky-900">
+                À-nouveaux provisoires — exercice {prevOpenFY.year} non clôturé
+              </p>
+              <p className="text-xs text-sky-700 mt-0.5">
+                Soldes calculés à partir des écritures de l'exercice {prevOpenFY.year}. Ces AN seront générés automatiquement lors de sa clôture.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-md border border-sky-300 bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-600 tracking-wide">
+              LECTURE SEULE
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-sky-200 bg-sky-100/40 text-left text-xs font-semibold text-sky-700">
+                <th className="px-4 py-2">Journal</th>
+                <th className="px-4 py-2">Compte</th>
+                <th className="px-4 py-2">Libellé</th>
+                <th className="px-4 py-2 text-right">Débit</th>
+                <th className="px-4 py-2 text-right">Crédit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {provisionalAN.map((row, i) => (
+                <tr key={row.compte} className={`border-t border-sky-100 ${i % 2 === 0 ? '' : 'bg-sky-50/40'}`}>
+                  <td className="px-4 py-2">
+                    <span className="rounded px-1.5 py-0.5 text-xs font-medium bg-sky-100 text-sky-700">AN</span>
+                  </td>
+                  <td className="px-4 py-2 font-mono text-xs text-sky-600">{row.compte}</td>
+                  <td className="px-4 py-2 text-sky-800 text-sm italic">{row.intitule}</td>
+                  <td className="px-4 py-2 text-right font-medium text-sky-900 tabular-nums">
+                    {row.debit > 0 ? fmtAmount(row.debit) : <span className="text-sky-300">—</span>}
+                  </td>
+                  <td className="px-4 py-2 text-right font-medium text-sky-900 tabular-nums">
+                    {row.credit > 0 ? fmtAmount(row.credit) : <span className="text-sky-300">—</span>}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-t-2 border-sky-200 bg-sky-100/60 font-semibold text-sm">
+                <td colSpan={3} className="px-4 py-2 text-sky-700">TOTAL PROVISOIRE</td>
+                <td className="px-4 py-2 text-right text-sky-900 tabular-nums">
+                  {fmtAmount(provisionalAN.reduce((s, r) => s + r.debit, 0))}
+                </td>
+                <td className="px-4 py-2 text-right text-sky-900 tabular-nums">
+                  {fmtAmount(provisionalAN.reduce((s, r) => s + r.credit, 0))}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      {!yearsLoading && selectableYears.length > 0 && !fyData && (
+      {isLoading && <Spinner />}
+
+      {!fyData && !isLoading && (
         <div className="flex flex-col items-center justify-center py-20 gap-2 text-slate-500">
-          <p className="text-sm">Sélectionnez un exercice comptable ci-dessus.</p>
+          <p className="text-sm">Sélectionnez un exercice comptable dans le menu en haut.</p>
         </div>
       )}
 
@@ -769,11 +896,12 @@ export function JournalPage() {
                 </tr>
               ) : (
                 groups.map((group, gi) => {
-                  const isHovered = hoveredKey === group.key
-                  const groupBg   = isHovered
+                  const isHovered  = hoveredKey === group.key
+                  const isANGroup  = group.rows[0]?.journalCode === 'AN'  // AN toujours protégé
+                  const groupBg    = isHovered
                     ? 'bg-blue-50/60'
                     : gi % 2 === 0 ? '' : 'bg-slate-50/60'
-                  const borderCol = JOURNAL_BORDER[group.rows[0]?.journalCode ?? ''] ?? 'border-l-gray-300'
+                  const borderCol  = JOURNAL_BORDER[group.rows[0]?.journalCode ?? ''] ?? 'border-l-gray-300'
                   return (
                     <Fragment key={group.key}>
                       {group.rows.map((e, ri) => {
@@ -799,13 +927,64 @@ export function JournalPage() {
                                 {e.journalCode}
                               </span>
                             </td>
-                            {/* Pièce / Référence sur toutes les lignes */}
+                            {/* Pièce / Référence + Pièce justificative (1re ligne uniquement) */}
                             <td className="px-4 py-2">
-                              {e.reference && (
-                                <span className="font-mono text-xs text-gray-500 truncate max-w-[110px]" title={e.reference}>
-                                  {e.reference}
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1.5">
+                                {e.reference && (
+                                  <span className="font-mono text-xs text-gray-500 truncate max-w-[110px]" title={e.reference}>
+                                    {e.reference}
+                                  </span>
+                                )}
+                                {isFirstRow && group.pieceId && !isANGroup && (
+                                  <>
+                                    {e.pieceUrl ? (
+                                      <span className="inline-flex items-center gap-0.5">
+                                        <a
+                                          href={e.pieceUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          title={`Voir la pièce justificative : ${e.pieceName ?? ''}`}
+                                          className="text-green-600 hover:text-green-800 text-xs leading-none"
+                                        >
+                                          📎
+                                        </a>
+                                        {!isReadOnly && (
+                                          <button
+                                            onClick={() => {
+                                              if (confirm(`Retirer la pièce justificative "${e.pieceName}" ?`)) {
+                                                detachPjMutation.mutate(group.pieceId!)
+                                              }
+                                            }}
+                                            title="Retirer la pièce justificative"
+                                            className="text-gray-300 hover:text-red-500 text-xs leading-none"
+                                          >×</button>
+                                        )}
+                                      </span>
+                                    ) : (
+                                      !isReadOnly && (
+                                        <label
+                                          title="Joindre une pièce justificative à cette écriture (toutes les lignes)"
+                                          className="relative cursor-pointer text-gray-300 hover:text-blue-600 text-xs leading-none"
+                                        >
+                                          <input
+                                            type="file"
+                                            className="sr-only inset-0"
+                                            accept=".pdf,.png,.jpg,.jpeg,.webp,.gif"
+                                            onChange={ev => {
+                                              const f = ev.target.files?.[0]
+                                              if (f && group.pieceId) {
+                                                attachPjMutation.mutate({ pieceId: group.pieceId, file: f })
+                                              }
+                                              ev.target.value = ''
+                                            }}
+                                          />
+                                          📎
+                                        </label>
+                                      )
+                                    )}
+                                  </>
+                                )}
+                              </div>
                             </td>
 
                             <td className="px-4 py-2 font-mono text-xs text-gray-600">{e.account}</td>
@@ -818,7 +997,8 @@ export function JournalPage() {
                             </td>
                             {!isReadOnly && (
                               <td className="px-2 py-2 w-16">
-                                {isFirstRow && (
+                                {/* AN est toujours en lecture seule — pas de boutons pour ce journal */}
+                                {isFirstRow && !isANGroup && (
                                   <div className={`flex items-center justify-end gap-1 transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
                                     {group.pieceId && (
                                       <button
@@ -836,6 +1016,12 @@ export function JournalPage() {
                                     >
                                       ✕
                                     </button>
+                                  </div>
+                                )}
+                                {/* Badge lecture seule pour les AN */}
+                                {isFirstRow && isANGroup && (
+                                  <div className="flex justify-end">
+                                    <span title="À-nouveaux — lecture seule" className="text-xs text-blue-400 opacity-60 select-none">🔒</span>
                                   </div>
                                 )}
                               </td>
@@ -867,6 +1053,8 @@ export function JournalPage() {
           fiscalYearId={fyData.id}
           fyStatus={fyData.status}
           fyYear={fyData.year}
+          fyStartDate={fyData.startDate}
+          fyEndDate={fyData.endDate}
           onClose={() => { setShowModal(false); setEditPieceId(undefined); setEditData(undefined) }}
           {...(modalJournal  !== undefined ? { initialJournal: modalJournal }  : {})}
           {...(editPieceId   !== undefined ? { editPieceId }                   : {})}

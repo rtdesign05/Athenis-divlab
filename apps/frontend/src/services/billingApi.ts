@@ -109,7 +109,12 @@ export interface Paginated<T> {
 }
 
 export interface DashboardStats {
+  /** Chiffre d'affaires (TTC) — factures émises (SENT/PAID/OVERDUE) sur la période */
   revenue:       { current: number; previous: number; growth: number | null }
+  /** Nombre de factures émises sur la période */
+  salesCount?:   number
+  /** Montant encaissé sur la période (PAID avec paidAt dans la période) */
+  cashedAmount?: number
   grossProfit:   { amount: number; margin: number | null }
   dso:           number | null
   pendingAmount: number

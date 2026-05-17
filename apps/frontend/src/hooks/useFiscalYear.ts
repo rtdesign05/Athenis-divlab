@@ -19,7 +19,9 @@ export function useSelectedFiscalYearData() {
 export function useFiscalYearGuard() {
   const fy = useSelectedFiscalYearData()
   return {
-    isReadOnly: fy?.status === 'CLOSED' || fy?.status === 'LOCKED',
+    // Seul un exercice CLOSED est en lecture seule.
+    // LOCKED est toujours modifiable (verrouillage = contrôle interne, pas blocage de saisie).
+    isReadOnly: fy?.status === 'CLOSED',
     status:     fy?.status ?? 'OPEN',
   }
 }

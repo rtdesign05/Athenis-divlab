@@ -48,6 +48,7 @@ function openGrandLivrePrint(
   readOnly: boolean,
   coveredYears: number[],
   tabLabel = 'Grand Livre général',
+  printMode: 'all' | 'unlettered' = 'all',
 ) {
   const today   = new Date().toLocaleDateString('fr-FR')
   const isOHADA = !['FR', 'BE', 'CH', 'LU'].includes(info.country)
@@ -60,16 +61,37 @@ function openGrandLivrePrint(
     ? 'Établi conformément au Système Comptable OHADA — SYSCOHADA révisé (Acte uniforme relatif au droit comptable)'
     : 'Établi conformément au Plan Comptable Général (PCG) — Règlement ANC n° 2014-03'
 
-  const rows = comptes.map(c => {
+  // Filtre par mode d'édition : tout vs uniquement non-lettrées (pour tiers)
+  const filterTiers = printMode === 'unlettered'
+  const printable = comptes
+    .map(c => {
+      // Filtre les lignes lettrées sur les comptes de tiers (classe 4) si demandé
+      if (filterTiers && /^4/.test(c.account)) {
+        let running = 0
+        const filtered = c.lignes
+          .filter(l => !l.lettrage)
+          .map(l => {
+            running += l.debit - l.credit
+            return { ...l, runningBalance: running }
+          })
+        return { ...c, lignes: filtered }
+      }
+      return c
+    })
+    .filter(c => c.lignes.length > 0)  // ne pas afficher les comptes vides après filtrage
+
+  const rows = printable.map(c => {
     const totalD = c.lignes.reduce((s, l) => s + l.debit,  0)
     const totalC = c.lignes.reduce((s, l) => s + l.credit, 0)
     const solde  = totalD - totalC
+    const isTiers = /^4/.test(c.account)
     return `
       <div class="compte-block">
         <div class="compte-header">
           <span class="compte-num">${c.account}</span>
           <span class="sep">—</span>
           <span class="compte-lab">${c.label}</span>
+          ${isTiers && filterTiers ? '<span class="filter-badge">Non lettrées uniquement</span>' : ''}
           ${readOnly ? '<span class="ro-badge">Lecture seule</span>' : ''}
         </div>
         <table>
@@ -78,7 +100,8 @@ function openGrandLivrePrint(
               <th style="width:9%">Date</th>
               <th style="width:7%">Journal</th>
               <th style="width:10%">Pièce</th>
-              <th style="width:35%">Libellé</th>
+              ${isTiers ? '<th style="width:5%">Lettre</th>' : ''}
+              <th style="width:${isTiers ? '30' : '35'}%">Libellé</th>
               <th style="width:11%;text-align:right">Débit</th>
               <th style="width:11%;text-align:right">Crédit</th>
               <th style="width:17%;text-align:right">Solde cumulé</th>
@@ -86,10 +109,11 @@ function openGrandLivrePrint(
           </thead>
           <tbody>
             ${c.lignes.map(l => `
-              <tr>
+              <tr${l.lettrage ? ' class="lettered"' : ''}>
                 <td>${fmtDate(l.date)}</td>
                 <td>${l.journalCode}</td>
                 <td class="mono">${l.reference ?? ''}</td>
+                ${isTiers ? `<td class="center mono"><b>${l.lettrage ?? ''}</b></td>` : ''}
                 <td>${l.label}</td>
                 <td class="num">${l.debit  ? fmtAmt(l.debit)  : ''}</td>
                 <td class="num">${l.credit ? fmtAmt(l.credit) : ''}</td>
@@ -101,7 +125,7 @@ function openGrandLivrePrint(
           </tbody>
           <tfoot>
             <tr class="total-row">
-              <td colspan="4">Totaux — ${c.account}</td>
+              <td colspan="${isTiers ? 5 : 4}">Totaux — ${c.account}</td>
               <td class="num">${fmtAmt(totalD)}</td>
               <td class="num">${fmtAmt(totalC)}</td>
               <td class="num ${solde < 0 ? 'red' : ''}">${fmtAmt(Math.abs(solde))} ${solde >= 0 ? 'D' : 'C'}</td>
@@ -127,6 +151,10 @@ body{font-family:Arial,sans-serif;font-size:9pt;color:#111;background:#fff}
 .info-row{display:flex;gap:18px;margin-top:5px;font-size:8pt;color:#444}
 .info-label{font-weight:bold}
 .ro-banner{background:#fff7ed;border:1px solid #f59e0b;border-radius:4px;padding:4px 10px;font-size:8pt;color:#92400e;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.mode-banner{background:#eff6ff;border:1px solid #3b82f6;border-radius:4px;padding:4px 10px;font-size:8pt;color:#1e40af;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.filter-badge{font-size:7pt;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:10px;font-weight:normal;border:1px solid #93c5fd}
+.lettered td{background:#f0fdf4 !important;color:#555}
+.center{text-align:center}
 .compte-block{margin-bottom:14px;page-break-inside:avoid}
 .compte-header{background:#f0f4f0;border-left:4px solid #1b4332;padding:4px 8px;font-weight:bold;font-size:8.5pt;display:flex;gap:8px;align-items:center}
 .compte-num{font-family:monospace;color:#1b4332}
@@ -164,6 +192,7 @@ tr:nth-child(even) td{background:#fafafa}
     </div>
   </div>
   ${readOnly ? `<div class="ro-banner">⚠ Période(s) clôturée(s) — document en consultation uniquement</div>` : ''}
+  ${filterTiers ? `<div class="mode-banner">📋 Mode d'édition : <b>uniquement les écritures non lettrées des comptes de tiers</b> (impayés / créances et dettes ouvertes)</div>` : ''}
   ${rows}
   <div class="footer">
     <span>${refText}</span>
@@ -184,12 +213,33 @@ tr:nth-child(even) td{background:#fafafa}
 interface MergedLigne extends GrandLivreLigne {
   runningBalance: number
   fyYear: number
+  fyId:   string
 }
 
 interface MergedCompte {
   account: string
   label: string
   lignes: MergedLigne[]
+}
+
+/** Compte de tiers (classe 4) — éligible au lettrage */
+function isTiersAccount(account: string): boolean {
+  return /^4/.test(account)
+}
+
+// Palette pour les codes de lettrage (cyclique, stable par code)
+const LETTRAGE_PALETTE = [
+  { bg: 'bg-green-100',  text: 'text-green-800',  ring: 'ring-green-300'  },
+  { bg: 'bg-blue-100',   text: 'text-blue-800',   ring: 'ring-blue-300'   },
+  { bg: 'bg-violet-100', text: 'text-violet-800', ring: 'ring-violet-300' },
+  { bg: 'bg-amber-100',  text: 'text-amber-800',  ring: 'ring-amber-300'  },
+  { bg: 'bg-pink-100',   text: 'text-pink-800',   ring: 'ring-pink-300'   },
+  { bg: 'bg-cyan-100',   text: 'text-cyan-800',   ring: 'ring-cyan-300'   },
+]
+function lettrageColor(code: string): { bg: string; text: string; ring: string } {
+  let idx = 0
+  for (let i = 0; i < code.length; i++) idx = idx * 26 + code.charCodeAt(i) - 65
+  return LETTRAGE_PALETTE[idx % LETTRAGE_PALETTE.length]!
 }
 
 // ── Modal de réimputation ─────────────────────────────────────────────────────
@@ -339,11 +389,16 @@ export function GrandLivrePage() {
   const [search,     setSearch]     = useState(compteParam)
   const [activeTab,  setActiveTab]  = useState<GLTab>('general')
 
-  // ── Sélection pour réimputation ───────────────────────────────────────────
+  // ── Sélection pour réimputation / lettrage ────────────────────────────────
   const [selectedIds,    setSelectedIds]    = useState<Set<string>>(new Set())
   const [showReimpute,   setShowReimpute]   = useState(false)
   const [reimputeError,  setReimputeError]  = useState<string | null>(null)
+  const [lettrageError,  setLettrageError]  = useState<string | null>(null)
   const [successMsg,     setSuccessMsg]     = useState<string | null>(null)
+
+  // ── Filtre d'édition / impression : tout vs uniquement non-lettrées ───────
+  const [printMode,     setPrintMode]     = useState<'all' | 'unlettered'>('all')
+  const [showPrintMenu, setShowPrintMenu] = useState(false)
 
   const toggleEntry = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -391,6 +446,43 @@ export function GrandLivrePage() {
     reimputeMutation.mutate({ entryIds: Array.from(selectedIds), newAccount })
   }
 
+  // ── Mutation lettrage ─────────────────────────────────────────────────────
+  const lettrerMutation = useMutation({
+    mutationFn: ({ fiscalYearId, entryIds }: { fiscalYearId: string; entryIds: string[] }) =>
+      accountingApi.lettrer(fiscalYearId, entryIds),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['grand-livre-journal'] })
+      qc.invalidateQueries({ queryKey: ['comptes-tiers']     })
+      qc.invalidateQueries({ queryKey: ['lettrage-compte']   })
+      qc.invalidateQueries({ queryKey: ['journal']           })
+      clearSelection()
+      setSuccessMsg(`✓ Lettrage ${data.code} — ${data.lettered} écriture(s) rapprochées`)
+      setTimeout(() => setSuccessMsg(null), 4000)
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string; message?: string } }; message?: string }
+      setLettrageError(e.response?.data?.error ?? e.response?.data?.message ?? e.message ?? 'Erreur lors du lettrage')
+      setTimeout(() => setLettrageError(null), 6000)
+    },
+  })
+
+  const delettrerMutation = useMutation({
+    mutationFn: ({ code, fiscalYearId }: { code: string; fiscalYearId: string }) =>
+      accountingApi.delettrer(code, fiscalYearId),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['grand-livre-journal'] })
+      qc.invalidateQueries({ queryKey: ['comptes-tiers']     })
+      qc.invalidateQueries({ queryKey: ['lettrage-compte']   })
+      setSuccessMsg(`✓ Délettrage — ${data.unlettered} écriture(s) délettrées`)
+      setTimeout(() => setSuccessMsg(null), 4000)
+    },
+    onError: (err: unknown) => {
+      const e = err as { response?: { data?: { error?: string } } }
+      setLettrageError(e.response?.data?.error ?? 'Erreur lors du délettrage')
+      setTimeout(() => setLettrageError(null), 6000)
+    },
+  })
+
   // ── Exercices couverts par la plage ──────────────────────────────────────
   const coveredFYs = useMemo(() => {
     if (!allFY) return []
@@ -423,15 +515,16 @@ export function GrandLivrePage() {
     const to   = new Date(dateTo)
     to.setHours(23, 59, 59, 999)
 
-    const compteMap = new Map<string, { account: string; label: string; lignes: (GrandLivreLigne & { fyYear: number })[] }>()
+    const compteMap = new Map<string, { account: string; label: string; lignes: (GrandLivreLigne & { fyYear: number; fyId: string })[] }>()
 
     fyQueries.forEach((q, i) => {
       const fyYear = coveredFYs[i]?.year ?? 0
+      const fyId   = coveredFYs[i]?.id   ?? ''
       if (!q.data) return
       for (const compte of q.data.comptes) {
         const filtered = compte.lignes
           .filter(l => { const d = new Date(l.date); return d >= from && d <= to })
-          .map(l => ({ ...l, fyYear }))
+          .map(l => ({ ...l, fyYear, fyId }))
         if (filtered.length === 0) continue
         const existing = compteMap.get(compte.account)
         if (!existing) {
@@ -485,8 +578,74 @@ export function GrandLivrePage() {
     return Array.from(accounts).sort()
   }, [selectedIds, filteredComptes])
 
+  // ── Éligibilité au lettrage de la sélection (SYSCOHADA/PCG) ───────────────
+  const lettrageEligibility = useMemo(() => {
+    if (selectedIds.size < 2) {
+      return { eligible: false, reason: 'Sélectionnez au moins 2 écritures', selDebit: 0, selCredit: 0, fyId: '' }
+    }
+    const selLignes: MergedLigne[] = []
+    for (const c of activeComptes) {
+      for (const l of c.lignes) {
+        if (selectedIds.has(l.id)) selLignes.push(l)
+      }
+    }
+    if (selLignes.length === 0) {
+      return { eligible: false, reason: 'Aucune écriture trouvée', selDebit: 0, selCredit: 0, fyId: '' }
+    }
+
+    // Toutes sur le même compte
+    const comptes = new Set(selLignes.map(l => {
+      // On retrouve le compte depuis activeComptes (chaque l n'a pas account directement)
+      for (const c of activeComptes) if (c.lignes.some(x => x.id === l.id)) return c.account
+      return ''
+    }))
+    if (comptes.size !== 1) {
+      return { eligible: false, reason: 'Toutes les écritures doivent être sur le même compte', selDebit: 0, selCredit: 0, fyId: '' }
+    }
+    const account = [...comptes][0]!
+
+    // Compte classe 4 obligatoire
+    if (!isTiersAccount(account)) {
+      return { eligible: false, reason: 'Le lettrage est réservé aux comptes de tiers (classe 4)', selDebit: 0, selCredit: 0, fyId: '' }
+    }
+
+    // Toutes sur le même exercice
+    const fyIds = new Set(selLignes.map(l => l.fyId))
+    if (fyIds.size !== 1) {
+      return { eligible: false, reason: 'Les écritures doivent appartenir au même exercice', selDebit: 0, selCredit: 0, fyId: '' }
+    }
+    const fyId = [...fyIds][0]!
+
+    // Aucune déjà lettrée
+    const alreadyLettered = selLignes.filter(l => l.lettrage)
+    if (alreadyLettered.length > 0) {
+      const codes = [...new Set(alreadyLettered.map(l => l.lettrage))].join(', ')
+      return { eligible: false, reason: `${alreadyLettered.length} écriture(s) déjà lettrée(s) (${codes})`, selDebit: 0, selCredit: 0, fyId }
+    }
+
+    // Équilibre D = C
+    const selDebit  = selLignes.reduce((s, l) => s + l.debit,  0)
+    const selCredit = selLignes.reduce((s, l) => s + l.credit, 0)
+    if (Math.abs(selDebit - selCredit) > 0.01) {
+      return { eligible: false, reason: `Déséquilibre — débit ${selDebit} ≠ crédit ${selCredit}`, selDebit, selCredit, fyId }
+    }
+
+    return { eligible: true, reason: '', selDebit, selCredit, fyId }
+  }, [selectedIds, activeComptes])
+
+  function handleLettrer() {
+    if (!lettrageEligibility.eligible) return
+    setLettrageError(null)
+    lettrerMutation.mutate({ fiscalYearId: lettrageEligibility.fyId, entryIds: Array.from(selectedIds) })
+  }
+
+  function handleDelettrer(code: string, fyId: string) {
+    setLettrageError(null)
+    delettrerMutation.mutate({ code, fiscalYearId: fyId })
+  }
+
   // ── Print ─────────────────────────────────────────────────────────────────
-  function handlePrint() {
+  function handlePrint(mode: 'all' | 'unlettered' = printMode) {
     const info: PrintInfo = {
       companyName: company?.name ?? 'Entreprise',
       legalForm:   company?.legalForm ?? null,
@@ -498,8 +657,15 @@ export function GrandLivrePage() {
       country,
     }
     const tabLabel = GL_TABS.find(t => t.id === activeTab)?.label ?? 'Grand Livre'
-    openGrandLivrePrint(info, dateFrom, dateTo, activeComptes, fmt, hasClosedFY, coveredYears, tabLabel)
+    openGrandLivrePrint(info, dateFrom, dateTo, activeComptes, fmt, hasClosedFY, coveredYears, tabLabel, mode)
+    setShowPrintMenu(false)
   }
+
+  // Has any tiers account in the current tab? (to decide if "non lettrées" filter is offered)
+  const hasTiersAccounts = useMemo(
+    () => activeComptes.some(c => isTiersAccount(c.account)),
+    [activeComptes],
+  )
 
   // ── Presets de période ────────────────────────────────────────────────────
   function applyPreset(from: string, to: string) {
@@ -557,14 +723,53 @@ export function GrandLivrePage() {
               {selectedIds.size} sélectionnée{selectedIds.size > 1 ? 's' : ''}
             </span>
           )}
-          <button
-            onClick={handlePrint}
-            disabled={activeComptes.length === 0}
-            className="flex items-center gap-2 rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-white
-                       hover:bg-[#2d6a4f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            🖨 Éditer / Imprimer
-          </button>
+          {/* Bouton d'édition avec menu déroulant si comptes de tiers présents */}
+          <div className="relative">
+            <button
+              onClick={() => hasTiersAccounts ? setShowPrintMenu(v => !v) : handlePrint('all')}
+              disabled={activeComptes.length === 0}
+              className="flex items-center gap-2 rounded-lg bg-[#1b4332] px-4 py-2 text-sm font-medium text-white
+                         hover:bg-[#2d6a4f] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              🖨 Éditer / Imprimer
+              {hasTiersAccounts && <span className="text-[10px] opacity-70">▾</span>}
+            </button>
+            {showPrintMenu && hasTiersAccounts && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setShowPrintMenu(false)} />
+                <div className="absolute right-0 top-full mt-1 z-40 w-72 rounded-xl border border-gray-200 bg-white shadow-2xl overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50">
+                    <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Mode d'édition</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      Pour les comptes de tiers (classe 4)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setPrintMode('all'); handlePrint('all') }}
+                    className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 transition-colors"
+                  >
+                    <p className="text-sm font-medium text-gray-800 flex items-center gap-2">
+                      📄 Édition complète
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Toutes les écritures, lettrées et non lettrées
+                    </p>
+                  </button>
+                  <button
+                    onClick={() => { setPrintMode('unlettered'); handlePrint('unlettered') }}
+                    className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors"
+                  >
+                    <p className="text-sm font-medium text-gray-800 flex items-center gap-2">
+                      🔍 Édition partielle (impayés)
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Sans les écritures lettrées — affiche le solde restant dû
+                    </p>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -813,6 +1018,7 @@ export function GrandLivrePage() {
                     <th className="px-4 py-2.5">Date</th>
                     <th className="px-4 py-2.5">Journal</th>
                     <th className="px-4 py-2.5">Pièce</th>
+                    {isTiersAccount(c.account) && <th className="px-2 py-2.5 text-center w-14">Lettre</th>}
                     <th className="px-4 py-2.5">Libellé</th>
                     <th className="px-4 py-2.5 text-right">Débit</th>
                     <th className="px-4 py-2.5 text-right">Crédit</th>
@@ -833,11 +1039,14 @@ export function GrandLivrePage() {
                       >
                         {!hasClosedFY && (
                           <td className="pl-4 pr-2 py-2">
+                            {/* Une écriture déjà lettrée ne peut pas être re-sélectionnée pour lettrage */}
                             <input
                               type="checkbox"
                               checked={isSelected}
-                              onChange={() => toggleEntry(l.id)}
-                              className="h-4 w-4 rounded border-gray-300 text-[#1b4332] focus:ring-[#1b4332] cursor-pointer"
+                              disabled={!!l.lettrage}
+                              onChange={() => !l.lettrage && toggleEntry(l.id)}
+                              title={l.lettrage ? `Écriture lettrée (${l.lettrage}) — délettrer d'abord pour modifier` : undefined}
+                              className="h-4 w-4 rounded border-gray-300 text-[#1b4332] focus:ring-[#1b4332] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                             />
                           </td>
                         )}
@@ -848,6 +1057,25 @@ export function GrandLivrePage() {
                           </span>
                         </td>
                         <td className="px-4 py-2 font-mono text-xs text-gray-400">{l.reference ?? '—'}</td>
+                        {isTiersAccount(c.account) && (
+                          <td className="px-2 py-2 text-center w-14">
+                            {l.lettrage ? (() => {
+                              const col = lettrageColor(l.lettrage)
+                              return (
+                                <button
+                                  onClick={() => !hasClosedFY && handleDelettrer(l.lettrage!, l.fyId)}
+                                  disabled={hasClosedFY || delettrerMutation.isPending}
+                                  title={hasClosedFY ? `Lettrage ${l.lettrage}` : `Cliquer pour délettrer ${l.lettrage}`}
+                                  className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 transition-colors ${col.bg} ${col.text} ${col.ring} ${
+                                    !hasClosedFY ? 'hover:bg-red-100 hover:text-red-700 hover:ring-red-300' : 'cursor-default'
+                                  } disabled:opacity-50`}
+                                >
+                                  {l.lettrage}
+                                </button>
+                              )
+                            })() : <span className="text-gray-300 text-xs">—</span>}
+                          </td>
+                        )}
                         <td className="px-4 py-2 text-gray-700">{l.label}</td>
                         <td className="px-4 py-2 text-right font-medium text-blue-700">
                           {l.debit ? fmt(l.debit) : ''}
@@ -867,7 +1095,7 @@ export function GrandLivrePage() {
                 <tfoot>
                   <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold text-sm">
                     {!hasClosedFY && <td />}
-                    <td colSpan={4} className="px-4 py-2.5 text-gray-700">
+                    <td colSpan={isTiersAccount(c.account) ? 5 : 4} className="px-4 py-2.5 text-gray-700">
                       Totaux — {c.account}
                     </td>
                     <td className="px-4 py-2.5 text-right text-blue-700">{fmt(totalD)}</td>
@@ -884,11 +1112,19 @@ export function GrandLivrePage() {
         )
       })}
 
+      {/* ── Toast lettrage ── */}
+      {lettrageError && (
+        <div className="fixed top-4 right-4 z-50 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg max-w-md">
+          ⚠️ {lettrageError}
+          <button onClick={() => setLettrageError(null)} className="ml-3 text-red-500 hover:text-red-700">×</button>
+        </div>
+      )}
+
       {/* ── Barre flottante de sélection ── */}
       {selectedIds.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40
                         flex items-center gap-3 rounded-2xl border border-[#1b4332]/20
-                        bg-[#1b4332] text-white shadow-2xl px-5 py-3 min-w-max">
+                        bg-[#1b4332] text-white shadow-2xl px-5 py-3 min-w-max max-w-[95vw] flex-wrap">
           <div className="flex items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-bold">
               {selectedIds.size}
@@ -897,7 +1133,40 @@ export function GrandLivrePage() {
               écriture{selectedIds.size > 1 ? 's' : ''} sélectionnée{selectedIds.size > 1 ? 's' : ''}
             </span>
           </div>
+
+          {/* Indicateur équilibre pour lettrage */}
+          {selectedIds.size >= 2 && lettrageEligibility.selDebit > 0 && (
+            <div className="text-xs text-white/85">
+              D : <b>{fmt(lettrageEligibility.selDebit)}</b>
+              <span className="mx-1.5">·</span>
+              C : <b>{fmt(lettrageEligibility.selCredit)}</b>
+              {lettrageEligibility.eligible
+                ? <span className="ml-1.5 text-green-300 font-medium">✓ Équilibré</span>
+                : <span className="ml-1.5 text-amber-200">⚠ écart {fmt(Math.abs(lettrageEligibility.selDebit - lettrageEligibility.selCredit))}</span>
+              }
+            </div>
+          )}
+
           <div className="h-5 w-px bg-white/30" />
+
+          {/* Bouton Lettrer (visible uniquement si comptes de tiers) */}
+          <button
+            onClick={handleLettrer}
+            disabled={!lettrageEligibility.eligible || lettrerMutation.isPending}
+            title={lettrageEligibility.eligible ? 'Lettrer les écritures sélectionnées' : lettrageEligibility.reason}
+            className={`flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-sm font-semibold transition-colors ${
+              lettrageEligibility.eligible
+                ? 'bg-green-500 text-white hover:bg-green-600'
+                : 'bg-white/10 text-white/40 cursor-not-allowed'
+            }`}
+          >
+            {lettrerMutation.isPending ? (
+              <><span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Lettrage…</>
+            ) : (
+              <>🔗 Lettrer</>
+            )}
+          </button>
+
           <button
             onClick={() => { setReimputeError(null); setShowReimpute(true) }}
             className="flex items-center gap-1.5 rounded-xl bg-white text-[#1b4332] px-4 py-1.5

@@ -12,11 +12,15 @@ export interface ApiPurchaseLine {
   unite:          string
   prixUnitaireHT: number | string
   montantHT:      number | string
+  articleId:      string | null
+  compteAchat:    string | null
 }
 
 export interface ApiPurchaseOrder {
   id:                 string               // UUID (clé DB)
   reference:          string               // "BC-2026-001" (clé d'affichage)
+  /** ORDER = bon de commande (auto-incrément), INVOICE = facture d'achat (référence manuelle) */
+  documentType?:      'ORDER' | 'INVOICE'
   fournisseur:        string
   agenceId:           string | null
   agence:             { nom: string } | null
@@ -29,6 +33,8 @@ export interface ApiPurchaseOrder {
   objet:              string
   notes:              string | null
   conditionsPaiement: string | null
+  pieceUrl:           string | null
+  pieceName:          string | null
   lines:              ApiPurchaseLine[]
 }
 
@@ -43,15 +49,29 @@ export const STATUS_TO_STATUT: Record<PurchaseStatus, string> = {
 }
 
 export const STATUT_TO_STATUS: Record<string, PurchaseStatus> = {
+  // Achat (bon de commande)
   'En attente': 'DRAFT',
   'En cours':   'SENT',
   'Reçue':      'RECEIVED',
+  // FactureAchat (facture)
+  'À valider':  'DRAFT',
+  'Validée':    'RECEIVED',     // ← passage en RECEIVED déclenche la comptabilisation
+  'Payée':      'RECEIVED',     // ← reste posté (règlement = écriture séparée à venir)
+  'En retard':  'SENT',
+  // Commun
   'Annulée':    'CANCELLED',
 }
 
 // ── Payloads ──────────────────────────────────────────────────────────────────
 
 export interface CreateOrderPayload {
+  /** Numéro de facture fournisseur (manuel) — si omis, auto-incrément */
+  reference?:          string
+  /** ORDER (défaut) = bon de commande. INVOICE = facture d'achat. */
+  documentType?:       'ORDER' | 'INVOICE'
+  /** URL et nom du fichier PDF/image de la facture (pièce justificative) */
+  pieceUrl?:           string
+  pieceName?:          string
   fournisseur:         string
   objet:               string
   date:                string
@@ -68,6 +88,8 @@ export interface CreateOrderPayload {
     unite:          string
     prixUnitaireHT: number
     montantHT:      number
+    articleId?:     string
+    compteAchat?:   string
   }>
 }
 
@@ -75,11 +97,11 @@ export type UpdateOrderPayload = Partial<CreateOrderPayload & { status: Purchase
 
 // ── Appels API ────────────────────────────────────────────────────────────────
 
-export function listOrders(params?: { page?: number; limit?: number }) {
+export function listOrders(params?: { page?: number; limit?: number; documentType?: 'ORDER' | 'INVOICE' }) {
   return api
     .get<{ success: true; data: { items: ApiPurchaseOrder[]; total: number } }>(
       '/purchases',
-      { params: { limit: 200, ...params } },
+      { params: { limit: 100, ...params } },
     )
     .then(r => r.data.data)
 }

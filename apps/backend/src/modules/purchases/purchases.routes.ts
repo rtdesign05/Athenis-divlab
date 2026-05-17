@@ -75,7 +75,8 @@ purchasesRouter.patch(
   validateRequest({ body: UpdatePurchaseOrderDto }),
   async (req, res, next) => {
     try {
-      const data = await svc.updatePurchaseOrder(getCompanyId(req), req.params.id!, req.body)
+      const userId = req.user?.sub
+      const data = await svc.updatePurchaseOrder(getCompanyId(req), req.params.id!, req.body, userId)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },

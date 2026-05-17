@@ -89,18 +89,51 @@ export async function getClient(companyId: string, id: string) {
   return { ...client, reliabilityScore, invoiceCount: invoiceStats._count, invoiceTotal: invoiceStats._sum?.amountTTC }
 }
 
-export async function createClient(companyId: string, data: CreateClientInput) {
+export async function createClient(companyId: string, data: CreateClientInput & { accountingCode?: string }) {
   if (data.email) {
     const dup = await prisma.client.findFirst({ where: { companyId, email: data.email } })
     if (dup) throw new AppError('A client with this email already exists', 409, 'EMAIL_DUPLICATE')
   }
+
+  // Compte comptable : saisi ou auto-généré (411 + slug du nom)
+  let accountingCode = data.accountingCode?.trim()
+  if (!accountingCode) {
+    const slug = data.name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'CLIENT'
+    accountingCode = `411${slug}`
+  }
+
+  // Synchronisation avec Plan Comptable (création si absent)
+  const { normalizeAccountCode } = await import('../../lib/accountCodes.js')
+  const normalized = normalizeAccountCode(accountingCode)
+  const existing = await prisma.accountPlan.findUnique({
+    where: { companyId_numero: { companyId, numero: normalized } },
+  })
+  if (!existing) {
+    const company = await prisma.company.findUniqueOrThrow({
+      where: { id: companyId }, select: { accountingZone: true },
+    })
+    await prisma.accountPlan.create({
+      data: {
+        companyId,
+        numero:   normalized,
+        intitule: `Client ${data.name}`,
+        classe:   4,
+        type:     'ACTIF',
+        zone:     company.accountingZone,
+        isSystem: false,
+        isActive: true,
+      },
+    })
+  }
+
   return prisma.client.create({
     data: {
       companyId,
-      nom:       data.name,
-      email:     data.email     ?? null,
-      telephone: data.phone     ?? null,
-      adresse:   data.address   ?? null,
+      nom:            data.name,
+      email:          data.email     ?? null,
+      telephone:      data.phone     ?? null,
+      adresse:        data.address   ?? null,
+      accountingCode: normalized,
     },
   })
 }

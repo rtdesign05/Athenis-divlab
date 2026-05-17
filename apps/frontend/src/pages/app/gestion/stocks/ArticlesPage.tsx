@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { stocksApi, type Article, type StockFamily, type StockMethod } from '@/services/stocksApi'
 import { useCurrency } from '@/hooks/useCurrency'
+import { CompteCombobox } from '@/components/accounting/CompteCombobox'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 // ── Status helper ─────────────────────────────────────────────────────────────
 
@@ -93,8 +95,14 @@ type ArticleTab = 'general' | 'prix' | 'comptabilite'
 
 function ArticleModal({ families, onClose, initial }: { families: StockFamily[]; onClose: () => void; initial?: Article }) {
   const qc  = useQueryClient()
+  const { company } = useCompanySettings()
+  const zone = (company?.accountingZone ?? 'OHADA') as 'OHADA' | 'FRANCE' | 'IFRS'
   const [tab, setTab] = useState<ArticleTab>('general')
   const [err, setErr] = useState('')
+
+  // Comptes par défaut suggérés selon la zone comptable
+  const DEFAULT_COMPTE_ACHAT = zone === 'OHADA' ? '601' : '601'
+  const DEFAULT_COMPTE_VENTE = zone === 'OHADA' ? '701' : '701'
 
   const [form, setForm] = useState({
     reference:        initial?.reference ?? '',
@@ -284,14 +292,47 @@ function ArticleModal({ families, onClose, initial }: { families: StockFamily[];
 
             {tab === 'comptabilite' && (
               <>
-                <p className="text-xs text-gray-500">Comptes SYSCOHADA / PCG associés à cet article</p>
-                <div>
-                  <label className="label">Compte d'achat</label>
-                  <input className="input font-mono" value={form.compteAchat} onChange={(e) => f('compteAchat', e.target.value)} placeholder="601 — Achats marchandises" />
+                <div className="rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 text-[11px] text-blue-800 leading-relaxed">
+                  <p className="font-semibold mb-1">💡 Ces comptes seront utilisés automatiquement lors de la comptabilisation</p>
+                  <ul className="space-y-0.5 ml-3 list-disc">
+                    <li><strong>Compte de charge</strong> (classe 6) : crédité sur les factures d'achat de cet article</li>
+                    <li><strong>Compte de produit</strong> (classe 7) : crédité sur les factures de vente de cet article</li>
+                    <li>Si vide, les valeurs par défaut <code className="bg-blue-100 px-1 rounded">{DEFAULT_COMPTE_ACHAT}</code> / <code className="bg-blue-100 px-1 rounded">{DEFAULT_COMPTE_VENTE}</code> ({zone}) sont appliquées</li>
+                  </ul>
                 </div>
+
                 <div>
-                  <label className="label">Compte de vente</label>
-                  <input className="input font-mono" value={form.compteVente} onChange={(e) => f('compteVente', e.target.value)} placeholder="701 — Ventes marchandises" />
+                  <label className="label flex items-center gap-2">
+                    <span>Compte de charge (achats)</span>
+                    <span className="text-[10px] font-normal text-gray-400">classe 6</span>
+                  </label>
+                  <CompteCombobox
+                    value={form.compteAchat}
+                    onChange={v => f('compteAchat', v)}
+                    onSelect={c => f('compteAchat', c.code)}
+                    filterClasses={['6']}
+                    placeholder={`${DEFAULT_COMPTE_ACHAT} — Achats marchandises (par défaut)`}
+                  />
+                  <p className="mt-1 text-[10px] text-gray-400">
+                    Exemples : <code>601</code> Marchandises · <code>602</code> Matières premières · <code>604</code> Études et prestations · <code>605</code> Autres approv. · <code>608</code> Achats d'emballages
+                  </p>
+                </div>
+
+                <div>
+                  <label className="label flex items-center gap-2">
+                    <span>Compte de produit (ventes)</span>
+                    <span className="text-[10px] font-normal text-gray-400">classe 7</span>
+                  </label>
+                  <CompteCombobox
+                    value={form.compteVente}
+                    onChange={v => f('compteVente', v)}
+                    onSelect={c => f('compteVente', c.code)}
+                    filterClasses={['7']}
+                    placeholder={`${DEFAULT_COMPTE_VENTE} — Ventes de marchandises (par défaut)`}
+                  />
+                  <p className="mt-1 text-[10px] text-gray-400">
+                    Exemples : <code>701</code> Marchandises · <code>702</code> Produits finis · <code>704</code> Travaux · <code>706</code> Services vendus · <code>707</code> Produits accessoires
+                  </p>
                 </div>
               </>
             )}
@@ -372,15 +413,16 @@ export function ArticlesPage() {
               <th className="px-4 py-3 text-right">Stock</th>
               <th className="px-4 py-3 text-right">CMUP</th>
               <th className="px-4 py-3 text-right">Valeur</th>
+              <th className="px-4 py-3 text-center" title="Comptes comptabilité (charge / produit)">Comptes</th>
               <th className="px-4 py-3 text-center">Statut</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {isLoading ? (
-              <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400">Chargement…</td></tr>
+              <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400">Chargement…</td></tr>
             ) : articles.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400">Aucun article trouvé</td></tr>
+              <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400">Aucun article trouvé</td></tr>
             ) : articles.map((a) => {
               const s = statut(a.stockActuel, a.stockMin)
               const valeur = a.stockActuel * a.valeurCmup
@@ -397,6 +439,22 @@ export function ArticlesPage() {
                   </td>
                   <td className="px-4 py-3 text-right text-gray-600">{fmt(a.valeurCmup)}</td>
                   <td className="px-4 py-3 text-right font-medium text-gray-900">{fmt(valeur)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <div className="flex flex-col items-center gap-0.5">
+                      <span
+                        title={a.compteAchat ? `Compte de charge : ${a.compteAchat}` : 'Compte de charge non défini (défaut : 601)'}
+                        className={`font-mono text-[10px] rounded px-1.5 py-0.5 ${a.compteAchat ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-300'}`}
+                      >
+                        🛒 {a.compteAchat ?? '—'}
+                      </span>
+                      <span
+                        title={a.compteVente ? `Compte de produit : ${a.compteVente}` : 'Compte de produit non défini (défaut : 701)'}
+                        className={`font-mono text-[10px] rounded px-1.5 py-0.5 ${a.compteVente ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-300'}`}
+                      >
+                        💰 {a.compteVente ?? '—'}
+                      </span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${s.cls}`}>{s.label}</span>
                   </td>

@@ -11,6 +11,9 @@ import * as svc from './accounting.service.js'
 import * as fsSvc from './financialStatements.service.js'
 import * as rev from './revision.service.js'
 import * as assSvc from './assets.service.js'
+import * as regSvc from './regularization.service.js'
+import * as loanSvc from './loans.service.js'
+import * as postSvc from './posting.service.js'
 
 export const accountingRouter = Router()
 
@@ -30,14 +33,6 @@ async function requireFiscalYearWritable(req: Request, res: Response, next: Next
         success: false,
         error:   'Exercice cl\u00f4tur\u00e9 \u2014 lecture seule. Les modifications ne sont pas autoris\u00e9es.',
         code:    'FISCAL_YEAR_CLOSED',
-      })
-      return
-    }
-    if (fy?.status === 'LOCKED') {
-      res.status(403).json({
-        success: false,
-        error:   "Exercice verrouill\u00e9 \u2014 aucune \u00e9criture ne peut \u00eatre cr\u00e9\u00e9e ou modifi\u00e9e. D\u00e9verrouillez l'exercice pour effectuer des saisies.",
-        code:    'FISCAL_YEAR_LOCKED',
       })
       return
     }
@@ -66,10 +61,6 @@ async function requirePieceWritable(req: Request, res: Response, next: NextFunct
     }
     if (fy?.status === 'CLOSED') {
       res.status(403).json({ success: false, error: 'Exercice cl\u00f4tur\u00e9 \u2014 lecture seule.', code: 'FISCAL_YEAR_CLOSED' })
-      return
-    }
-    if (fy?.status === 'LOCKED') {
-      res.status(403).json({ success: false, error: "Exercice verrouill\u00e9 \u2014 d\u00e9verrouillez avant de modifier des \u00e9critures.", code: 'FISCAL_YEAR_LOCKED' })
       return
     }
     next()
@@ -537,6 +528,32 @@ accountingRouter.delete(
   },
 )
 
+/**
+ * Attache (ou détache si pieceUrl=null) une pièce justificative à toutes
+ * les lignes d'une écriture (même pieceId). Réglementation : une écriture
+ * comptable forme un tout, donc la PJ s'applique à toutes ses lignes.
+ */
+accountingRouter.put(
+  '/journal/piece/:pieceId/justificative',
+  checkModule('comptabilite', 'write'),
+  requirePieceWritable,
+  async (req, res, next) => {
+    try {
+      const { pieceId } = req.params as { pieceId: string }
+      const { pieceUrl, pieceName } = req.body as { pieceUrl?: string | null; pieceName?: string | null }
+      const data = await svc.attachPieceJustificative(
+        getCompanyId(req)!,
+        pieceId,
+        {
+          pieceUrl:  pieceUrl  ? String(pieceUrl).trim()  : null,
+          pieceName: pieceName ? String(pieceName).trim() : null,
+        },
+      )
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
 accountingRouter.delete(
   '/journal/:id',
   checkModule('comptabilite', 'write'),
@@ -569,6 +586,69 @@ accountingRouter.put(
 
 // ── Lettrage ──────────────────────────────────────────────────────────────────
 
+/** Liste des comptes de tiers (classe 4) avec stats de lettrage */
+accountingRouter.get(
+  '/comptes-tiers',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await svc.getComptesTiers(getCompanyId(req)!, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Écritures d'un compte de tiers avec codes de lettrage */
+accountingRouter.get(
+  '/lettrage-compte',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      const compte       = req.query['compte']        as string | undefined
+      if (!fiscalYearId || !compte) throw new AppError('fiscalYearId et compte requis', 400, 'VALIDATION_ERROR')
+      const data = await svc.getLettragePourCompte(getCompanyId(req)!, fiscalYearId, compte)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/**
+ * Lettrage réglementaire : valide D=C, même compte classe 4,
+ * génère automatiquement le code (A, B, …, AA, …).
+ */
+accountingRouter.post(
+  '/lettrer',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { fiscalYearId, entryIds } = req.body as { fiscalYearId?: string; entryIds?: string[] }
+      if (!fiscalYearId || !Array.isArray(entryIds) || entryIds.length < 2)
+        throw new AppError('fiscalYearId et au moins 2 entryIds sont requis', 400, 'VALIDATION_ERROR')
+      const data = await svc.lettrer(getCompanyId(req)!, fiscalYearId, entryIds)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Délettrage : supprime un code de lettrage dans un exercice */
+accountingRouter.delete(
+  '/lettrage/:code',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { code } = req.params as { code: string }
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await svc.deleteLettrage(getCompanyId(req)!, code, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Backward-compat: PUT /journal/lettrage (code explicit) */
 accountingRouter.put(
   '/journal/lettrage',
   checkModule('comptabilite', 'write'),
@@ -593,6 +673,261 @@ accountingRouter.delete(
       const fiscalYearId = req.query['fiscalYearId'] as string | undefined
       if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
       const data = await svc.deleteLettrage(getCompanyId(req)!, code, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Comptabilisation Gestion ↔ Comptabilité ───────────────────────────────────
+
+/** Comptabilise manuellement une facture de vente (journal VTE) */
+accountingRouter.post(
+  '/posting/sale/:invoiceId',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const userId = req.user?.sub ?? 'system'
+      const data = await postSvc.postSaleInvoice(getCompanyId(req)!, req.params['invoiceId']!, userId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Comptabilise manuellement une commande d'achat (journal ACH) */
+accountingRouter.post(
+  '/posting/purchase/:orderId',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const userId = req.user?.sub ?? 'system'
+      const data = await postSvc.postPurchaseOrder(getCompanyId(req)!, req.params['orderId']!, userId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Annule la comptabilisation d'une facture de vente */
+accountingRouter.delete(
+  '/posting/sale/:invoiceId',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const data = await postSvc.unpostSaleInvoice(getCompanyId(req)!, req.params['invoiceId']!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Annule la comptabilisation d'une commande d'achat */
+accountingRouter.delete(
+  '/posting/purchase/:orderId',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const data = await postSvc.unpostPurchaseOrder(getCompanyId(req)!, req.params['orderId']!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Emprunts (classe 16) ──────────────────────────────────────────────────────
+
+accountingRouter.get(
+  '/loans',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const data = await loanSvc.listLoans(getCompanyId(req)!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.get(
+  '/loans/:id',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const data = await loanSvc.getLoan(getCompanyId(req)!, req.params['id']!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.post(
+  '/loans',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const userId = req.user?.sub ?? 'system'
+      const data = await loanSvc.createLoan(getCompanyId(req)!, req.body, userId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.put(
+  '/loans/:id',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const data = await loanSvc.updateLoan(getCompanyId(req)!, req.params['id']!, req.body)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+accountingRouter.delete(
+  '/loans/:id',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const data = await loanSvc.deleteLoan(getCompanyId(req)!, req.params['id']!)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Régularisations d'inventaire (CCA / PCA / FNP / FAE) ──────────────────────
+
+/** Liste les régularisations d'un exercice (groupées par pièce) */
+accountingRouter.get(
+  '/regularizations',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await regSvc.listRegularizations(getCompanyId(req)!, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/**
+ * Crée une régularisation (CCA / PCA / FNP / FAE) :
+ *  - Génère une écriture OD équilibrée D = C
+ *  - Génère optionnellement la contre-passation au 1er jour de l'exercice N+1
+ */
+accountingRouter.post(
+  '/regularizations',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const userId = req.user?.sub ?? 'system'
+      const {
+        fiscalYearId, type, date, contrepartie, libelle, montant, reference, autoContrepassation,
+      } = req.body as {
+        fiscalYearId?:        string
+        type?:                'CCA' | 'PCA' | 'FNP' | 'FAE'
+        date?:                string
+        contrepartie?:        string
+        libelle?:             string
+        montant?:             number
+        reference?:           string | null
+        autoContrepassation?: boolean
+      }
+
+      if (!fiscalYearId || !type || !date || !contrepartie || !libelle || !montant) {
+        throw new AppError(
+          'Champs requis : fiscalYearId, type, date, contrepartie, libelle, montant',
+          400, 'VALIDATION_ERROR',
+        )
+      }
+
+      const data = await regSvc.createRegularization(getCompanyId(req)!, fiscalYearId, userId, {
+        type,
+        date:                new Date(date),
+        contrepartie,
+        libelle,
+        montant: Number(montant),
+        reference:           reference ?? null,
+        autoContrepassation: autoContrepassation ?? false,
+      })
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Supprime une régularisation et sa contre-passation éventuelle */
+accountingRouter.delete(
+  '/regularizations/:pieceId',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { pieceId } = req.params as { pieceId: string }
+      const data = await regSvc.deleteRegularization(getCompanyId(req)!, pieceId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Extournes (contre-passations des régularisations N-1 dans N) ──────────────
+
+/** Liste les régularisations de N-1 à extourner dans N avec leur statut */
+accountingRouter.get(
+  '/extournes',
+  checkModule('comptabilite', 'read'),
+  async (req, res, next) => {
+    try {
+      const fiscalYearId = req.query['fiscalYearId'] as string | undefined
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await regSvc.listExtournesRequises(getCompanyId(req)!, fiscalYearId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Crée l'extourne d'UNE régularisation N-1 dans l'exercice N */
+accountingRouter.post(
+  '/extournes',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const userId = req.user?.sub ?? 'system'
+      const { fiscalYearId, regPieceId, date } = req.body as {
+        fiscalYearId?: string
+        regPieceId?:   string
+        date?:         string
+      }
+      if (!fiscalYearId || !regPieceId)
+        throw new AppError('fiscalYearId et regPieceId requis', 400, 'VALIDATION_ERROR')
+
+      const data = await regSvc.createExtourne(
+        getCompanyId(req)!,
+        fiscalYearId,
+        regPieceId,
+        userId,
+        date ? new Date(date) : undefined,
+      )
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Crée TOUTES les extournes manquantes (bulk) */
+accountingRouter.post(
+  '/extournes/all-pending',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const userId = req.user?.sub ?? 'system'
+      const { fiscalYearId } = req.body as { fiscalYearId?: string }
+      if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
+      const data = await regSvc.createAllPendingExtournes(getCompanyId(req)!, fiscalYearId, userId)
+      res.json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+/** Supprime une extourne */
+accountingRouter.delete(
+  '/extournes/:pieceId',
+  checkModule('comptabilite', 'write'),
+  async (req, res, next) => {
+    try {
+      const { pieceId } = req.params as { pieceId: string }
+      const data = await regSvc.deleteExtourne(getCompanyId(req)!, pieceId)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },
