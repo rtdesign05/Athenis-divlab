@@ -6,14 +6,17 @@ COPY package.json package-lock.json ./
 COPY packages/shared-types/package.json ./packages/shared-types/
 COPY apps/backend/package.json ./apps/backend/
 
-RUN npm ci --workspace=apps/backend --workspace=packages/shared-types
+# --ignore-scripts : le postinstall du backend lance "prisma generate" qui
+# a besoin du schema.prisma, pas encore copié à cette étape. On le lance
+# manuellement après avoir copié les sources.
+RUN npm ci --workspace=apps/backend --workspace=packages/shared-types --ignore-scripts
 
 COPY packages/shared-types/ ./packages/shared-types/
 COPY apps/backend/ ./apps/backend/
 
 RUN npm run build -w packages/shared-types
-RUN npm run build -w apps/backend
 RUN npm run prisma:generate -w apps/backend
+RUN npm run build -w apps/backend
 
 # ── Runtime ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
@@ -25,11 +28,14 @@ COPY package.json package-lock.json ./
 COPY packages/shared-types/package.json ./packages/shared-types/
 COPY apps/backend/package.json ./apps/backend/
 
-RUN npm ci --workspace=apps/backend --workspace=packages/shared-types --omit=dev
+# --ignore-scripts : on récupère le client Prisma déjà généré depuis le
+# builder (voir COPY plus bas), pas besoin de relancer prisma generate ici.
+RUN npm ci --workspace=apps/backend --workspace=packages/shared-types --omit=dev --ignore-scripts
 
 COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
 COPY --from=builder /app/apps/backend/dist ./apps/backend/dist
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY apps/backend/prisma ./apps/backend/prisma
 
 EXPOSE 3001
