@@ -23,6 +23,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { PDFParse } from 'pdf-parse'
 import { scanWithTesseract } from './providers/tesseract.provider.js'
 import { scanWithOllama }    from './providers/ollama.provider.js'
+import { TVA_CM, TVA_UEMOA } from '../../lib/taxConstants.js'
 
 export type SupportedMimeType =
   | 'image/jpeg'
@@ -59,6 +60,12 @@ export interface ScannedInvoice {
 
 // ── Provider Anthropic (interne) ──────────────────────────────────────────────
 
+// Les exemples dans le prompt utilisent les constantes fiscales pour rester
+// alignés avec une éventuelle évolution réglementaire (loi de finances).
+const PROMPT_TVA_CM = (TVA_CM * 100).toFixed(2)
+const PROMPT_TVA_UEMOA = (TVA_UEMOA * 100).toFixed(0)
+const PROMPT_CURRENCY = 'XAF'  // devise OHADA par défaut
+
 const ANTHROPIC_SYSTEM = `Tu es un assistant OCR expert en documents comptables africains (OHADA, SYSCOHADA).
 Tu analyses des factures fournisseurs et retournes UNIQUEMENT du JSON valide.`
 
@@ -67,12 +74,12 @@ Retourne UNIQUEMENT ce JSON (sans markdown) :
 {
   "vendorName":"...","vendorNiu":"...","vendorAddress":"...","vendorPhone":"...",
   "invoiceNumber":"...","invoiceDate":"YYYY-MM-DD","dueDate":"YYYY-MM-DD",
-  "currency":"XAF",
+  "currency":"${PROMPT_CURRENCY}",
   "items":[{"description":"...","quantity":1,"unitPrice":0,"total":0}],
-  "subtotal":0,"taxRate":19.25,"taxAmount":0,"total":0,
+  "subtotal":0,"taxRate":${PROMPT_TVA_CM},"taxAmount":0,"total":0,
   "notes":"...","confidence":85
 }
-Taux TVA : Cameroun 19,25% | CI/SN/GA/TG 18%. Devise par défaut XAF.`
+Taux TVA : Cameroun ${PROMPT_TVA_CM}% | CI/SN/GA/TG ${PROMPT_TVA_UEMOA}%. Devise par défaut ${PROMPT_CURRENCY}.`
 
 async function scanWithAnthropic(
   imageBase64: string,
@@ -148,12 +155,12 @@ Voici le texte extrait d'une facture fournisseur. Extrais toutes les information
 {
   "vendorName":"...","vendorNiu":"...","vendorAddress":"...","vendorPhone":"...",
   "invoiceNumber":"...","invoiceDate":"YYYY-MM-DD","dueDate":"YYYY-MM-DD",
-  "currency":"XAF",
+  "currency":"${PROMPT_CURRENCY}",
   "items":[{"description":"...","quantity":1,"unitPrice":0,"total":0}],
-  "subtotal":0,"taxRate":19.25,"taxAmount":0,"total":0,
+  "subtotal":0,"taxRate":${PROMPT_TVA_CM},"taxAmount":0,"total":0,
   "notes":"...","confidence":85
 }
-Taux TVA : Cameroun 19,25% | CI/SN/GA/TG 18%. Devise par défaut XAF.
+Taux TVA : Cameroun ${PROMPT_TVA_CM}% | CI/SN/GA/TG ${PROMPT_TVA_UEMOA}%. Devise par défaut ${PROMPT_CURRENCY}.
 Si un champ est absent, mets null. Confidence : 0-100 selon les champs trouvés.
 
 TEXTE DE LA FACTURE :

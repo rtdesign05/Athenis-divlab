@@ -46,3 +46,19 @@ export type {
   PaginatedResponse,
   HttpMethod,
 } from './api.js'
+
+export {
+  TVA_CM,
+  TVA_FR,
+  TVA_UEMOA,
+  IS_CM,
+  IRPP_BAREME_CM,
+  CNPS_PLAFOND_MENSUEL,
+  CNPS_TAUX_PVID_SAL,
+  CNPS_TAUX_PVID_EMP,
+  CNPS_TAUX_PF,
+  CNPS_TAUX_AT,
+  CM_TAX,
+  defaultVatRate,
+  defaultCurrency,
+} from './taxConstants.js'

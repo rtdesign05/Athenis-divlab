@@ -8,9 +8,14 @@
  *   ollama pull minicpm-v          (4 GB RAM min, très léger)
  */
 import type { ScannedInvoice } from '../scan.service.js'
+import { TVA_CM, TVA_UEMOA } from '../../../lib/taxConstants.js'
 
 const OLLAMA_HOST  = process.env.OLLAMA_HOST  ?? 'http://localhost:11434'
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? 'llama3.2-vision'
+
+// Constantes interpolées dans le prompt — source unique : taxConstants.ts
+const TVA_CM_PCT    = (TVA_CM * 100).toFixed(2)
+const TVA_UEMOA_PCT = (TVA_UEMOA * 100).toFixed(0)
 
 const PROMPT = `Tu es un assistant OCR expert en factures africaines (OHADA, SYSCOHADA).
 Analyse cette image de facture fournisseur et retourne UNIQUEMENT ce JSON valide :
@@ -25,13 +30,13 @@ Analyse cette image de facture fournisseur et retourne UNIQUEMENT ce JSON valide
   "currency": "XAF ou EUR ou USD",
   "items": [{"description":"...","quantity":1,"unitPrice":0,"total":0}],
   "subtotal": 0,
-  "taxRate": 19.25,
+  "taxRate": ${TVA_CM_PCT},
   "taxAmount": 0,
   "total": 0,
   "notes": "null ou mentions particulières",
   "confidence": 85
 }
-Taux TVA : Cameroun 19,25% | CI/SN/GA/TG 18%.
+Taux TVA : Cameroun ${TVA_CM_PCT}% | CI/SN/GA/TG ${TVA_UEMOA_PCT}%.
 Devise par défaut : XAF si OHADA.
 Réponds UNIQUEMENT avec le JSON, sans markdown.`
 

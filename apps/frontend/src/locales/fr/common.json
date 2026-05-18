@@ -18,21 +18,31 @@
     "export":    "Exporter",
     "import":    "Importer",
     "print":     "Imprimer",
-    "download":  "Télécharger"
+    "download":  "Télécharger",
+    "or":        "ou"
   },
   "auth": {
-    "login":          "Connexion",
-    "logout":         "Déconnexion",
-    "email":          "Email",
-    "password":       "Mot de passe",
-    "forgotPassword": "Mot de passe oublié ?",
-    "register":       "Créer un compte"
+    "login":               "Se connecter",
+    "logout":              "Déconnexion",
+    "loginLoading":        "Connexion…",
+    "emailLabel":          "Adresse email",
+    "emailPlaceholder":    "vous@entreprise.cm",
+    "passwordLabel":       "Mot de passe",
+    "forgotPassword":      "Mot de passe oublié ?",
+    "createAccount":       "Créer un compte",
+    "createAccountFree":   "Créer un compte gratuit",
+    "continueWithGoogle":  "Continuer avec Google",
+    "showPassword":        "Afficher",
+    "hidePassword":        "Masquer",
+    "resendEmail":         "Renvoyer l'e-mail de confirmation",
+    "resendSending":       "Envoi…",
+    "resendSent":          "✓ E-mail de confirmation envoyé. Vérifiez votre boîte."
   },
   "errors": {
-    "fiscalYearClosed": "Exercice clôturé — modifications interdites",
+    "fiscalYearClosed":  "Exercice clôturé — modifications interdites",
     "invalidTransition": "Transition de statut non autorisée",
-    "notFound":         "Ressource introuvable",
-    "forbidden":        "Accès refusé",
-    "validationError":  "Données invalides"
+    "notFound":          "Ressource introuvable",
+    "forbidden":         "Accès refusé",
+    "validationError":   "Données invalides"
   }
 }

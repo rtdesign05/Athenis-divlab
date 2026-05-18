@@ -1,5 +1,5 @@
 import { prisma } from '../../lib/prisma.js'
-import { TVA_CM, IS_CM } from '../../lib/taxConstants.js'
+import { TVA_CM, IS_CM, defaultVatRate } from '../../lib/taxConstants.js'
 
 // ── Taux DGI Cameroun 2026 — CGI 2026 / Loi de finances 2026 ─────────────────
 // Les taux centraux (TVA, IS) viennent de lib/taxConstants.ts pour qu'une
@@ -165,7 +165,7 @@ export async function getTVADeclaration(companyId: string, year: number, month: 
   }))
   const totalCollectee = collectee.reduce((s, r) => s + r.tva, 0)
 
-  const vatRate = company?.pays === 'CM' ? CM_TAX.vatRate : 0.20
+  const vatRate = defaultVatRate(company?.pays ?? 'CM')
   const expenses = await prisma.expense.findMany({
     where: { companyId, date: { gte: start, lte: end } },
     select: { id: true, description: true, amount: true, category: true },

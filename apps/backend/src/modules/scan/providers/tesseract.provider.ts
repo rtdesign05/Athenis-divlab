@@ -4,6 +4,7 @@
  */
 import Tesseract from 'tesseract.js'
 import type { ScannedInvoice } from '../scan.service.js'
+import { TVA_CM, TVA_UEMOA } from '../../../lib/taxConstants.js'
 
 // ── Helpers regex ─────────────────────────────────────────────────────────────
 
@@ -123,7 +124,7 @@ function parseOhadaInvoice(text: string): ScannedInvoice {
   )
   const taxRate = rawTvaRate
     ? parseFloat(rawTvaRate.replace(',', '.'))
-    : (/Cameroun|CMR/i.test(t) ? 19.25 : 18)
+    : (/Cameroun|CMR/i.test(t) ? TVA_CM * 100 : TVA_UEMOA * 100)
 
   const rawTvaAmount = first(t,
     /TVA\s*(?:\(\d+[.,]\d+\s*%\))?\s*[:.]?\s*([\d\s,.']+)\s*(?:XAF|FCFA|€)?(?!\s*%)/i,

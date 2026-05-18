@@ -1,5 +1,6 @@
 import { useState, useId, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from './useAuth'
 import { homeForUser, homeForType } from './ProtectedRoute'
 import { authApi } from './authApi'
@@ -113,6 +114,7 @@ function GoogleIcon() {
 export function LoginPage() {
   const { login, loginVerifyTotp } = useAuth()
   const navigate = useNavigate()
+  const { t } = useTranslation()
 
   const emailId    = useId()
   const passwordId = useId()
@@ -287,13 +289,13 @@ export function LoginPage() {
                 type="button"
                 className="flex-1 py-2 bg-green-700 text-white font-medium transition"
               >
-                Se connecter
+                {t('auth.login')}
               </button>
               <Link
                 to="/auth/register"
                 className="flex flex-1 items-center justify-center py-2 bg-gray-100 text-gray-600 font-medium transition hover:bg-gray-200"
               >
-                Créer un compte
+                {t('auth.createAccount')}
               </Link>
             </div>
           )}
@@ -316,14 +318,14 @@ export function LoginPage() {
                 {/* Email */}
                 <div>
                   <label htmlFor={emailId} className="mb-1 block text-sm font-medium text-gray-600">
-                    Adresse email
+                    {t('auth.emailLabel')}
                   </label>
                   <input
                     id={emailId}
                     type="email"
                     required
                     autoComplete="email"
-                    placeholder="vous@entreprise.cm"
+                    placeholder={t('auth.emailPlaceholder')}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full rounded-lg border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-600"
@@ -334,10 +336,10 @@ export function LoginPage() {
                 <div>
                   <div className="mb-1 flex items-center justify-between">
                     <label htmlFor={passwordId} className="text-sm font-medium text-gray-600">
-                      Mot de passe
+                      {t('auth.passwordLabel')}
                     </label>
                     <button type="button" className="text-xs text-green-700 hover:underline">
-                      Mot de passe oublié ?
+                      {t('auth.forgotPassword')}
                     </button>
                   </div>
                   <div className="relative">
@@ -352,7 +354,7 @@ export function LoginPage() {
                     />
                     <button
                       type="button"
-                      aria-label={showPw ? 'Masquer' : 'Afficher'}
+                      aria-label={showPw ? t('auth.hidePassword') : t('auth.showPassword')}
                       onClick={() => setShowPw((v) => !v)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     >
@@ -371,7 +373,7 @@ export function LoginPage() {
                     {emailNotVerified && (
                       <div className="mt-2 text-sm">
                         {resendSent ? (
-                          <p className="text-green-700">✓ E-mail de confirmation envoyé. Vérifiez votre boîte.</p>
+                          <p className="text-green-700">{t('auth.resendSent')}</p>
                         ) : (
                           <button
                             type="button"
@@ -379,7 +381,7 @@ export function LoginPage() {
                             disabled={resendLoading}
                             className="font-medium text-forest-700 hover:underline disabled:opacity-50"
                           >
-                            {resendLoading ? 'Envoi…' : 'Renvoyer l\'e-mail de confirmation'}
+                            {resendLoading ? t('auth.resendSending') : t('auth.resendEmail')}
                           </button>
                         )}
                       </div>
@@ -393,10 +395,10 @@ export function LoginPage() {
                   disabled={loading}
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 py-3 text-sm font-medium text-white transition hover:bg-green-800 disabled:opacity-70"
                 >
-                  {loading ? <><Spinner />Connexion…</> : 'Se connecter'}
+                  {loading ? <><Spinner />{t('auth.loginLoading')}</> : t('auth.login')}
                 </button>
 
-                <div className="text-center text-sm text-gray-400">ou</div>
+                <div className="text-center text-sm text-gray-400">{t('common.or')}</div>
 
                 {/* Google */}
                 <button
@@ -404,7 +406,7 @@ export function LoginPage() {
                   className="flex w-full items-center justify-center gap-2.5 rounded-lg border py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-100"
                 >
                   <GoogleIcon />
-                  Continuer avec Google
+                  {t('auth.continueWithGoogle')}
                 </button>
 
               </form>
