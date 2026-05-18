@@ -39,3 +39,21 @@ export const apiLimiter = rateLimit({
     code: 'RATE_LIMITED',
   },
 })
+
+/**
+ * N22 : limiter pour endpoints qui consomment des ressources externes coûteuses
+ *       (Anthropic API). Sans ça, un user authentifié pourrait facturer
+ *       indéfiniment l'API LLM via /ai/chat.
+ *       30 messages / heure / IP = ~720 / jour = très généreux pour un humain.
+ */
+export const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: 'Limite de messages IA atteinte. Réessayez dans 1 heure.',
+    code: 'AI_RATE_LIMITED',
+  },
+})

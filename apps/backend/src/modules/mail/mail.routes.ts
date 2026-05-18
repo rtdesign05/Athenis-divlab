@@ -1,9 +1,40 @@
 import { Router } from 'express'
+import sanitizeHtml from 'sanitize-html'
 import { sendMail } from '../../lib/email.js'
 import { authenticate } from '../../middleware/authenticate.js'
 import { requireRole, requireAccountType } from '../../middleware/rbac.js'
 import { apiLimiter } from '../../middleware/rateLimiter.js'
 import { prisma } from '../../lib/prisma.js'
+
+/**
+ * N24 : whitelist HTML/CSS pour les emails sortants. Évite qu'un user
+ *       puisse envoyer un payload XSS / phishing complet via l'endpoint
+ *       /send-document en s'appuyant sur la réputation SPF/DKIM Athenis.
+ *       Tags autorisés : structure email basique (p, div, table, a, img, etc.)
+ *       Schémas href : http(s), mailto, tel uniquement (pas de javascript:).
+ */
+const SANITIZE_OPTS: sanitizeHtml.IOptions = {
+  allowedTags: [
+    'p', 'div', 'span', 'br', 'hr',
+    'strong', 'em', 'b', 'i', 'u',
+    'h1', 'h2', 'h3', 'h4',
+    'ul', 'ol', 'li',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td',
+    'a', 'img',
+    'blockquote', 'pre', 'code',
+  ],
+  allowedAttributes: {
+    a:   ['href', 'title', 'target', 'rel'],
+    img: ['src', 'alt', 'width', 'height'],
+    '*': ['style', 'class'],
+  },
+  allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+  allowedSchemesByTag: { img: ['http', 'https', 'data', 'cid'] },
+  transformTags: {
+    // Force rel="noopener noreferrer" sur les liens externes
+    a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer' }),
+  },
+}
 
 export const mailRouter = Router()
 
@@ -81,11 +112,17 @@ mailRouter.post(
         return
       }
 
+      // N24 : sanitize côté serveur — empêche un client de soumettre du HTML
+      //       avec scripts/iframes/styles malveillants.
+      const safeHtml = sanitizeHtml(html, SANITIZE_OPTS)
+      // Force la présence d'un text fallback (norme anti-spam + scanners email)
+      const safeText = text?.trim() || sanitizeHtml(html, { allowedTags: [], allowedAttributes: {} })
+
       await sendMail({
         to:      to.trim(),
         subject: subject.trim(),
-        html,
-        ...(text ? { text } : {}),
+        html:    safeHtml,
+        text:    safeText,
       })
 
       res.json({ success: true })

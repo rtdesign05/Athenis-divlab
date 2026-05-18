@@ -8,6 +8,39 @@ interface Message { role: 'user' | 'assistant'; content: string; createdAt: Date
 interface Conversation { id: string; companyId: string; title: string; messages: Message[]; createdAt: Date; updatedAt: Date }
 const conversationStore = new Map<string, Conversation>()
 
+// N20 : bornes mémoire pour éviter un OOM si un user spam les conversations.
+//        - MAX_TOTAL : limite globale (LRU eviction du plus ancien updatedAt)
+//        - MAX_PER_COMPANY : limite par tenant (pareil)
+//        - TTL : conversations inactives > 30j supprimées au prochain accès
+const MAX_TOTAL_CONVERSATIONS = 2000
+const MAX_PER_COMPANY = 100
+const CONVERSATION_TTL_MS = 30 * 24 * 60 * 60 * 1000  // 30 jours
+const MAX_MESSAGES_PER_CONVERSATION = 200             // évite des conversations infinies
+
+function evictExpired(): void {
+  const now = Date.now()
+  for (const [id, conv] of conversationStore) {
+    if (now - conv.updatedAt.getTime() > CONVERSATION_TTL_MS) {
+      conversationStore.delete(id)
+    }
+  }
+}
+
+function evictLruIfFull(companyId: string): void {
+  // Eviction globale (LRU sur updatedAt)
+  if (conversationStore.size >= MAX_TOTAL_CONVERSATIONS) {
+    const oldest = [...conversationStore.entries()]
+      .sort(([, a], [, b]) => a.updatedAt.getTime() - b.updatedAt.getTime())[0]
+    if (oldest) conversationStore.delete(oldest[0])
+  }
+  // Eviction par tenant
+  const tenantConvs = [...conversationStore.values()].filter(c => c.companyId === companyId)
+  if (tenantConvs.length >= MAX_PER_COMPANY) {
+    const oldest = tenantConvs.sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime())[0]
+    if (oldest) conversationStore.delete(oldest.id)
+  }
+}
+
 function genId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
@@ -103,9 +136,14 @@ export async function streamChat(
   userMessage: string,
   onToken: (token: string) => void,
 ): Promise<{ conversationId: string; inputTokens: number; outputTokens: number }> {
+  // N20 : nettoyer les conversations expirées avant toute opération
+  evictExpired()
+
   // Get or create conversation
   let conv: Conversation | undefined = conversationId ? conversationStore.get(conversationId) : undefined
   if (!conv || conv.companyId !== companyId) {
+    // N20 : éviction LRU avant ajout pour éviter OOM
+    evictLruIfFull(companyId)
     conv = {
       id:        genId(),
       companyId,
@@ -115,6 +153,10 @@ export async function streamChat(
       updatedAt: new Date(),
     }
     conversationStore.set(conv.id, conv)
+  } else if (conv.messages.length >= MAX_MESSAGES_PER_CONVERSATION) {
+    // N20 : conversation pleine → tronquer la moitié la plus ancienne plutôt
+    //       que de la laisser croître à l'infini.
+    conv.messages = conv.messages.slice(-Math.floor(MAX_MESSAGES_PER_CONVERSATION / 2))
   }
 
   // Build message history for API

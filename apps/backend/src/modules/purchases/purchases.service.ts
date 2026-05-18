@@ -20,10 +20,18 @@ async function nextOrderReference(companyId: string, tx?: Prisma.TransactionClie
   if (tx) {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId + ':BC:' + year}))`
   }
-  const count = await db.purchaseOrder.count({
-    where: { companyId, reference: { startsWith: `BC-${year}-` } },
+  // V18 : max(reference) au lieu de count() (cf. fix N12 / V18)
+  const last = await db.purchaseOrder.findFirst({
+    where:   { companyId, reference: { startsWith: `BC-${year}-` } },
+    orderBy: { reference: 'desc' },
+    select:  { reference: true },
   })
-  return `BC-${year}-${String(count + 1).padStart(3, '0')}`
+  let next = 1
+  if (last?.reference) {
+    const m = /-(\d+)$/.exec(last.reference)
+    if (m) next = parseInt(m[1]!, 10) + 1
+  }
+  return `BC-${year}-${String(next).padStart(3, '0')}`
 }
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────

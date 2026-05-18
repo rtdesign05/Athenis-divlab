@@ -100,6 +100,28 @@ export async function createClient(companyId: string, data: CreateClientInput & 
   if (!accountingCode) {
     const slug = data.name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'CLIENT'
     accountingCode = `411${slug}`
+    // N31 : déduplication. Deux clients "DUPONT SARL" et "DUPONT SA" génèrent
+    //       tous deux 411DUPONT. On suffixe avec un compteur si collision.
+    const existingSameCode = await prisma.client.findFirst({
+      where:  { companyId, accountingCode },
+      select: { id: true },
+    })
+    if (existingSameCode) {
+      let suffix = 2
+      // Pas plus de 99 collisions (très improbable)
+      while (suffix < 100) {
+        const candidate = `411${slug.slice(0, Math.max(1, 6 - String(suffix).length))}${suffix}`
+        const taken = await prisma.client.findFirst({
+          where:  { companyId, accountingCode: candidate },
+          select: { id: true },
+        })
+        if (!taken) {
+          accountingCode = candidate
+          break
+        }
+        suffix++
+      }
+    }
   }
 
   // Synchronisation avec Plan Comptable (création si absent)

@@ -26,6 +26,7 @@
     "@sentry/node": "^10.51.0",
     "@types/multer": "^2.1.0",
     "@types/pdf-parse": "^1.1.5",
+    "@types/sanitize-html": "^2.16.1",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
@@ -39,6 +40,7 @@
     "pdf-parse": "^2.4.5",
     "posthog-node": "^5.31.0",
     "qrcode": "^1.5.4",
+    "sanitize-html": "^2.17.4",
     "tesseract.js": "^7.0.0",
     "winston": "^3.13.0",
     "zod": "^3.23.8"
@@ -52,6 +54,7 @@
     "@types/nodemailer": "^8.0.0",
     "@types/qrcode": "^1.5.5",
     "@types/supertest": "^6.0.3",
+    "@vitest/coverage-v8": "^1.6.1",
     "prisma": "^5.15.0",
     "supertest": "^7.2.2",
     "tsx": "^4.15.7",

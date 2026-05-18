@@ -4,6 +4,7 @@ import { AppError } from '../../middleware/errorHandler.js'
 import { getPlanByZone, ZONE_LABELS } from '../../lib/accountingPlans.js'
 import { getAgenceFilter } from '../../middleware/agenceFilter.js'
 import { normalizeAccountCode } from '../../lib/accountCodes.js'
+import { invalidateFiscalYearCache } from './revision.service.js'
 import type { JwtPayload } from '@athenis/shared-types'
 
 function toNum(d: Prisma.Decimal | null | undefined): number {
@@ -880,6 +881,10 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
       anGenerated = anRows.length
     }
 
+    // N19 : invalider le cache révision après clôture (statut changé)
+    invalidateFiscalYearCache(id)
+    if (nextFy) invalidateFiscalYearCache(nextFy.id)
+
     return { fiscalYear: updated, anGenerated, nextYear }
   })
 }
@@ -903,6 +908,10 @@ export async function reopenFiscalYear(companyId: string, id: string) {
       },
     })
   }
+
+  // N19 : invalider le cache révision (year potentiellement modifié si l'admin
+  //       a aussi corrigé l'année avant réouverture).
+  invalidateFiscalYearCache(id)
 
   return prisma.fiscalYear.update({
     where: { id },

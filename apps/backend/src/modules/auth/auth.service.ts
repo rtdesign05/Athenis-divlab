@@ -499,11 +499,21 @@ export async function loginVerifyTotp(
     where: { id: userId },
     select: {
       ...USER_SELECT,
-      twoFASecret: true,
+      twoFASecret:    true,
+      failedAttempts: true,
+      lockedUntil:    true,
     },
   })
 
   if (!user?.twoFAEnabled || !user.twoFASecret) throw new AppError('TOTP non configuré', 400, 'TOTP_NOT_CONFIGURED')
+
+  // N26 : vérifier le verrouillage TOTP issu d'un brute-force récent
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    throw new AppError(
+      `Compte verrouillé jusqu'à ${user.lockedUntil.toLocaleTimeString('fr-FR')}.`,
+      423, 'ACCOUNT_LOCKED',
+    )
+  }
 
   // Check account is still active — the account may have been deactivated after the tempToken was issued
   if (!user.isActive) {
@@ -512,9 +522,26 @@ export async function loginVerifyTotp(
   }
 
   if (!authenticator.check(code, decrypt(user.twoFASecret))) {
-    await audit('TOTP_FAILED', user.id, user.companyId ?? null, ip, ua)
+    // N26 : appliquer la même logique de lockout que login pour empêcher
+    //       le brute-force TOTP (1M combinaisons à 60req/s = ~4h sans verrou).
+    const attempts = user.failedAttempts + 1
+    const shouldLock = attempts >= MAX_FAILED_ATTEMPTS
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedAttempts: attempts,
+        ...(shouldLock ? { lockedUntil: new Date(Date.now() + LOCK_DURATION_MS) } : {}),
+      },
+    })
+    await audit(
+      shouldLock ? 'ACCOUNT_LOCKED' : 'TOTP_FAILED',
+      user.id, user.companyId ?? null, ip, ua,
+      { attempts },
+    )
     throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
   }
+  // TOTP réussi → reset des compteurs (comme login)
+  await prisma.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null } })
 
   const companyId = user.companyId ?? null
   const cabinetId = user.cabinetId ?? null
@@ -693,7 +720,16 @@ export async function disableTotp(userId: string, dto: TotpDisableDto, ip: strin
   if (!await bcrypt.compare(dto.password, user.passwordHash)) throw new AppError('Mot de passe incorrect', 401, 'INVALID_CREDENTIALS')
   if (!authenticator.check(dto.code, decrypt(user.twoFASecret!))) throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
 
-  await prisma.user.update({ where: { id: userId }, data: { twoFAEnabled: false, twoFASecret: null } })
+  // N27 : révoquer toutes les sessions actives. Désactiver TOTP affaiblit
+  //       la sécurité du compte ; un attaquant avec une session existante
+  //       ne doit pas en bénéficier sans re-login complet.
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: userId }, data: { twoFAEnabled: false, twoFASecret: null } }),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data:  { revokedAt: new Date() },
+    }),
+  ])
   await audit('TOTP_DISABLED', userId, user.companyId ?? null, ip, ua)
 }
 

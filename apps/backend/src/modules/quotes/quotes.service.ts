@@ -38,9 +38,16 @@ export async function createQuote(companyId: string, data: CreateQuoteInput) {
   if (!client || client.companyId !== companyId)
     throw new AppError('Client not found', 404, 'NOT_FOUND')
 
-  const year  = new Date().getFullYear()
-  const count = [...quoteStore.values()].filter(q => q.companyId === companyId && q.reference.startsWith(`DEV-${year}-`)).length
-  const reference = `DEV-${year}-${String(count + 1).padStart(3, '0')}`
+  const year   = new Date().getFullYear()
+  // V18 : utiliser max(reference) sur les devis existants au lieu de count() —
+  //       un devis supprimé ne doit pas faire revenir le compteur en arrière.
+  const prefix = `DEV-${year}-`
+  const matching = [...quoteStore.values()]
+    .filter(q => q.companyId === companyId && q.reference.startsWith(prefix))
+    .map(q => parseInt(q.reference.slice(prefix.length), 10))
+    .filter(n => !isNaN(n))
+  const next = matching.length > 0 ? Math.max(...matching) + 1 : 1
+  const reference = `${prefix}${String(next).padStart(3, '0')}`
 
   const amountHT  = data.subtotal ?? 0
   const vatRate   = (data.taxRate ?? 0) / 100

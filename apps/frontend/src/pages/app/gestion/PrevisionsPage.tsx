@@ -5,6 +5,7 @@ import { useEmployees } from '@/hooks/useHr'
 import { pdf } from '@react-pdf/renderer'
 import { saveAs } from 'file-saver'
 import React from 'react'
+import { escapeCsvCell, csvRow } from '@/lib/csv'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -652,13 +653,22 @@ export function PrevisionsPage() {
     setShowExportMenu(false)
     const horizonLabel  = HORIZON_OPTS.find(h => h.id === horizon)?.label ?? horizon
     const scenarioLabel = scenarioOpts.find(s => s.id === scenario)?.label ?? scenario
-    const header = ['"Libellé"', ...columns.map(c => `"${c}"`), '"TOTAL"']
-    const lines: string[] = [`"Tableau prévisionnel de trésorerie — ${horizonLabel} — ${scenarioLabel}"`, '', header.join(';')]
+    // Note : escapeCsvCell neutralise les formules Excel (=,+,-,@) — défense
+    // contre CSV formula injection si un user a saisi `=HYPERLINK("phish",...)`
+    // dans un libellé.
+    const lines: string[] = [
+      escapeCsvCell(`Tableau prévisionnel de trésorerie — ${horizonLabel} — ${scenarioLabel}`),
+      '',
+      csvRow(['Libellé', ...columns, 'TOTAL']),
+    ]
     for (const row of buildExportRows()) {
-      if (row.type === 'header' || row.type === 'subheader') { lines.push(`"${row.label}"` + ';'.repeat(columns.length + 1)); continue }
-      const vals = row.values.map(v => String(Math.round(v)))
-      const tot  = row.total !== null ? String(Math.round(row.total)) : ''
-      lines.push([`"${row.label}"`, ...vals, tot].join(';'))
+      if (row.type === 'header' || row.type === 'subheader') {
+        lines.push(csvRow([row.label, ...Array(columns.length + 1).fill('')]))
+        continue
+      }
+      const vals = row.values.map(v => Math.round(v))
+      const tot  = row.total !== null ? Math.round(row.total) : ''
+      lines.push(csvRow([row.label, ...vals, tot]))
     }
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
     saveAs(blob, `Previsions_${horizonLabel.replace(/\s/g,'')}_${scenario}_${new Date().toISOString().slice(0,10)}.csv`)

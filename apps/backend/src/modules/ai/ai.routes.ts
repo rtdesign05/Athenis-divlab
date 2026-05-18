@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authenticate } from '../../middleware/authenticate.js'
+import { aiLimiter } from '../../middleware/rateLimiter.js'
 import { getCompanyId } from '../../lib/companyContext.js'
 import * as svc from './ai.service.js'
 
@@ -29,7 +30,8 @@ aiRouter.delete('/conversations/:id', async (req, res, next) => {
 })
 
 // ── Streaming chat (SSE) ──────────────────────────────────────────────────────
-aiRouter.post('/chat', async (req, res, next) => {
+// N22 : limiteur dédié pour éviter qu'un user fasse exploser la facture Anthropic.
+aiRouter.post('/chat', aiLimiter, async (req, res, next) => {
   try {
     const { message, conversationId } = req.body as { message: string; conversationId?: string }
 

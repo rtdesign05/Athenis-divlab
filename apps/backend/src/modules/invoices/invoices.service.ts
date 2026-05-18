@@ -18,10 +18,20 @@ export async function nextInvoiceReference(companyId: string, tx?: Prisma.Transa
   if (tx) {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId + ':FA:' + year}))`
   }
-  const count = await db.invoice.count({
-    where: { companyId, reference: { startsWith: `FA-${year}-` } },
+  // V18 : utiliser max(reference) au lieu de count() — une facture supprimée
+  //       ne doit pas faire revenir le compteur en arrière (sinon P2002 sur
+  //       la référence de l'élément déjà supprimé qui reste en DB).
+  const last = await db.invoice.findFirst({
+    where:   { companyId, reference: { startsWith: `FA-${year}-` } },
+    orderBy: { reference: 'desc' },
+    select:  { reference: true },
   })
-  return `FA-${year}-${String(count + 1).padStart(3, '0')}`
+  let next = 1
+  if (last?.reference) {
+    const m = /-(\d+)$/.exec(last.reference)
+    if (m) next = parseInt(m[1]!, 10) + 1
+  }
+  return `FA-${year}-${String(next).padStart(3, '0')}`
 }
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────

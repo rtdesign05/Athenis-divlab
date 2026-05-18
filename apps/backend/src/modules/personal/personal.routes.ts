@@ -1,5 +1,11 @@
 import { Router } from 'express'
 import { authenticate } from '../../middleware/authenticate.js'
+import { validateRequest } from '../../middleware/validateRequest.js'
+import {
+  CreateRevenuDto, UpdateRevenuDto,
+  CreateDepenseDto, UpdateDepenseDto,
+  CreateObjectifDto, UpdateObjectifDto,
+} from './personal.dto.js'
 import * as svc from './personal.service.js'
 
 export const personalRouter = Router()
@@ -31,14 +37,14 @@ personalRouter.get('/revenus', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
-personalRouter.post('/revenus', async (req, res, next) => {
+personalRouter.post('/revenus', validateRequest({ body: CreateRevenuDto }), async (req, res, next) => {
   try {
     const data = await svc.createRevenu(req.user!.sub, req.body)
     res.status(201).json({ success: true, data })
   } catch (e) { next(e) }
 })
 
-personalRouter.put('/revenus/:id', async (req, res, next) => {
+personalRouter.put('/revenus/:id', validateRequest({ body: UpdateRevenuDto }), async (req, res, next) => {
   try {
     const data = await svc.updateRevenu(req.user!.sub, req.params.id!, req.body)
     res.json({ success: true, data })
@@ -61,14 +67,14 @@ personalRouter.get('/depenses', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
-personalRouter.post('/depenses', async (req, res, next) => {
+personalRouter.post('/depenses', validateRequest({ body: CreateDepenseDto }), async (req, res, next) => {
   try {
     const data = await svc.createDepense(req.user!.sub, req.body)
     res.status(201).json({ success: true, data })
   } catch (e) { next(e) }
 })
 
-personalRouter.put('/depenses/:id', async (req, res, next) => {
+personalRouter.put('/depenses/:id', validateRequest({ body: UpdateDepenseDto }), async (req, res, next) => {
   try {
     const data = await svc.updateDepense(req.user!.sub, req.params.id!, req.body)
     res.json({ success: true, data })
@@ -91,14 +97,14 @@ personalRouter.get('/objectifs', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
-personalRouter.post('/objectifs', async (req, res, next) => {
+personalRouter.post('/objectifs', validateRequest({ body: CreateObjectifDto }), async (req, res, next) => {
   try {
     const data = await svc.createObjectif(req.user!.sub, req.body)
     res.status(201).json({ success: true, data })
   } catch (e) { next(e) }
 })
 
-personalRouter.put('/objectifs/:id', async (req, res, next) => {
+personalRouter.put('/objectifs/:id', validateRequest({ body: UpdateObjectifDto }), async (req, res, next) => {
   try {
     const data = await svc.updateObjectif(req.user!.sub, req.params.id!, req.body)
     res.json({ success: true, data })
