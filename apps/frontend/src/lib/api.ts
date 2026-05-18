@@ -2,11 +2,38 @@ import axios, { type AxiosRequestConfig } from 'axios'
 import { tokenStore } from './tokenStore'
 import { queryClient } from './queryClient'
 
+/**
+ * URL de base de l'API.
+ *
+ * - **Web** : `/api` (URL relative) — Nginx ou Vite proxy redirige vers le backend.
+ * - **Desktop (Tauri)** : doit pointer sur le domaine de production
+ *   (ex. `https://ton-domaine.com/api`) car il n'y a pas de proxy local.
+ * - **Mobile** : idem desktop.
+ *
+ * La valeur peut être surchargée via la variable d'environnement `VITE_API_URL`
+ * au moment du build, ou via une configuration au premier démarrage côté Tauri.
+ */
+const API_BASE_URL = (() => {
+  // Si défini au build (CI / .env.production), prioritaire
+  const envUrl = import.meta.env.VITE_API_URL?.trim()
+  if (envUrl) return envUrl
+  // Si on est dans Tauri (desktop/mobile), on lit la config locale
+  // (renseignée au premier lancement par l'utilisateur)
+  if (typeof window !== 'undefined' && (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
+    const saved = localStorage.getItem('athenis:api-url')
+    if (saved) return saved
+  }
+  // Défaut : URL relative pour le web
+  return '/api'
+})()
+
 export const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   withCredentials: true,
   headers: { 'Content-Type': 'application/json' },
 })
+
+export { API_BASE_URL }
 
 // Attach access token to every request
 api.interceptors.request.use((config) => {

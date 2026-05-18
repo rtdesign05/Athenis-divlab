@@ -1,6 +1,12 @@
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { ProtectedRoute, AdminRoute } from '@/features/auth/ProtectedRoute'
+import { useState } from 'react'
 import type React from 'react'
+import {
+  FirstLaunchSetup,
+  isTauri,
+  getConfiguredApiUrl,
+} from '@/features/desktop/FirstLaunchSetup'
 
 const lz =
   <K extends string>(f: () => Promise<Record<K, React.ComponentType>>, k: K) =>
@@ -317,5 +323,16 @@ const router = createBrowserRouter([
 })
 
 export function App() {
+  // En contexte Tauri (desktop/mobile), si l'URL du serveur Athenis n'est pas
+  // encore configurée et qu'aucune valeur n'a été injectée au build via
+  // VITE_API_URL, on bloque l'app sur l'écran de premier lancement.
+  const buildTimeUrl = (import.meta.env.VITE_API_URL ?? '').trim()
+  const needsSetup = isTauri() && !buildTimeUrl && !getConfiguredApiUrl()
+  const [configured, setConfigured] = useState(!needsSetup)
+
+  if (!configured) {
+    return <FirstLaunchSetup onConfigured={() => setConfigured(true)} />
+  }
+
   return <RouterProvider router={router} future={{ v7_startTransition: true }} />
 }
