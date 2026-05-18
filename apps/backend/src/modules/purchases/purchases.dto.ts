@@ -11,7 +11,7 @@ export const PurchaseOrderLineDto = z.object({
   compteAchat:    z.string().optional(),
 })
 
-export const CreatePurchaseOrderDto = z.object({
+const PurchaseOrderBase = z.object({
   /** Numéro de facture fournisseur fourni manuellement (obligatoire pour les factures
    *  d'achat — le fournisseur impose son numéro, pas d'auto-incrément côté SaaS) */
   reference:          z.string().min(1).optional(),
@@ -33,9 +33,39 @@ export const CreatePurchaseOrderDto = z.object({
   lines:              z.array(PurchaseOrderLineDto).default([]),
 })
 
-export const UpdatePurchaseOrderDto = CreatePurchaseOrderDto.partial().extend({
+// B4 : montantHT doit correspondre à Σ(line.montantHT) ; montantTTC à
+//      montantHT × (1 + vatRate/100). Tolérance 0,01.
+function checkPurchaseCoherence(data: Record<string, unknown>, ctx: z.RefinementCtx) {
+  const montantHT  = data['montantHT']  as number | undefined
+  const montantTTC = data['montantTTC'] as number | undefined
+  const vatRate    = data['vatRate']    as number | undefined
+  const lines      = data['lines']      as { montantHT?: number }[] | undefined
+  if (lines && lines.length > 0 && montantHT != null) {
+    const sumLines = lines.reduce((s, l) => s + Number(l.montantHT ?? 0), 0)
+    if (Math.abs(sumLines - montantHT) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['montantHT'],
+        message: `Incohérence : montantHT=${montantHT} ≠ Σ(lignes)=${sumLines.toFixed(2)}`,
+      })
+    }
+  }
+  if (montantHT != null && montantTTC != null && vatRate != null) {
+    const expectedTTC = montantHT * (1 + vatRate / 100)
+    if (Math.abs(expectedTTC - montantTTC) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['montantTTC'],
+        message: `Incohérence : montantTTC=${montantTTC} ≠ HT×(1+TVA)=${expectedTTC.toFixed(2)}`,
+      })
+    }
+  }
+}
+
+export const CreatePurchaseOrderDto = PurchaseOrderBase.superRefine(checkPurchaseCoherence)
+export const UpdatePurchaseOrderDto = PurchaseOrderBase.partial().extend({
   status: z.enum(['DRAFT', 'SENT', 'RECEIVED', 'PARTIAL', 'CANCELLED']).optional(),
-})
+}).superRefine(checkPurchaseCoherence)
 
 export const ListPurchaseOrdersDto = z.object({
   page:         z.coerce.number().int().positive().default(1),

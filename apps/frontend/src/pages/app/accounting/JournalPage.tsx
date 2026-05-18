@@ -217,7 +217,15 @@ function NewEntryModal({ fiscalYearId, fyStatus, fyYear, fyStartDate, fyEndDate,
       ? accountingApi.updateJournalPiece(editPieceId, payload)
       : accountingApi.createJournalEntryBatch({ fiscalYearId, ...payload }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['journal', fiscalYearId] })
+      // B8 : invalider en cascade — toutes les vues dérivées du journal
+      queryClient.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey[0]
+          return k === 'journal' || k === 'balance' || k === 'grand-livre'
+              || k === 'etats-financiers' || k === 'comptes-tiers'
+              || k === 'lettrage-compte' || k === 'fiscal-summary'
+        },
+      })
       onClose()
     },
     onError: (e: unknown) => {
@@ -647,7 +655,15 @@ export function JournalPage() {
         ? accountingApi.deleteJournalPiece(pieceId)
         : accountingApi.deleteJournalEntry(entryId!),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['journal', fyData?.id] })
+      // B8 : invalider en cascade — toutes les vues dérivées du journal
+      queryClient.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey[0]
+          return k === 'journal' || k === 'balance' || k === 'grand-livre'
+              || k === 'etats-financiers' || k === 'comptes-tiers'
+              || k === 'lettrage-compte' || k === 'fiscal-summary'
+        },
+      })
       setDeleteTarget(null)
     },
   })
@@ -663,7 +679,15 @@ export function JournalPage() {
       })
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['journal', fyData?.id] })
+      // B8 : invalider en cascade — toutes les vues dérivées du journal
+      queryClient.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey[0]
+          return k === 'journal' || k === 'balance' || k === 'grand-livre'
+              || k === 'etats-financiers' || k === 'comptes-tiers'
+              || k === 'lettrage-compte' || k === 'fiscal-summary'
+        },
+      })
     },
   })
 
@@ -671,7 +695,15 @@ export function JournalPage() {
     mutationFn: (pieceId: string) =>
       accountingApi.attachJustificative(pieceId, { pieceUrl: null, pieceName: null }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['journal', fyData?.id] })
+      // B8 : invalider en cascade — toutes les vues dérivées du journal
+      queryClient.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey[0]
+          return k === 'journal' || k === 'balance' || k === 'grand-livre'
+              || k === 'etats-financiers' || k === 'comptes-tiers'
+              || k === 'lettrage-compte' || k === 'fiscal-summary'
+        },
+      })
     },
   })
 

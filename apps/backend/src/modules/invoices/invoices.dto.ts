@@ -11,7 +11,7 @@ export const InvoiceLineDto = z.object({
   compteVente:    z.string().optional(),
 })
 
-export const CreateInvoiceDto = z.object({
+const InvoiceBase = z.object({
   clientId:           z.string().min(1),
   modele:             z.enum(['standard', 'proforma', 'avoir', 'acompte']).default('standard'),
   issueDate:          z.coerce.date(),
@@ -23,7 +23,26 @@ export const CreateInvoiceDto = z.object({
   lines:              z.array(InvoiceLineDto).default([]),
 })
 
-export const UpdateInvoiceDto = CreateInvoiceDto.partial()
+// B4 : subtotal doit être cohérent avec la somme des lignes (tol 0.01).
+//      Sans ça la comptabilisation peut générer une pièce déséquilibrée
+//      (débit 411 dérivé de subtotal vs crédit 7xx = Σ ligne.montantHT).
+function checkSubtotalCoherence(data: Record<string, unknown>, ctx: z.RefinementCtx) {
+  const subtotal = data['subtotal'] as number | undefined
+  const lines    = data['lines']    as { montantHT?: number }[] | undefined
+  if (subtotal != null && lines && lines.length > 0) {
+    const sumLines = lines.reduce((s, l) => s + Number(l.montantHT ?? 0), 0)
+    if (Math.abs(sumLines - subtotal) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['subtotal'],
+        message: `Incohérence : subtotal=${subtotal} ≠ Σ(montantHT)=${sumLines.toFixed(2)} (delta=${(subtotal - sumLines).toFixed(2)})`,
+      })
+    }
+  }
+}
+
+export const CreateInvoiceDto = InvoiceBase.superRefine(checkSubtotalCoherence)
+export const UpdateInvoiceDto = InvoiceBase.partial().superRefine(checkSubtotalCoherence)
 
 export const UpdateStatusDto = z.object({
   status: z.enum(['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED']),
