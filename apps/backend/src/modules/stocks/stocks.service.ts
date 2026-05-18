@@ -23,8 +23,20 @@ async function nextReference(
   if (tx) {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId + ':ART'}))`
   }
-  const count = await db.article.count({ where: { companyId } })
-  return `ART-${String(count + 1).padStart(5, '0')}`
+  // N12 : utiliser max(reference) au lieu de count() — un article supprimé
+  //       ne doit pas faire "revenir" le compteur en arrière (sinon P2002
+  //       car la référence d'origine existe peut-être encore via @@unique).
+  const last = await db.article.findFirst({
+    where:   { companyId, reference: { startsWith: 'ART-' } },
+    orderBy: { reference: 'desc' },
+    select:  { reference: true },
+  })
+  let next = 1
+  if (last?.reference) {
+    const m = /^ART-(\d+)$/.exec(last.reference)
+    if (m) next = parseInt(m[1]!, 10) + 1
+  }
+  return `ART-${String(next).padStart(5, '0')}`
 }
 
 // ── Families ──────────────────────────────────────────────────────────────────

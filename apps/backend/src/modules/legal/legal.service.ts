@@ -19,6 +19,7 @@ import crypto from 'crypto'
 import { prisma } from '../../lib/prisma.js'
 import { sendSignatureRequestEmail } from '../../lib/email.js'
 import { env } from '../../config/env.js'
+import { AppError } from '../../middleware/errorHandler.js'
 import type {
   CreateContractInput, UpdateContractInput, ListContractsInput,
   SendSignatureInput, CreateGdprInput, UpdateGdprInput,
@@ -301,6 +302,34 @@ export async function getContractDocument(token: string) {
  * Enregistre la signature (ou le refus) d'un signataire.
  * Journalise IP, User-Agent et horodatage — requis pour conformité AES.
  */
+/**
+ * V15 : valide que signatureData est bien une image PNG/JPEG en base64
+ *       et borne sa taille à ~200 KB (limite mémoire + preuve juridique
+ *       sérieuse).
+ */
+const SIGNATURE_DATA_RE = /^data:image\/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$/
+const SIGNATURE_DATA_MAX_BYTES = 200_000  // V14 : ~200 KB cap
+
+function validateSignatureData(raw: string | null | undefined): string | null {
+  if (raw == null || raw === '') return null
+  if (typeof raw !== 'string') {
+    throw new AppError('signatureData invalide (type)', 400, 'INVALID_SIGNATURE_DATA')
+  }
+  if (raw.length > SIGNATURE_DATA_MAX_BYTES) {
+    throw new AppError(
+      `signatureData trop volumineuse (${raw.length} > ${SIGNATURE_DATA_MAX_BYTES} octets)`,
+      413, 'SIGNATURE_DATA_TOO_LARGE',
+    )
+  }
+  if (!SIGNATURE_DATA_RE.test(raw)) {
+    throw new AppError(
+      'signatureData doit être une image PNG/JPEG en base64 (data URL)',
+      400, 'INVALID_SIGNATURE_DATA',
+    )
+  }
+  return raw
+}
+
 export async function processSignature(
   token: string,
   action: 'sign' | 'refuse',
@@ -313,12 +342,14 @@ export async function processSignature(
   if (!sig || sig.status !== 'PENDING') return null
 
   if (action === 'sign') {
+    // V14 + V15 : valider format + taille AVANT toute écriture DB
+    const safeSignatureData = validateSignatureData(opts.signatureData)
     await prisma.contractSignature.update({
       where: { id: sig.id },
       data: {
         status:          'SIGNED',
         signedAt:        new Date(),
-        signatureData:   opts.signatureData ?? null,
+        signatureData:   safeSignatureData,
         signingIp:       opts.ip            ?? null,
         signingUserAgent: opts.userAgent    ?? null,
       },

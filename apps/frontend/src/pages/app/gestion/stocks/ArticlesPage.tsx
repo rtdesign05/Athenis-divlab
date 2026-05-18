@@ -4,6 +4,7 @@ import { stocksApi, type Article, type StockFamily, type StockMethod } from '@/s
 import { useCurrency } from '@/hooks/useCurrency'
 import { CompteCombobox } from '@/components/accounting/CompteCombobox'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+import { TVA_CM_PCT } from '@athenis/shared-types'
 
 // ── Status helper ─────────────────────────────────────────────────────────────
 
@@ -111,8 +112,8 @@ function ArticleModal({ families, onClose, initial }: { families: StockFamily[];
     unite:            initial?.unite ?? 'unité',
     prixAchat:        String(initial?.prixAchat ?? ''),
     prixVente:        String(initial?.prixVente ?? ''),
-    tvaAchat:         String(initial ? initial.tvaAchat * 100 : 19.25),
-    tvaVente:         String(initial ? initial.tvaVente * 100 : 19.25),
+    tvaAchat:         String(initial ? initial.tvaAchat * 100 : TVA_CM_PCT),
+    tvaVente:         String(initial ? initial.tvaVente * 100 : TVA_CM_PCT),
     stockInitial:     '',
     stockMin:         String(initial?.stockMin ?? '0'),
     stockMax:         String(initial?.stockMax ?? ''),

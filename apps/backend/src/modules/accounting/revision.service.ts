@@ -1,15 +1,28 @@
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 
-/** Cache fiscal year lookup to avoid repeated DB calls per revision operation */
-const fyYearCache = new Map<string, number>()
+/**
+ * Cache fiscal year lookup avec TTL pour éviter des reads DB répétés sur les
+ * opérations de révision. Le TTL court (60s) évite la stale data après
+ * update/reopen d'un FY admin (N9).
+ */
+const fyYearCache = new Map<string, { year: number; expiresAt: number }>()
+const FY_CACHE_TTL_MS = 60 * 1000  // 60 secondes
 
 async function getFiscalYearYear(fiscalYearId: string): Promise<number> {
-  if (fyYearCache.has(fiscalYearId)) return fyYearCache.get(fiscalYearId)!
+  const cached = fyYearCache.get(fiscalYearId)
+  if (cached && cached.expiresAt > Date.now()) return cached.year
   const fy = await prisma.fiscalYear.findUnique({ where: { id: fiscalYearId }, select: { year: true } })
   const year = fy?.year ?? new Date().getFullYear()
-  fyYearCache.set(fiscalYearId, year)
+  fyYearCache.set(fiscalYearId, { year, expiresAt: Date.now() + FY_CACHE_TTL_MS })
   return year
+}
+
+/** N9 : permet aux services (closeFiscalYear, openFiscalYear, updateFiscalYear)
+ *  d'invalider explicitement le cache si nécessaire. */
+export function invalidateFiscalYearCache(fiscalYearId?: string): void {
+  if (fiscalYearId) fyYearCache.delete(fiscalYearId)
+  else fyYearCache.clear()
 }
 
 // ── SYSCOHADA Cycle definitions (by account number prefixes) ──────────────────

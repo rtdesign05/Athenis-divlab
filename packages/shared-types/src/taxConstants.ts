@@ -11,6 +11,12 @@
 
 /** Taux TVA Cameroun (CGI Article 142) — 19,25% depuis 2022. */
 export const TVA_CM = 0.1925
+
+/**
+ * Taux TVA Cameroun en pourcent (pour les UI où le taux est saisi en %).
+ * Source de vérité unique : modifier UNIQUEMENT `TVA_CM` ci-dessus.
+ */
+export const TVA_CM_PCT = TVA_CM * 100  // 19.25
 /** Taux TVA France standard (CGI Article 278) — 20% depuis 2014. */
 export const TVA_FR = 0.20
 /** Taux TVA UEMOA hors Cameroun (CI, SN, GA, TG, BJ, BF) — 18%. */

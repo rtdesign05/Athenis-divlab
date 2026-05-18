@@ -789,13 +789,21 @@ export async function closeFiscalYearNew(companyId: string, id: string, userId: 
         reference: anRef, createdBy: userId,
       })
     }
-    // Reporter le résultat vers le compte 119
+    // N17 : report du résultat vers le compte adéquat selon la zone.
+    //   OHADA → 119 (Report à nouveau, débiteur ou créditeur consolidé)
+    //   FRANCE → 110 si bénéfice (Report à nouveau positif), 119 si perte
+    //            (Report à nouveau négatif) — PCG 2014.
+    // Avant : on écrivait toujours sur 119 même en France, ce qui était
+    //         défensable mais incorrect côté PCG strict.
     const resultPrefix = zone === 'FRANCE' ? '12' : '13'
     const hasResCompte = [...balanceMap.keys()].some(k => k.startsWith(resultPrefix))
     if (!hasResCompte && Math.abs(resultatNetJournal) > 0.01) {
+      const reportAccount = zone === 'FRANCE'
+        ? (resultatNetJournal >= 0 ? '110' : '119')
+        : '119'
       pendingAnRows.push({
         companyId, fiscalYearId: '__PLACEHOLDER__',
-        date: openingDate, journal: 'AN', compte: normalizeAccountCode('119'),
+        date: openingDate, journal: 'AN', compte: normalizeAccountCode(reportAccount),
         libelle: `À-nouveau ${fy.year} — Résultat ${resultatNetJournal >= 0 ? '(bénéfice)' : '(perte)'}`,
         debit:   resultatNetJournal < 0 ? Math.abs(resultatNetJournal) : 0,
         credit:  resultatNetJournal > 0 ? resultatNetJournal : 0,

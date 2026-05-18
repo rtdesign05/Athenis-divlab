@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
+import { TVA_CM_PCT } from '@athenis/shared-types'
 import {
   useGestion,
   type FactureVente,
@@ -845,7 +846,7 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
         date,
         echeance,
         montantHT:  totalHT,
-        tva:        19.25,
+        tva:        TVA_CM_PCT,
         montantTTC: totalTTC,
         statut:     'Brouillon',
         lignes:     builtLignes,
@@ -1092,7 +1093,7 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
                               onChange={e => updateLigne(idx, { tvaRate: e.target.value })}
                               className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"
                             >
-                              <option value="19.25">19,25 %</option>
+                              <option value={String(TVA_CM_PCT)}>{TVA_CM_PCT.toFixed(2).replace('.', ',')} %</option>
                               <option value="0">0 %</option>
                             </select>
                           </td>
@@ -1559,7 +1560,7 @@ export function FacturesVentesPage() {
   const { user } = useAuth()
   const { facturesVentes, updateFactureVenteStatut, clients, addFactureVente } = useGestion()
   const { agences: agencesList, vatRate } = useCompanySettings()
-  const effectiveVatRate = vatRate ?? 19.25
+  const effectiveVatRate = vatRate ?? TVA_CM_PCT
 
   const agenceNom = user?.agenceNom ?? null
 

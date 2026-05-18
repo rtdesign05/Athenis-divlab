@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTVADeclaration, useDeclareTVA, useTaxConfig, useCompanyInfo } from '@/hooks/useFiscal'
 import { DgiFormHeader } from '@/components/fiscal/DgiFormHeader'
 import { FormPageViewer } from '@/components/fiscal/FormPageViewer'
-import { CM_TAX } from '@/lib/taxConstants'
+import { CM_TAX, TVA_CM_PCT } from '@/lib/taxConstants'
 import { usePdfDownload } from '@/hooks/usePdfDownload'
 import type { TvaPdfData } from '@/pages/app/fiscal/pdf/TvaPdf'
 
@@ -46,10 +46,10 @@ interface CollRow { label: string; baseHT: number; taux: number; zeroTax?: boole
 interface DeductRow { label: string; amount: number }
 
 const DEFAULT_COLL_ROWS: CollRow[] = [
-  { label: 'Ventes de marchandises',            baseHT: 0, taux: 19.25 },
-  { label: 'Prestations de services',           baseHT: 0, taux: 19.25 },
-  { label: 'Importations taxables',             baseHT: 0, taux: 19.25 },
-  { label: 'Autres opérations imposables',      baseHT: 0, taux: 19.25 },
+  { label: 'Ventes de marchandises',            baseHT: 0, taux: TVA_CM_PCT },
+  { label: 'Prestations de services',           baseHT: 0, taux: TVA_CM_PCT },
+  { label: 'Importations taxables',             baseHT: 0, taux: TVA_CM_PCT },
+  { label: 'Autres opérations imposables',      baseHT: 0, taux: TVA_CM_PCT },
   { label: 'Opérations au taux zéro (exports)', baseHT: 0, taux: 0, zeroTax: true },
   { label: 'Opérations exonérées',              baseHT: 0, taux: 0, exempt: true },
 ]

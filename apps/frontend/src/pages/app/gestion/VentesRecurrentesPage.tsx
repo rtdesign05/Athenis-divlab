@@ -1,6 +1,7 @@
 import { useState, useMemo, Component, type ReactNode, type ErrorInfo } from 'react'
 import { useCurrency }      from '@/hooks/useCurrency'
 import { useAuth }          from '@/features/auth/useAuth'
+import { TVA_CM_PCT }       from '@athenis/shared-types'
 import {
   useGestion,
   type VenteRecurrente,
@@ -121,9 +122,9 @@ function emptyForm(): FormState {
   return {
     client: '', agence: '', description: '', frequence: 'mensuel',
     dateDebut: d, dateFin: '', prochaineEcheance: addMonths(d, 1),
-    statut: 'Actif', tvaRate: '19.25', conditionsPaiement: 'Paiement à 30 jours',
+    statut: 'Actif', tvaRate: String(TVA_CM_PCT), conditionsPaiement: 'Paiement à 30 jours',
     notes: '',
-    lignes: [{ id: uid(), description: '', quantite: 1, unite: 'forfait', prixUnitaireHT: 0, tvaRate: 19.25, montantHT: 0 }],
+    lignes: [{ id: uid(), description: '', quantite: 1, unite: 'forfait', prixUnitaireHT: 0, tvaRate: TVA_CM_PCT, montantHT: 0 }],
   }
 }
 
@@ -252,7 +253,7 @@ function VentesRecurrentesPageInner() {
       ...prev,
       lignes: [...prev.lignes, {
         id: uid(), description: '', quantite: 1, unite: 'forfait',
-        prixUnitaireHT: 0, tvaRate: parseFloat(prev.tvaRate) || 19.25, montantHT: 0,
+        prixUnitaireHT: 0, tvaRate: parseFloat(prev.tvaRate) || TVA_CM_PCT, montantHT: 0,
       }],
     }))
   }

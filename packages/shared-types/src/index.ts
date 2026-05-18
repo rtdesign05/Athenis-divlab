@@ -49,6 +49,7 @@ export type {
 
 export {
   TVA_CM,
+  TVA_CM_PCT,
   TVA_FR,
   TVA_UEMOA,
   IS_CM,

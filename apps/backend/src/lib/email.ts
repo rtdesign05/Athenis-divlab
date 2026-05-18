@@ -2,6 +2,19 @@ import nodemailer from 'nodemailer'
 import { env } from '../config/env.js'
 import { logger } from './logger.js'
 
+// V13 : helper d'échappement HTML pour les variables interpolées dans les
+//       templates d'email. Empêche un user d'injecter du HTML dans un nom
+//       de signataire / titre de contrat → phishing avec réputation SPF/DKIM
+//       du domaine Athenis.
+function escapeHtml(str: string): string {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 // ── Transporter ───────────────────────────────────────────────────────────────
 
 function createTransporter() {
@@ -58,6 +71,12 @@ export async function sendCabinetInvitationEmail(
     PARTIEL:      'Mission partielle',
   }
   const typeLabel = typeLabels[opts.type] ?? opts.type
+  // V13 : échappement HTML des variables interpolées
+  const safeCabinet  = escapeHtml(opts.cabinetName)
+  const safeCompany2 = escapeHtml(opts.companyName)
+  const safeType     = escapeHtml(typeLabel)
+  const safeUrl2     = escapeHtml(url)
+  const safeExpire2  = escapeHtml(expire)
 
   await sendMail({
     to,
@@ -77,29 +96,29 @@ export async function sendCabinetInvitationEmail(
         <tr><td style="padding:40px">
           <h1 style="margin:0 0 8px;font-size:20px;color:#111827">Invitation d'un cabinet comptable</h1>
           <p style="margin:0 0 24px;color:#6b7280;line-height:1.6">
-            Le cabinet <strong style="color:#111827">${opts.cabinetName}</strong> souhaite gérer la comptabilité de
-            <strong style="color:#111827">${opts.companyName}</strong> sur Athenis.
+            Le cabinet <strong style="color:#111827">${safeCabinet}</strong> souhaite gérer la comptabilité de
+            <strong style="color:#111827">${safeCompany2}</strong> sur Athenis.
           </p>
 
           <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin-bottom:28px">
             <p style="margin:0 0 6px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af">Type de mission</p>
-            <p style="margin:0;font-size:15px;font-weight:600;color:#111827">${typeLabel}</p>
+            <p style="margin:0;font-size:15px;font-weight:600;color:#111827">${safeType}</p>
           </div>
 
           <p style="margin:0 0 20px;color:#6b7280;font-size:14px;line-height:1.6">
             Consultez les détails de cette invitation et acceptez-la ou refusez-la en cliquant sur le bouton ci-dessous.
-            Cette invitation expire le <strong>${expire}</strong>.
+            Cette invitation expire le <strong>${safeExpire2}</strong>.
           </p>
 
           <div style="text-align:center;margin:32px 0">
-            <a href="${url}" style="display:inline-block;background:#1a3a2a;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600;font-size:15px">
+            <a href="${safeUrl2}" style="display:inline-block;background:#1a3a2a;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600;font-size:15px">
               Voir l'invitation
             </a>
           </div>
 
           <p style="margin:16px 0 0;color:#9ca3af;font-size:12px">
             Si vous n'attendiez pas cette invitation, vous pouvez ignorer cet e-mail en toute sécurité.<br>
-            Lien : <a href="${url}" style="color:#1a3a2a">${url}</a>
+            Lien : <a href="${safeUrl2}" style="color:#1a3a2a">${safeUrl2}</a>
           </p>
         </td></tr>
         <tr><td style="background:#f9fafb;padding:20px 40px;text-align:center;border-top:1px solid #e5e7eb">
@@ -128,6 +147,15 @@ export async function sendSignatureRequestEmail(
   const expire = opts.expiresAt
     ? opts.expiresAt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
     : null
+
+  // V13 : pré-échappement HTML des variables interpolées. Le `subject` et le
+  //       `text` n'ont pas besoin d'escape (envoyés en texte brut), seul le
+  //       template HTML en a besoin.
+  const safeName     = escapeHtml(opts.signerName)
+  const safeTitle    = escapeHtml(opts.contractTitle)
+  const safeCompany  = escapeHtml(opts.companyName)
+  const safeUrl      = escapeHtml(opts.signUrl)
+  const safeExpire   = expire ? escapeHtml(expire) : null
 
   await sendMail({
     to,
@@ -164,7 +192,7 @@ export async function sendSignatureRequestEmail(
 
         <!-- Body -->
         <tr><td style="padding:40px">
-          <p style="margin:0 0 6px;color:#6b7280;font-size:14px">Bonjour <strong style="color:#111827">${opts.signerName}</strong>,</p>
+          <p style="margin:0 0 6px;color:#6b7280;font-size:14px">Bonjour <strong style="color:#111827">${safeName}</strong>,</p>
           <h1 style="margin:0 0 20px;font-size:20px;color:#111827;line-height:1.3">
             Vous avez un document à signer
           </h1>
@@ -172,18 +200,18 @@ export async function sendSignatureRequestEmail(
           <!-- Document card -->
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:20px 24px;margin-bottom:28px">
             <p style="margin:0 0 6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#16a34a">Document</p>
-            <p style="margin:0 0 4px;font-size:17px;font-weight:700;color:#111827">« ${opts.contractTitle} »</p>
-            <p style="margin:0;font-size:13px;color:#374151">Envoyé par <strong>${opts.companyName}</strong></p>
+            <p style="margin:0 0 4px;font-size:17px;font-weight:700;color:#111827">« ${safeTitle} »</p>
+            <p style="margin:0;font-size:13px;color:#374151">Envoyé par <strong>${safeCompany}</strong></p>
           </div>
 
           <p style="margin:0 0 20px;color:#6b7280;font-size:14px;line-height:1.6">
             Cliquez sur le bouton ci-dessous pour consulter le document et apposer votre signature électronique.
-            ${expire ? `<br>Ce lien est valable jusqu'au <strong>${expire}</strong>.` : ''}
+            ${safeExpire ? `<br>Ce lien est valable jusqu'au <strong>${safeExpire}</strong>.` : ''}
           </p>
 
           <!-- CTA -->
           <div style="text-align:center;margin:32px 0">
-            <a href="${opts.signUrl}"
+            <a href="${safeUrl}"
                style="display:inline-block;background:#15803d;color:#fff;text-decoration:none;padding:16px 40px;border-radius:10px;font-weight:700;font-size:16px;letter-spacing:.01em">
               ✍️ Signer le document
             </a>
@@ -200,7 +228,7 @@ export async function sendSignatureRequestEmail(
 
           <p style="margin:16px 0 0;color:#9ca3af;font-size:12px">
             Aucun compte n'est requis pour signer. Si vous n'êtes pas concerné, ignorez cet e-mail.<br>
-            Lien direct : <a href="${opts.signUrl}" style="color:#15803d;word-break:break-all">${opts.signUrl}</a>
+            Lien direct : <a href="${safeUrl}" style="color:#15803d;word-break:break-all">${safeUrl}</a>
           </p>
         </td></tr>
 
@@ -222,6 +250,9 @@ export async function sendSignatureCompletedEmail(
   to: string,
   opts: { companyName: string; contractTitle: string; certificateUrl: string },
 ): Promise<void> {
+  // V13 : échappement HTML
+  const safeTitle = escapeHtml(opts.contractTitle)
+  const safeCertUrl = escapeHtml(opts.certificateUrl)
   await sendMail({
     to,
     subject: `✅ Document signé : "${opts.contractTitle}" — ${opts.companyName}`,
@@ -239,10 +270,10 @@ export async function sendSignatureCompletedEmail(
         <tr><td style="padding:40px">
           <h1 style="margin:0 0 16px;font-size:20px;color:#111827">Signature complète !</h1>
           <p style="color:#6b7280;font-size:14px;line-height:1.6">
-            Le document <strong>« ${opts.contractTitle} »</strong> a été signé par tous les signataires.
+            Le document <strong>« ${safeTitle} »</strong> a été signé par tous les signataires.
           </p>
           <div style="text-align:center;margin:32px 0">
-            <a href="${opts.certificateUrl}"
+            <a href="${safeCertUrl}"
                style="display:inline-block;background:#15803d;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600">
               📄 Télécharger le certificat
             </a>
@@ -257,6 +288,7 @@ export async function sendSignatureCompletedEmail(
 
 export async function sendVerificationEmail(to: string, token: string): Promise<void> {
   const url = `${env.frontendUrl}/auth/verify-email?token=${token}`
+  const safeUrl3 = escapeHtml(url)
 
   await sendMail({
     to,
@@ -281,7 +313,7 @@ export async function sendVerificationEmail(to: string, token: string): Promise<
             Bienvenue ! Pour terminer la création de votre compte, veuillez confirmer votre adresse e-mail en cliquant sur le bouton ci-dessous.
           </p>
           <div style="text-align:center;margin:32px 0">
-            <a href="${url}" style="display:inline-block;background:#1a3a2a;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600;font-size:15px">
+            <a href="${safeUrl3}" style="display:inline-block;background:#1a3a2a;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600;font-size:15px">
               Confirmer mon adresse e-mail
             </a>
           </div>
@@ -289,7 +321,7 @@ export async function sendVerificationEmail(to: string, token: string): Promise<
             Ce lien est valable <strong>24 heures</strong>. Si vous n'avez pas créé de compte sur Athenis, ignorez cet e-mail.
           </p>
           <p style="margin:16px 0 0;color:#9ca3af;font-size:12px;word-break:break-all">
-            Lien : <a href="${url}" style="color:#1a3a2a">${url}</a>
+            Lien : <a href="${safeUrl3}" style="color:#1a3a2a">${safeUrl3}</a>
           </p>
         </td></tr>
         <!-- Footer -->
