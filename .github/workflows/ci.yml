@@ -30,7 +30,12 @@ jobs:
         run: npm run build -w packages/shared-types
 
       - name: Generate Prisma client
-        run: npm run prisma:generate -w apps/backend
+        working-directory: apps/backend
+        run: |
+          npx prisma generate
+          echo "--- Verifying generated client ---"
+          test -f ../../node_modules/.prisma/client/index.d.ts && echo "OK: .prisma/client/index.d.ts exists" || (echo "MISSING: .prisma/client/index.d.ts" && exit 1)
+          grep -c "AccountingZone" ../../node_modules/.prisma/client/index.d.ts || (echo "MISSING enum AccountingZone in generated client" && exit 1)
 
       - name: TypeScript check (backend)
         run: npm run typecheck -w apps/backend
@@ -73,7 +78,12 @@ jobs:
         run: npm run build -w packages/shared-types
 
       - name: Generate Prisma client
-        run: npm run prisma:generate -w apps/backend
+        working-directory: apps/backend
+        run: |
+          npx prisma generate
+          echo "--- Verifying generated client ---"
+          test -f ../../node_modules/.prisma/client/index.d.ts && echo "OK: .prisma/client/index.d.ts exists" || (echo "MISSING: .prisma/client/index.d.ts" && exit 1)
+          grep -c "AccountingZone" ../../node_modules/.prisma/client/index.d.ts || (echo "MISSING enum AccountingZone in generated client" && exit 1)
 
       - name: Build backend
         run: npm run build -w apps/backend
