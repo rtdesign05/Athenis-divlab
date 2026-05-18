@@ -139,6 +139,17 @@ export async function createArticle(companyId: string, dto: CreateArticleInput) 
     const existing = await tx.article.findUnique({ where: { companyId_reference: { companyId, reference } } })
     if (existing) throw new AppError(`Référence "${reference}" déjà utilisée`, 409, 'CONFLICT')
 
+    // V10 : vérifier que familleId appartient à companyId. Sinon un user
+    //       pouvait rattacher son article à une famille d'un autre tenant
+    //       → fuite info via include {famille: true} dans le listing.
+    if (rest.familleId) {
+      const fam = await tx.stockFamily.findFirst({
+        where: { id: rest.familleId, companyId },
+        select: { id: true },
+      })
+      if (!fam) throw new AppError('Famille introuvable', 404, 'FAMILLE_NOT_FOUND')
+    }
+
     const article = await tx.article.create({
       data: {
         companyId,
@@ -180,6 +191,14 @@ export async function updateArticle(companyId: string, id: string, dto: UpdateAr
   if (dto.reference && dto.reference !== article.reference) {
     const conflict = await prisma.article.findUnique({ where: { companyId_reference: { companyId, reference: dto.reference } } })
     if (conflict) throw new AppError(`Référence "${dto.reference}" déjà utilisée`, 409, 'CONFLICT')
+  }
+  // V10 : vérifier que familleId appartient à companyId.
+  if (dto.familleId) {
+    const fam = await prisma.stockFamily.findFirst({
+      where: { id: dto.familleId, companyId },
+      select: { id: true },
+    })
+    if (!fam) throw new AppError('Famille introuvable', 404, 'FAMILLE_NOT_FOUND')
   }
   return prisma.article.update({
     where: { id },

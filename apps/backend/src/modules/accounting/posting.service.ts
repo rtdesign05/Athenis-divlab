@@ -41,26 +41,30 @@ async function ensureAccountInPlan(
   companyId: string,
   numeroRaw: string,
   intitule: string,
+  /** N3 : passer le tx du posting évite (a) les comptes orphelins en cas de
+   *       rollback, (b) les P2002 concurrents sur (companyId, numero). */
+  tx?: Prisma.TransactionClient,
 ): Promise<string> {
   const numero = normalizeAccountCode(numeroRaw)
-  const existing = await prisma.accountPlan.findUnique({
+  const db = tx ?? prisma
+  const existing = await db.accountPlan.findUnique({
     where: { companyId_numero: { companyId, numero } },
   })
   if (existing) {
     if (!existing.isActive) {
-      await prisma.accountPlan.update({ where: { id: existing.id }, data: { isActive: true } })
+      await db.accountPlan.update({ where: { id: existing.id }, data: { isActive: true } })
     }
     return numero
   }
   // Récupère la zone de la société
-  const company = await prisma.company.findUniqueOrThrow({
+  const company = await db.company.findUniqueOrThrow({
     where: { id: companyId }, select: { accountingZone: true },
   })
   // Déduit la classe à partir du premier chiffre + le type comptable via helper
   const classe = parseInt(numero[0] ?? '0', 10)
   const type = inferAccountType(numero)
 
-  await prisma.accountPlan.create({
+  await db.accountPlan.create({
     data: { companyId, numero, intitule, classe, type, zone: company.accountingZone, isSystem: false, isActive: true },
   })
   return numero
@@ -225,8 +229,11 @@ async function generateStockEntry(
   const compteStock     = article.compteStock?.trim()          || '311'
   const compteVariation = article.compteVariationStock?.trim() || '6031'
 
-  const stockAcct = await ensureAccountInPlan(companyId, compteStock, 'Stocks de marchandises')
-  const varAcct   = await ensureAccountInPlan(companyId, compteVariation, 'Variation des stocks de biens achetés')
+  // N3 : on est dans une transaction (generateStockEntry est appelé depuis
+  //      postSaleInvoice/postPurchaseOrder dans un $transaction) — passer tx
+  //      pour que la création de compte fasse partie de la même unité atomique.
+  const stockAcct = await ensureAccountInPlan(companyId, compteStock, 'Stocks de marchandises', tx)
+  const varAcct   = await ensureAccountInPlan(companyId, compteVariation, 'Variation des stocks de biens achetés', tx)
 
   // Lignes comptables à ajouter à la pièce
   if (type === 'ENTREE_ACHAT') {
@@ -565,8 +572,11 @@ async function reverseStockMovementsForPiece(
   reason: string,
   userId: string,
 ): Promise<number> {
+  // N8 : exclure les mouvements AJUSTEMENT pour éviter de re-réinverser un
+  //      mouvement déjà compensé lors d'un précédent unpost. Garantit
+  //      l'idempotence même si quelqu'un re-poste puis re-extourne.
   const mouvements = await tx.stockMouvement.findMany({
-    where: { companyId, reference },
+    where: { companyId, reference, NOT: { type: 'AJUSTEMENT' } },
     orderBy: { createdAt: 'desc' },
   })
   for (const m of mouvements) {

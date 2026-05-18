@@ -14,7 +14,10 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { settingsApi, type CompanySettings, type Agence } from '@/services/settingsApi'
-import { getCountryConfig } from '@athenis/shared-types'
+import { getCountryConfig, TVA_CM } from '@athenis/shared-types'
+
+/** Taux TVA par défaut en pourcent (19,25 pour le Cameroun) — source : taxConstants. */
+const DEFAULT_VAT_PCT = TVA_CM * 100
 import { useAuth } from '@/features/auth/useAuth'
 
 // ── Agences de démonstration ──────────────────────────────────────────────────
@@ -119,7 +122,7 @@ export function CompanySettingsProvider({ children }: { children: ReactNode }) {
       agences:      DEMO_AGENCES,
       country,
       currencyCode: cfg.currencyCode,
-      vatRate:      cfg.vatRates[0] ?? 19.25,
+      vatRate:      cfg.vatRates[0] ?? DEFAULT_VAT_PCT,
       loaded:       false,
     }
   })
@@ -146,7 +149,7 @@ export function CompanySettingsProvider({ children }: { children: ReactNode }) {
         agences:      agences.length > 0 ? agences : DEMO_AGENCES,
         country:      effectiveCountry,
         currencyCode: cfg.currencyCode,
-        vatRate:      cfg.vatRates[0] ?? 19.25,
+        vatRate:      cfg.vatRates[0] ?? DEFAULT_VAT_PCT,
         loaded:       true,
       })
     }
@@ -183,7 +186,7 @@ export function CompanySettingsProvider({ children }: { children: ReactNode }) {
         company,
         country:      company.country,
         currencyCode: cfg.currencyCode,
-        vatRate:      cfg.vatRates[0] ?? 19.25,
+        vatRate:      cfg.vatRates[0] ?? DEFAULT_VAT_PCT,
       }))
     } catch {
       /* conserver les paramètres courants */

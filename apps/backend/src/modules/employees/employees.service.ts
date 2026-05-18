@@ -130,8 +130,12 @@ export async function toggleEmployeeStatus(companyId: string, id: string) {
 }
 
 export async function deleteEmployee(companyId: string, id: string) {
-  await getEmployee(companyId, id)
-  await prisma.employee.delete({ where: { id } })
+  // N7 : deleteMany avec companyId rend l'opération fail-closed même si le
+  //      check initial getEmployee est retiré par un futur refactor.
+  const result = await prisma.employee.deleteMany({ where: { id, companyId } })
+  if (result.count === 0) {
+    throw new AppError('Employee not found', 404, 'NOT_FOUND')
+  }
 }
 
 export async function employeeStats(companyId: string) {

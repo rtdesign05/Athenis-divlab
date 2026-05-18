@@ -96,9 +96,16 @@ async function nextRegReference(
   fiscalYearId: string,
   type: RegularizationType,
   year: number,
+  tx?: import('@prisma/client').Prisma.TransactionClient,
 ): Promise<string> {
   const prefix = `REG-${type}-${year}-`
-  const last = await prisma.journalEntry.findFirst({
+  const db = tx ?? prisma
+  // N1 : advisory lock pour sérialiser la lecture du compteur. Sans tx fourni,
+  //      on lit sans lock (fallback compatibilité legacy).
+  if (tx) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId + ':REG:' + type + ':' + year}))`
+  }
+  const last = await db.journalEntry.findFirst({
     where: { companyId, fiscalYearId, reference: { startsWith: prefix } },
     orderBy: { reference: 'desc' },
     select: { reference: true },
@@ -164,8 +171,6 @@ export async function createRegularization(
     )
   }
 
-  // ── Génération de la référence et création de l'écriture principale ─────
-  const reference = payload.reference?.trim() || (await nextRegReference(companyId, fiscalYearId, type, fy.year))
   const side     = regAccountSide(type) // 'D' or 'C' for reg account
   const pieceId  = `reg_${type.toLowerCase()}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
@@ -182,7 +187,11 @@ export async function createRegularization(
   }
 
   // ── Création atomique : écriture principale (+ extourne éventuelle) ─────
+  // N1 : génération de la référence DANS la transaction avec advisory lock
+  //      pour éviter les courses (2 POST simultanés → même REG-CCA-YYYY-NNNN).
   const result = await prisma.$transaction(async (tx) => {
+    const reference = payload.reference?.trim()
+      || (await nextRegReference(companyId, fiscalYearId, type, fy.year, tx))
     // Écriture principale (OD)
     const main = await tx.journalEntry.createMany({
       data: [

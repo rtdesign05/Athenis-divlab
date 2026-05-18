@@ -169,6 +169,30 @@ export async function updatePurchaseOrder(
 ) {
   const existing = await getPurchaseOrder(companyId, id)
 
+  // V9 : vérifier que les FK reçues appartiennent à companyId (V6 manqué sur l'update).
+  //      Sans ça, un user pouvait remplacer les articleId/fiscalYearId d'un PO
+  //      par ceux d'un autre tenant → fuite d'info via include {article: true}.
+  if (data.fiscalYearId) {
+    const fy = await prisma.fiscalYear.findFirst({
+      where: { id: data.fiscalYearId, companyId },
+      select: { id: true },
+    })
+    if (!fy) throw new AppError('Exercice fiscal invalide', 400, 'INVALID_FISCAL_YEAR')
+  }
+  if (data.lines?.length) {
+    const articleIds = data.lines
+      .map(l => l.articleId)
+      .filter((x): x is string => typeof x === 'string' && x.length > 0)
+    if (articleIds.length > 0) {
+      const found = await prisma.article.count({
+        where: { id: { in: articleIds }, companyId },
+      })
+      if (found !== new Set(articleIds).size) {
+        throw new AppError('Article(s) introuvable(s)', 404, 'ARTICLE_NOT_FOUND')
+      }
+    }
+  }
+
   // B2 : vérifier transition de statut si changement demandé
   if (data.status && data.status !== existing.status) {
     const allowed = PURCHASE_TRANSITIONS[existing.status] ?? []

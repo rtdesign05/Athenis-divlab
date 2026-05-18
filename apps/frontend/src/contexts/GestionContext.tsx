@@ -4,6 +4,10 @@ import * as purchasesApi from '@/services/purchasesApi'
 import * as invoicesApi  from '@/services/invoicesApi'
 import { clientsApi }    from '@/services/clientsApi'
 import { stocksApi }     from '@/services/stocksApi'
+import { TVA_CM }        from '@athenis/shared-types'
+
+/** Taux TVA par défaut en pourcent (19,25 pour le Cameroun) — source : taxConstants. */
+const DEFAULT_VAT_PCT = TVA_CM * 100
 
 // ── Helpers ventes récurrentes ────────────────────────────────────────────────
 
@@ -482,7 +486,7 @@ function apiOrderToFactureAchat(o: purchasesApi.ApiPurchaseOrder): FactureAchat 
     PARTIAL:   'Validée',
     CANCELLED: 'Annulée',
   }
-  const vatRate = Number(o.vatRate) || 19.25
+  const vatRate = Number(o.vatRate) || DEFAULT_VAT_PCT
   return {
     id:          o.reference,
     commande:    o.reference,
@@ -518,7 +522,7 @@ function achatToCreatePayload(a: Omit<Achat, 'id'>): purchasesApi.CreateOrderPay
     date:               a.date,
     receptionAt:        a.reception ?? null,
     montantHT:          totalHT,
-    vatRate:            19.25,
+    vatRate:            DEFAULT_VAT_PCT,
     montantTTC:         a.montant,
     conditionsPaiement: a.conditionsPaiement,
     notes:              a.notes,
@@ -548,8 +552,8 @@ function achatPatchToApi(patch: Partial<Omit<Achat, 'id'>>): purchasesApi.Update
   if (patch.lignes             !== undefined) {
     const totalHT  = patch.lignes.reduce((s, l) => s + l.montantHT, 0)
     out.montantHT  = totalHT
-    out.vatRate    = 19.25
-    out.montantTTC = patch.montant ?? totalHT * 1.1925
+    out.vatRate    = DEFAULT_VAT_PCT
+    out.montantTTC = patch.montant ?? totalHT * (1 + TVA_CM)
     out.lines      = patch.lignes.map(l => ({
       ...(l.reference ? { reference: l.reference } : {}),
       designation:    l.designation,

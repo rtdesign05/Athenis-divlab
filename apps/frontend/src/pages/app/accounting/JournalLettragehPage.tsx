@@ -12,6 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { accountingApi } from '@/services/accountingApi'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useSelectedFiscalYearData, useFiscalYears } from '@/hooks/useFiscalYear'
+import { useAutoDismiss } from '@/shared/hooks/useAutoDismiss'
 import type { ComptesTiersRow, LettrageEntry } from '@/services/accountingApi'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -220,6 +221,8 @@ export function JournalLettragehPage() {
   const [hideLettrees,    setHideLettrees]    = useState(false)
   const [hoveredCode,     setHoveredCode]     = useState<string | null>(null)
   const [error,           setError]           = useState<string | null>(null)
+  // Success toasts auto-dismiss après 3s avec cleanup correct au unmount.
+  const [success,         setSuccess]         = useAutoDismiss<string>(3000)
 
   // ── Data queries ──────────────────────────────────────────────────────────
 
@@ -246,9 +249,8 @@ export function JournalLettragehPage() {
       qc.invalidateQueries({ queryKey: ['comptes-tiers',   fyId] })
       setSelected(new Set())
       setError(null)
-      // Brief toast
-      setError(`✅ Lettrage ${result.code} — ${result.lettered} écriture(s) rapprochées`)
-      setTimeout(() => setError(null), 3000)
+      // Toast de succès auto-dismiss (cleanup garanti au unmount via useAutoDismiss).
+      setSuccess(`✅ Lettrage ${result.code} — ${result.lettered} écriture(s) rapprochées`)
     },
     onError: (e: unknown) => {
       const data = (e as { response?: { data?: { error?: string; message?: string } } })?.response?.data
@@ -497,13 +499,15 @@ export function JournalLettragehPage() {
 
             {/* Error / success banner */}
             {error && (
-              <div className={`mx-5 mt-3 rounded-lg border px-4 py-2.5 text-sm flex items-center justify-between shrink-0 ${
-                error.startsWith('✅')
-                  ? 'border-green-200 bg-green-50 text-green-800'
-                  : 'border-red-200 bg-red-50 text-red-700'
-              }`}>
+              <div className="mx-5 mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm flex items-center justify-between shrink-0 text-red-700">
                 <span>{error}</span>
                 <button onClick={() => setError(null)} className="text-lg leading-none opacity-60 hover:opacity-100 ml-4">×</button>
+              </div>
+            )}
+            {success && (
+              <div className="mx-5 mt-3 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm flex items-center justify-between shrink-0 text-green-800">
+                <span>{success}</span>
+                <button onClick={() => setSuccess(null)} className="text-lg leading-none opacity-60 hover:opacity-100 ml-4">×</button>
               </div>
             )}
 

@@ -42,41 +42,44 @@ mailRouter.post(
       }
 
       // ── Recipient allowlist ────────────────────────────────────────────────
-      // The recipient must be a known client, employee, or company member
-      // belonging to the authenticated user's company.
-      // This prevents using the platform as an open relay to arbitrary addresses.
+      // V11 : refus systématique si companyId absent. Avant, `if (companyId) { ... }`
+      //       laissait passer les tokens CABINET sans contexte company →
+      //       sendMail vers n'importe quelle adresse → OPEN RELAY exploitable
+      //       pour du phishing utilisant la réputation SPF/DKIM du domaine Athenis.
       const companyId = req.user!.companyId
-      if (companyId) {
-        const normalised = to.trim().toLowerCase()
-
-        const [clientMatch, employeeMatch, memberMatch] = await Promise.all([
-          prisma.client.findFirst({
-            where: { companyId, email: { equals: normalised, mode: 'insensitive' } },
-            select: { id: true },
-          }),
-          prisma.employee.findFirst({
-            where: { companyId, email: { equals: normalised, mode: 'insensitive' } },
-            select: { id: true },
-          }),
-          prisma.user.findFirst({
-            where: { companyId, email: { equals: normalised, mode: 'insensitive' } },
-            select: { id: true },
-          }),
-        ])
-
-        if (!clientMatch && !employeeMatch && !memberMatch) {
-          res.status(403).json({
-            success: false,
-            error: "Le destinataire n'est pas associé à votre entreprise",
-            code: 'RECIPIENT_NOT_ALLOWED',
-          })
-          return
-        }
+      if (!companyId) {
+        res.status(403).json({
+          success: false,
+          error: "Contexte entreprise requis. Sélectionnez une entreprise (cabinet → switchToCompany) avant d'envoyer un email.",
+          code: 'COMPANY_CONTEXT_REQUIRED',
+        })
+        return
       }
-      // Cabinet users switching context have companyId set on the view token —
-      // same check applies. Pure CABINET tokens (no companyId) cannot use this endpoint
-      // due to the requireAccountType('COMPANY', 'CABINET') guard above combined
-      // with the companyId being null, so we skip the DB check in that edge case.
+
+      const normalised = to.trim().toLowerCase()
+      const [clientMatch, employeeMatch, memberMatch] = await Promise.all([
+        prisma.client.findFirst({
+          where: { companyId, email: { equals: normalised, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+        prisma.employee.findFirst({
+          where: { companyId, email: { equals: normalised, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+        prisma.user.findFirst({
+          where: { companyId, email: { equals: normalised, mode: 'insensitive' } },
+          select: { id: true },
+        }),
+      ])
+
+      if (!clientMatch && !employeeMatch && !memberMatch) {
+        res.status(403).json({
+          success: false,
+          error: "Le destinataire n'est pas associé à votre entreprise",
+          code: 'RECIPIENT_NOT_ALLOWED',
+        })
+        return
+      }
 
       await sendMail({
         to:      to.trim(),
