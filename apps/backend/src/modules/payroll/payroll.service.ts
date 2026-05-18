@@ -312,12 +312,36 @@ export async function postPayroll(companyId: string, payrollId: string, userId: 
     }
   }
 
-  // Vérif équilibre
+  // B5 : tolérance 0,01 comme sur ventes/achats. Si delta entre 0,01 et 1,00
+  //      (dû aux arrondis IRPP/CNPS sur N salariés), on ajoute une ligne de
+  //      régularisation sur le compte 658 (charges exceptionnelles) ou 758
+  //      (produits exceptionnels) pour absorber le centime résiduel.
+  const sumD0 = lines.reduce((s, l) => s + Number(l.debit  ?? 0), 0)
+  const sumC0 = lines.reduce((s, l) => s + Number(l.credit ?? 0), 0)
+  const delta = +(sumD0 - sumC0).toFixed(2)
+  if (Math.abs(delta) > 1.0) {
+    throw new AppError(
+      `Déséquilibre paie ${ref} : D=${sumD0.toFixed(2)} ≠ C=${sumC0.toFixed(2)} (delta ${delta})`,
+      500, 'POSTING_IMBALANCE',
+    )
+  }
+  if (Math.abs(delta) > 0.01) {
+    // delta > 0 : D > C → on crédite 758 ; delta < 0 : C > D → on débite 658
+    const regulAcct = delta > 0 ? '758' : '658'
+    lines.push({
+      companyId, fiscalYearId: fy.id, date, journal: journalCode, pieceId,
+      compte: regulAcct,
+      libelle: `Régularisation arrondi paie ${ref}`,
+      debit:  delta < 0 ? Math.abs(delta) : 0,
+      credit: delta > 0 ? delta : 0,
+      reference: ref, createdBy: userId,
+    })
+  }
   const sumD = lines.reduce((s, l) => s + Number(l.debit  ?? 0), 0)
   const sumC = lines.reduce((s, l) => s + Number(l.credit ?? 0), 0)
-  if (Math.abs(sumD - sumC) > 0.5) {
+  if (Math.abs(sumD - sumC) > 0.01) {
     throw new AppError(
-      `Déséquilibre paie ${ref} : D=${sumD.toFixed(2)} ≠ C=${sumC.toFixed(2)}`,
+      `Déséquilibre paie ${ref} après régul : D=${sumD.toFixed(2)} ≠ C=${sumC.toFixed(2)}`,
       500, 'POSTING_IMBALANCE',
     )
   }

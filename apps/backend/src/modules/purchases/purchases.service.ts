@@ -15,6 +15,11 @@ const LINES_INCLUDE = {
 async function nextOrderReference(companyId: string, tx?: Prisma.TransactionClient): Promise<string> {
   const year = new Date().getFullYear()
   const db   = tx ?? prisma
+  // B3 : verrou advisory par companyId + sequence pour éviter les courses.
+  //      Sans ça, 2 POST simultanés → même reference → P2002.
+  if (tx) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId + ':BC:' + year}))`
+  }
   const count = await db.purchaseOrder.count({
     where: { companyId, reference: { startsWith: `BC-${year}-` } },
   })
@@ -147,6 +152,15 @@ export async function createPurchaseOrder(
   })
 }
 
+// B2 : machine d'état des bons de commande / factures d'achat.
+const PURCHASE_TRANSITIONS: Record<string, readonly string[]> = {
+  DRAFT:     ['SENT', 'RECEIVED', 'CANCELLED'],
+  SENT:      ['RECEIVED', 'PARTIAL', 'CANCELLED'],
+  PARTIAL:   ['RECEIVED', 'CANCELLED'],
+  RECEIVED:  [],
+  CANCELLED: [],
+}
+
 export async function updatePurchaseOrder(
   companyId: string,
   id:        string,
@@ -154,6 +168,24 @@ export async function updatePurchaseOrder(
   userId?:   string,
 ) {
   const existing = await getPurchaseOrder(companyId, id)
+
+  // B2 : vérifier transition de statut si changement demandé
+  if (data.status && data.status !== existing.status) {
+    const allowed = PURCHASE_TRANSITIONS[existing.status] ?? []
+    if (!allowed.includes(data.status)) {
+      throw new AppError(
+        `Transition non autorisée : ${existing.status} → ${data.status}`,
+        409, 'INVALID_TRANSITION',
+      )
+    }
+  }
+
+  // B1 : comptabiliser AVANT l'update du statut si on passe en RECEIVED.
+  //      Posting échoue → statut reste à l'ancienne valeur.
+  if (data.status === 'RECEIVED' && !existing.posted) {
+    const { postPurchaseOrder } = await import('../accounting/posting.service.js')
+    await postPurchaseOrder(companyId, id, userId ?? 'system')
+  }
 
   const updated = await prisma.purchaseOrder.update({
     where: { id },
@@ -189,18 +221,8 @@ export async function updatePurchaseOrder(
     include: LINES_INCLUDE,
   })
 
-  // ── Comptabilisation automatique au passage en RECEIVED ─────────────────
-  // (Facture d'achat reçue → journal ACH)
-  if (data.status === 'RECEIVED' && !existing.posted) {
-    try {
-      const { postPurchaseOrder } = await import('../accounting/posting.service.js')
-      await postPurchaseOrder(companyId, id, userId ?? 'system')
-    } catch (e) {
-      console.error('[Posting] Échec comptabilisation commande', id, e)
-      throw e
-    }
-  }
-
+  // B1 : posting déjà effectué avant l'update du statut (voir plus haut).
+  void userId
   return updated
 }
 

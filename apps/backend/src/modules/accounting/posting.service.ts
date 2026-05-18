@@ -85,8 +85,15 @@ async function ensureAccountInPlan(
 
 // ── Résolution de l'exercice fiscal à utiliser ────────────────────────────────
 
-async function findOrThrowFiscalYear(companyId: string, date: Date): Promise<string> {
-  const fy = await prisma.fiscalYear.findFirst({
+async function findOrThrowFiscalYear(
+  companyId: string,
+  date: Date,
+  tx?: Prisma.TransactionClient,
+): Promise<string> {
+  // B11 : lecture dans la transaction quand fournie, pour éviter qu'une
+  //       clôture concurrente ne rende le FY CLOSED entre check et write.
+  const db = tx ?? prisma
+  const fy = await db.fiscalYear.findFirst({
     where: { companyId, startDate: { lte: date }, endDate: { gte: date } },
   })
   if (!fy)
@@ -132,6 +139,10 @@ async function generateStockEntry(
   description: string,
   userId: string,
 ): Promise<StockJournalLine[]> {
+  // B6 : verrouille la ligne article pour la durée de la transaction afin
+  //      d'éviter une "lost update" si 2 ventes du même article sont postées
+  //      en parallèle (les 2 liraient stockAvant identique → calculs faux).
+  await tx.$executeRaw`SELECT id FROM articles WHERE id = ${articleId} AND company_id = ${companyId} FOR UPDATE`
   const article = await tx.article.findFirst({ where: { id: articleId, companyId } })
   if (!article) return []
 
@@ -244,7 +255,7 @@ export async function postSaleInvoice(companyId: string, invoiceId: string, user
     ? await ensureAccountInPlan(companyId, def.tvaCollectee, 'TVA collectée')
     : null
 
-  // 4. Exercice et date
+  // 4. Exercice et date — vérif initiale (early-fail si pas de FY)
   const fyId = await findOrThrowFiscalYear(companyId, invoice.issuedAt)
 
   // 5. Création de la pièce dans le journal VTE
@@ -298,6 +309,10 @@ export async function postSaleInvoice(companyId: string, invoiceId: string, user
   // 6. Transaction : pièce comptable + mouvements de stock + lignes de variation
   let stockMovements = 0
   await prisma.$transaction(async (tx) => {
+    // B11 : re-vérifier dans la transaction que l'exercice n'a pas été clôturé
+    //       entre l'early-check et l'écriture (course avec admin closeFiscalYear).
+    await findOrThrowFiscalYear(companyId, invoice.issuedAt, tx)
+
     // Lignes principales (D 411 / C 7xx / C 4431)
     await tx.journalEntry.createMany({ data: lines })
 
@@ -436,6 +451,9 @@ export async function postPurchaseOrder(companyId: string, orderId: string, user
 
   let stockMovements = 0
   await prisma.$transaction(async (tx) => {
+    // B11 : re-vérifier que l'exercice n'a pas été clôturé entre-temps.
+    await findOrThrowFiscalYear(companyId, order.date, tx)
+
     // Lignes principales (D 6xx / D 4452 / C 401)
     await tx.journalEntry.createMany({ data: lines })
 
@@ -479,35 +497,106 @@ export async function postPurchaseOrder(companyId: string, orderId: string, user
 
 // ── Annulation de comptabilisation (extourne) ─────────────────────────────────
 
-/** Supprime la pièce comptable et réinitialise les flags posted. */
-export async function unpostSaleInvoice(companyId: string, invoiceId: string) {
+/**
+ * B7 : Réinverse les mouvements de stock créés pour la pièce de référence.
+ *      Crée des mouvements compensatoires (AJUSTEMENT) et restaure les
+ *      stockActuel/valeurCmup des articles concernés.
+ *
+ *      Approche : recalculer le stock à partir du SORTIE_VENTE / ENTREE_ACHAT
+ *      d'origine. Pour conserver l'historique, on insère un mouvement
+ *      AJUSTEMENT inverse plutôt que de supprimer.
+ */
+async function reverseStockMovementsForPiece(
+  tx: Prisma.TransactionClient,
+  companyId: string,
+  reference: string,
+  reason: string,
+  userId: string,
+): Promise<number> {
+  const mouvements = await tx.stockMouvement.findMany({
+    where: { companyId, reference },
+    orderBy: { createdAt: 'desc' },
+  })
+  for (const m of mouvements) {
+    // Verrou article pour éviter race avec d'autres opérations concurrentes
+    await tx.$executeRaw`SELECT id FROM articles WHERE id = ${m.articleId} AND company_id = ${companyId} FOR UPDATE`
+    const article = await tx.article.findFirst({ where: { id: m.articleId, companyId } })
+    if (!article) continue
+
+    const stockAvant = Number(article.stockActuel)
+    const cmupAvant  = Number(article.valeurCmup)
+    const qte        = Number(m.quantite)
+    const isEntree   = m.type === 'ENTREE_ACHAT' || m.type === 'ENTREE_RETOUR' || m.type === 'ENTREE_INVENTAIRE'
+
+    // Inverse la quantité (sortie devient entrée et vice-versa)
+    const delta = isEntree ? -qte : qte
+    const stockApres = stockAvant + delta
+    const cmupApres  = cmupAvant  // CMUP inchangé sur réinversion
+
+    await tx.stockMouvement.create({
+      data: {
+        companyId,
+        articleId:   m.articleId,
+        type:        'AJUSTEMENT',
+        quantite:    qte,
+        prixUnitaire: m.prixUnitaire,
+        prixTotal:    m.prixTotal,
+        stockAvant, stockApres,
+        cmupAvant,  cmupApres,
+        reference:   `${reference}-INV`,
+        description: `Réinversion ${reason} — ${m.description ?? ''}`,
+        createdBy:   userId,
+      },
+    })
+    await tx.article.update({
+      where: { id: m.articleId },
+      data:  { stockActuel: stockApres, valeurCmup: cmupApres },
+    })
+  }
+  return mouvements.length
+}
+
+/** Supprime la pièce comptable, réinverse les mouvements de stock, et
+ *  réinitialise les flags posted. */
+export async function unpostSaleInvoice(companyId: string, invoiceId: string, userId: string = 'system') {
   const inv = await prisma.invoice.findFirst({ where: { id: invoiceId, companyId } })
   if (!inv) throw new AppError('Facture introuvable', 404, 'NOT_FOUND')
   if (!inv.posted || !inv.postedPieceId)
     throw new AppError('Facture non comptabilisée', 400, 'NOT_POSTED')
 
+  let stockReversed = 0
   await prisma.$transaction(async (tx) => {
     await tx.journalEntry.deleteMany({ where: { companyId, pieceId: inv.postedPieceId! } })
+    // B7 : réinverser les mouvements de stock créés pour cette vente.
+    //      Le `reference` utilisé au posting est `FA-${invoice.reference}`.
+    stockReversed = await reverseStockMovementsForPiece(
+      tx, companyId, `FA-${inv.reference}`, `annulation vente ${inv.reference}`, userId,
+    )
     await tx.invoice.update({
       where: { id: inv.id },
       data: { posted: false, postedPieceId: null, postedAt: null },
     })
   })
-  return { unposted: 1 }
+  return { unposted: 1, stockReversed }
 }
 
-export async function unpostPurchaseOrder(companyId: string, orderId: string) {
+export async function unpostPurchaseOrder(companyId: string, orderId: string, userId: string = 'system') {
   const o = await prisma.purchaseOrder.findFirst({ where: { id: orderId, companyId } })
   if (!o) throw new AppError('Commande introuvable', 404, 'NOT_FOUND')
   if (!o.posted || !o.postedPieceId)
     throw new AppError('Commande non comptabilisée', 400, 'NOT_POSTED')
 
+  let stockReversed = 0
   await prisma.$transaction(async (tx) => {
     await tx.journalEntry.deleteMany({ where: { companyId, pieceId: o.postedPieceId! } })
+    // B7 : réinverser les entrées en stock créées pour cet achat.
+    stockReversed = await reverseStockMovementsForPiece(
+      tx, companyId, `FA-${o.reference}`, `annulation achat ${o.reference}`, userId,
+    )
     await tx.purchaseOrder.update({
       where: { id: o.id },
       data: { posted: false, postedPieceId: null, postedAt: null },
     })
   })
-  return { unposted: 1 }
+  return { unposted: 1, stockReversed }
 }

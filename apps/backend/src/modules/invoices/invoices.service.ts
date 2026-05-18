@@ -194,29 +194,44 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
 const VALID_INVOICE_STATUSES = ['DRAFT', 'SENT', 'PAID', 'OVERDUE', 'CANCELLED'] as const
 type InvoiceStatusType = (typeof VALID_INVOICE_STATUSES)[number]
 
+// B2 : machine d'état des factures (transitions autorisées). Toute transition
+//      non listée renvoie 409. PAID et CANCELLED sont terminaux.
+const INVOICE_TRANSITIONS: Record<InvoiceStatusType, readonly InvoiceStatusType[]> = {
+  DRAFT:     ['SENT', 'CANCELLED'],
+  SENT:      ['PAID', 'OVERDUE', 'CANCELLED'],
+  OVERDUE:   ['PAID', 'CANCELLED'],
+  PAID:      [],
+  CANCELLED: [],
+}
+
 export async function updateInvoiceStatus(companyId: string, id: string, status: string, userId?: string) {
   if (!(VALID_INVOICE_STATUSES as readonly string[]).includes(status)) {
     throw new AppError(`Statut invalide: ${status}`, 400, 'INVALID_STATUS')
   }
+  const target = status as InvoiceStatusType
   const existing = await getInvoice(companyId, id)
-  const extra = status === 'PAID' ? { paidAt: new Date() } : {}
-  const updated = await prisma.invoice.update({ where: { id }, data: { status: status as InvoiceStatusType, ...extra } })
+  const current = existing.status as InvoiceStatusType
 
-  // ── Comptabilisation automatique au passage en SENT ou PAID ───────────────
-  // (DRAFT → SENT/PAID = facture validée → journal VTE)
-  if ((status === 'SENT' || status === 'PAID') && !existing.posted) {
-    try {
-      const { postSaleInvoice } = await import('../accounting/posting.service.js')
-      await postSaleInvoice(companyId, id, userId ?? 'system')
-    } catch (e) {
-      // Erreur de comptabilisation non bloquante pour le changement de statut,
-      // mais on remonte l'erreur pour information.
-      console.error('[Posting] Échec comptabilisation facture', id, e)
-      throw e
-    }
+  // B2 : vérifier la transition
+  if (current !== target && !INVOICE_TRANSITIONS[current].includes(target)) {
+    throw new AppError(
+      `Transition non autorisée : ${current} → ${target}`,
+      409, 'INVALID_TRANSITION',
+    )
   }
 
-  return updated
+  // B1 : comptabiliser AVANT de modifier le statut. Si le posting échoue
+  //      (exercice clos, déséquilibre…), l'état du statut reste cohérent.
+  if ((target === 'SENT' || target === 'PAID') && !existing.posted) {
+    const { postSaleInvoice } = await import('../accounting/posting.service.js')
+    await postSaleInvoice(companyId, id, userId ?? 'system')
+  }
+
+  const extra = target === 'PAID' ? { paidAt: new Date() } : {}
+  return prisma.invoice.update({
+    where: { id },
+    data: { status: target, ...extra },
+  })
 }
 
 export async function deleteInvoice(companyId: string, id: string) {

@@ -223,9 +223,14 @@ function computeSummary(loan: LoanModel, schedule: ScheduleLine[], today = new D
 
 // ── Référence séquentielle ────────────────────────────────────────────────────
 
-async function nextReference(companyId: string, year: number): Promise<string> {
+async function nextReference(companyId: string, year: number, tx?: import('@prisma/client').Prisma.TransactionClient): Promise<string> {
   const prefix = `EMP-${year}-`
-  const last = await prisma.loan.findFirst({
+  const db = tx ?? prisma
+  // B3 : verrou advisory pour sérialiser la lecture/incrément.
+  if (tx) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId + ':EMP:' + year}))`
+  }
+  const last = await db.loan.findFirst({
     where:   { companyId, reference: { startsWith: prefix } },
     orderBy: { reference: 'desc' },
     select:  { reference: true },
