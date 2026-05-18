@@ -231,6 +231,30 @@ export async function createMandat(
   })
   if (existing) throw new AppError('Un mandat existe déjà pour cette entreprise', 409, 'CONFLICT')
 
+  // VN4 : exiger une CabinetInvitation ACCEPTED pour ce couple (cabinet, company)
+  //       avant de créer le mandat — sinon un cabinet pourrait attacher
+  //       une company sans son consentement.
+  //       Matching invitation ↔ company via `companyEmail` (les invitations
+  //       sont émises avant que la company existe en DB).
+  if (company.email) {
+    const invitation = await prisma.cabinetInvitation.findFirst({
+      where: { cabinetId, companyEmail: company.email, status: 'ACCEPTED' },
+      select: { id: true },
+    })
+    if (!invitation) {
+      throw new AppError(
+        'Aucune invitation acceptée trouvée pour cette entreprise. Envoyez d\'abord une invitation via POST /cabinet/invitations.',
+        403, 'NO_ACCEPTED_INVITATION',
+      )
+    }
+  } else if (company.cabinetId !== cabinetId) {
+    // Pas d'email = impossible de matcher. Refus par défaut sauf si déjà rattachée.
+    throw new AppError(
+      'Cette entreprise n\'a pas d\'email ; impossible de vérifier l\'invitation.',
+      403, 'NO_COMPANY_EMAIL',
+    )
+  }
+
   return prisma.$transaction(async (tx) => {
     const mandat = await tx.mandat.create({
       data: {

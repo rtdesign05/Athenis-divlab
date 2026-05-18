@@ -180,11 +180,10 @@ export async function updatePurchaseOrder(
     }
   }
 
-  // B1 : comptabiliser AVANT l'update du statut si on passe en RECEIVED.
-  //      Posting échoue → statut reste à l'ancienne valeur.
+  // B1 + B15 : comptabilisation et changement de statut atomiques.
   if (data.status === 'RECEIVED' && !existing.posted) {
     const { postPurchaseOrder } = await import('../accounting/posting.service.js')
-    await postPurchaseOrder(companyId, id, userId ?? 'system')
+    await postPurchaseOrder(companyId, id, userId ?? 'system', 'RECEIVED')
   }
 
   const updated = await prisma.purchaseOrder.update({

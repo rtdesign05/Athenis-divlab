@@ -220,11 +220,15 @@ export async function updateInvoiceStatus(companyId: string, id: string, status:
     )
   }
 
-  // B1 : comptabiliser AVANT de modifier le statut. Si le posting échoue
-  //      (exercice clos, déséquilibre…), l'état du statut reste cohérent.
+  // B1 + B15 : comptabilisation et changement de statut sont atomiques.
+  //   - Si posting requis (passage en SENT/PAID et pas encore posted),
+  //     postSaleInvoice met posted=true + status=target dans la même tx.
+  //   - Sinon, on met juste à jour le status (et paidAt si PAID).
   if ((target === 'SENT' || target === 'PAID') && !existing.posted) {
     const { postSaleInvoice } = await import('../accounting/posting.service.js')
-    await postSaleInvoice(companyId, id, userId ?? 'system')
+    await postSaleInvoice(companyId, id, userId ?? 'system', target)
+    // postSaleInvoice a déjà setté status=target dans le tx, on relit l'invoice.
+    return getInvoice(companyId, id)
   }
 
   const extra = target === 'PAID' ? { paidAt: new Date() } : {}

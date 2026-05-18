@@ -77,6 +77,15 @@ export async function createAttachment(data: {
   invoiceId?: string
   expenseId?: string
 }) {
+  // VN5 : defense-in-depth — re-vérifier l'ownership des FK même si l'appelant
+  //       est censé l'avoir fait. Si un futur caller oublie d'appeler
+  //       assertInvoiceOrExpenseBelongsToCompany, on ne régresse pas.
+  const refs: { invoiceId?: string; expenseId?: string } = {}
+  if (data.invoiceId) refs.invoiceId = data.invoiceId
+  if (data.expenseId) refs.expenseId = data.expenseId
+  if (refs.invoiceId || refs.expenseId) {
+    await assertInvoiceOrExpenseBelongsToCompany(data.companyId, refs)
+  }
   return prisma.attachment.create({ data })
 }
 

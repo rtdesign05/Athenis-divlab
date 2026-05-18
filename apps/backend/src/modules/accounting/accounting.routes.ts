@@ -946,7 +946,14 @@ accountingRouter.post(
       const { fiscalYearId } = req.body as { fiscalYearId?: string }
       if (!fiscalYearId) throw new AppError('fiscalYearId requis', 400, 'VALIDATION_ERROR')
       const data = await regSvc.createAllPendingExtournes(getCompanyId(req)!, fiscalYearId, userId)
-      res.json({ success: true, data })
+      // B18 : 207 Multi-Status si certaines extournes ont échoué.
+      //       Force le frontend à inspecter `data.errors` au lieu d'assumer 200 = succès total.
+      const hasPartialErrors = data.errors.length > 0
+      res.status(hasPartialErrors ? 207 : 200).json({
+        success: !hasPartialErrors,
+        data,
+        ...(hasPartialErrors ? { warnings: `${data.errors.length} extourne(s) ont échoué` } : {}),
+      })
     } catch (e) { next(e) }
   },
 )

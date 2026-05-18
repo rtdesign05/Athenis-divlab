@@ -27,22 +27,11 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import { normalizeAccountCode } from '../../lib/accountCodes.js'
-
-// ── Comptes par défaut selon zone comptable ──────────────────────────────────
-
-function defaultAccounts(zone: string) {
-  const isOhada = zone === 'OHADA' || zone !== 'FRANCE'
-  return {
-    client:       '411',
-    supplier:     '401',
-    produit:      isOhada ? '706' : '706',         // 706 Services vendus
-    charge:       isOhada ? '604' : '604',         // 604 Achats stockés
-    tvaCollectee: isOhada ? '4431' : '44571',
-    tvaDeductible:isOhada ? '4452' : '44566',
-    journalVente: 'VTE',
-    journalAchat: 'ACH',
-  }
-}
+import {
+  defaultAccounts,
+  computeCmupAfterEntry,
+  inferAccountType,
+} from './posting.helpers.js'
 
 /**
  * Vérifie qu'un compte existe dans le AccountPlan, sinon le crée.
@@ -67,15 +56,9 @@ async function ensureAccountInPlan(
   const company = await prisma.company.findUniqueOrThrow({
     where: { id: companyId }, select: { accountingZone: true },
   })
-  // Déduit la classe à partir du premier chiffre
+  // Déduit la classe à partir du premier chiffre + le type comptable via helper
   const classe = parseInt(numero[0] ?? '0', 10)
-  // Déduit le type comptable
-  let type: 'ACTIF' | 'PASSIF' | 'CHARGE' | 'PRODUIT' = 'ACTIF'
-  if (classe === 1 || classe === 4) type = numero.startsWith('41') ? 'ACTIF' : 'PASSIF'
-  if (classe === 4 && numero.startsWith('40')) type = 'PASSIF'
-  if (classe === 4 && numero.startsWith('44')) type = 'PASSIF'
-  if (classe === 6) type = 'CHARGE'
-  if (classe === 7) type = 'PRODUIT'
+  const type = inferAccountType(numero)
 
   await prisma.accountPlan.create({
     data: { companyId, numero, intitule, classe, type, zone: company.accountingZone, isSystem: false, isActive: true },
@@ -160,9 +143,7 @@ async function generateStockEntry(
 
   if (type === 'ENTREE_ACHAT') {
     stockApres = stockAvant + quantite
-    cmupApres  = stockApres > 0
-      ? (stockAvant * cmupAvant + quantite * prixUnitaire) / stockApres
-      : prixUnitaire
+    cmupApres  = computeCmupAfterEntry(stockAvant, cmupAvant, quantite, prixUnitaire)
     prixTotal  = quantite * prixUnitaire
 
     if (isFifo) {
@@ -264,7 +245,14 @@ async function generateStockEntry(
 
 // ── Comptabilisation d'une facture de VENTE ──────────────────────────────────
 
-export async function postSaleInvoice(companyId: string, invoiceId: string, userId: string) {
+export async function postSaleInvoice(
+  companyId: string,
+  invoiceId: string,
+  userId: string,
+  /** B15 : statut cible à appliquer dans la même transaction que le posting,
+   *        pour garantir l'atomicité posted=true ↔ status=SENT/PAID. */
+  targetStatus?: 'SENT' | 'PAID',
+) {
   const invoice = await prisma.invoice.findFirst({
     where:   { id: invoiceId, companyId },
     include: { client: true, lines: { include: { article: true } } },
@@ -398,9 +386,13 @@ export async function postSaleInvoice(companyId: string, invoiceId: string, user
       }
     }
 
+    // B15 : posted + status (et paidAt si PAID) mis à jour atomiquement.
+    const statusPatch = targetStatus
+      ? { status: targetStatus, ...(targetStatus === 'PAID' ? { paidAt: new Date() } : {}) }
+      : {}
     await tx.invoice.update({
       where: { id: invoice.id },
-      data: { posted: true, postedPieceId: pieceId, postedAt: new Date() },
+      data: { posted: true, postedPieceId: pieceId, postedAt: new Date(), ...statusPatch },
     })
   })
 
@@ -409,7 +401,13 @@ export async function postSaleInvoice(companyId: string, invoiceId: string, user
 
 // ── Comptabilisation d'une commande d'ACHAT ──────────────────────────────────
 
-export async function postPurchaseOrder(companyId: string, orderId: string, userId: string) {
+export async function postPurchaseOrder(
+  companyId: string,
+  orderId: string,
+  userId: string,
+  /** B15 : statut cible appliqué atomiquement avec posted=true. */
+  targetStatus?: 'RECEIVED',
+) {
   const order = await prisma.purchaseOrder.findFirst({
     where:   { id: orderId, companyId },
     include: { lines: { include: { article: true } } },
@@ -538,9 +536,11 @@ export async function postPurchaseOrder(companyId: string, orderId: string, user
       }
     }
 
+    // B15 : atomicité posted + status
+    const statusPatch = targetStatus ? { status: targetStatus } : {}
     await tx.purchaseOrder.update({
       where: { id: order.id },
-      data: { posted: true, postedPieceId: pieceId, postedAt: new Date() },
+      data: { posted: true, postedPieceId: pieceId, postedAt: new Date(), ...statusPatch },
     })
   })
 
