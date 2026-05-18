@@ -1,0 +1,38 @@
+{
+  "common": {
+    "save":      "Enregistrer",
+    "cancel":    "Annuler",
+    "delete":    "Supprimer",
+    "edit":      "Modifier",
+    "create":    "Créer",
+    "search":    "Rechercher",
+    "loading":   "Chargement…",
+    "error":     "Une erreur est survenue",
+    "yes":       "Oui",
+    "no":        "Non",
+    "confirm":   "Confirmer",
+    "back":      "Retour",
+    "next":      "Suivant",
+    "close":     "Fermer",
+    "validate":  "Valider",
+    "export":    "Exporter",
+    "import":    "Importer",
+    "print":     "Imprimer",
+    "download":  "Télécharger"
+  },
+  "auth": {
+    "login":          "Connexion",
+    "logout":         "Déconnexion",
+    "email":          "Email",
+    "password":       "Mot de passe",
+    "forgotPassword": "Mot de passe oublié ?",
+    "register":       "Créer un compte"
+  },
+  "errors": {
+    "fiscalYearClosed": "Exercice clôturé — modifications interdites",
+    "invalidTransition": "Transition de statut non autorisée",
+    "notFound":         "Ressource introuvable",
+    "forbidden":        "Accès refusé",
+    "validationError":  "Données invalides"
+  }
+}

@@ -8,6 +8,7 @@ import { App } from './App'
 import { queryClient } from './lib/queryClient'
 import { initAnalytics } from './lib/analytics'
 import { initSentry } from './lib/sentry'
+import './lib/i18n'  // bootstrap i18next — doit être importé avant App
 import './index.css'
 
 // ── Monitoring & analytics (no-ops si variables d'env absentes) ──────────────

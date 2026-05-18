@@ -90,6 +90,26 @@ Les taux et seuils légaux sont centralisés :
 
 À chaque loi de finances, modifier UNIQUEMENT ces fichiers.
 
+### Internationalisation (i18n)
+
+`react-i18next` est bootstrappé dans `apps/frontend/src/lib/i18n.ts`.
+**Tout nouveau libellé utilisateur** doit passer par `t('cle')` plutôt qu'être
+hardcodé en français :
+
+```tsx
+import { useTranslation } from 'react-i18next'
+
+function MyComponent() {
+  const { t } = useTranslation()
+  return <button>{t('common.save')}</button>
+}
+```
+
+Les libellés sont dans `apps/frontend/src/locales/fr/common.json`. Convention
+de clés : `common.*` pour le générique, `<module>.<page>.<elt>` pour le
+spécifique. Pour activer une langue cible (EN/AR), dupliquer le JSON et
+ajouter à `supportedLngs` dans `i18n.ts`.
+
 ### Migrations Prisma
 
 ```bash
@@ -102,11 +122,18 @@ Les migrations sont **linéaires** (pas de squash/rewrite). Tout commit qui modi
 ## Tests
 
 ```bash
+npm test -w apps/backend            # vitest, fonctions pures + DTOs
+npm run test:watch -w apps/backend  # mode watch
+npm run test:coverage -w apps/backend  # rapport HTML dans coverage/
+
 npm run typecheck    # tsc --noEmit sur back + front
 npm run lint -w apps/frontend
 ```
 
-> ⚠️ Coverage tests unitaires : 0% actuellement. Voir `MIGRATION.md` pour le plan vitest.
+Coverage actuelle : tests sur les fonctions critiques pures (`accountCodes`,
+`taxConstants`) + les schémas Zod stricts (`invoices.dto`, `purchases.dto`).
+À étendre progressivement aux services DB-bound via supertest + une base de
+test (cf. `vitest.config.ts`).
 
 ## Déploiement
 

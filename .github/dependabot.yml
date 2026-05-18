@@ -1,0 +1,112 @@
+# Dependabot — mises à jour automatiques groupées par écosystème.
+# Voir https://docs.github.com/code-security/dependabot/dependabot-version-updates
+#
+# Groupes choisis pour limiter le bruit des PRs et pouvoir tester en bloc
+# les écosystèmes qui évoluent ensemble (Prisma 5→6→7, Tauri 2→3, etc.).
+
+version: 2
+updates:
+  # ── Racine du monorepo : devDeps partagées (typescript, concurrently)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      typescript-and-tooling:
+        patterns:
+          - typescript
+          - concurrently
+
+  # ── Backend : Prisma, Express, Sentry, etc.
+  - package-ecosystem: npm
+    directory: /apps/backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      prisma:
+        patterns:
+          - "@prisma/*"
+          - prisma
+      sentry:
+        patterns:
+          - "@sentry/*"
+      express-stack:
+        patterns:
+          - express
+          - cors
+          - helmet
+          - cookie-parser
+          - express-rate-limit
+      types:
+        patterns:
+          - "@types/*"
+      security:
+        patterns:
+          - bcryptjs
+          - jsonwebtoken
+          - otplib
+
+  # ── Frontend : React, Tauri, Vite, Tailwind
+  - package-ecosystem: npm
+    directory: /apps/frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - react-router-dom
+          - "@types/react*"
+      tauri:
+        patterns:
+          - "@tauri-apps/*"
+      tanstack:
+        patterns:
+          - "@tanstack/*"
+      sentry:
+        patterns:
+          - "@sentry/*"
+      vite-and-tooling:
+        patterns:
+          - vite
+          - "@vitejs/*"
+          - tailwindcss
+          - postcss
+          - autoprefixer
+      eslint:
+        patterns:
+          - eslint
+          - "@typescript-eslint/*"
+
+  # ── Shared types
+  - package-ecosystem: npm
+    directory: /packages/shared-types
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+
+  # ── Rust (Tauri)
+  - package-ecosystem: cargo
+    directory: /apps/frontend/src-tauri
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      tauri:
+        patterns:
+          - "tauri*"
+
+  # ── GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

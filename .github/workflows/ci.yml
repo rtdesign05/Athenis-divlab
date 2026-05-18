@@ -40,6 +40,23 @@ jobs:
       - name: TypeScript check (backend)
         run: npm run typecheck -w apps/backend
 
+      - name: Unit tests (backend)
+        run: npm test -w apps/backend
+
+  # ── Lint frontend ────────────────────────────────────────────────────────────
+  lint-frontend:
+    name: Lint Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint -w apps/frontend
+        continue-on-error: true  # non-bloquant tant que la dette n'est pas résorbée
+
   # ── Typecheck frontend ───────────────────────────────────────────────────────
   typecheck-frontend:
     name: TypeCheck Frontend
