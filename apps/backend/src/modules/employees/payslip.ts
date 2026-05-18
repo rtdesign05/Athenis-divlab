@@ -46,7 +46,7 @@ function line(label: string, base: number, salRate: number, empRate: number): Pa
  * Barème annuel converti en mensuel, appliqué sur le revenu net imposable
  * après abattement forfaitaire de 30% (min 500 000 / max 2 000 000 FCFA annuel)
  */
-function computeIRPP(netImposableMensuel: number): number {
+export function computeIRPP(netImposableMensuel: number): number {
   // Abattement 30% sur base mensuelle (plafond annuel 2 000 000 / 12 = 166 667)
   const abattement = Math.min(Math.max(netImposableMensuel * 0.30, 500_000 / 12), 2_000_000 / 12)
   const base = Math.max(0, netImposableMensuel - abattement)
