@@ -29,6 +29,9 @@ jobs:
       - name: Build shared-types
         run: npm run build -w packages/shared-types
 
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w apps/backend
+
       - name: TypeScript check (backend)
         run: npm run typecheck -w apps/backend
 
@@ -68,6 +71,9 @@ jobs:
 
       - name: Build shared-types
         run: npm run build -w packages/shared-types
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate -w apps/backend
 
       - name: Build backend
         run: npm run build -w apps/backend
