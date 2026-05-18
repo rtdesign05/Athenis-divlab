@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { TVA_CM } from '../../lib/taxConstants.js'
 
 export const CreateFamilyDto = z.object({
   code:        z.string().min(2).max(6).toUpperCase(),
@@ -15,8 +16,8 @@ export const CreateArticleDto = z.object({
   unite:            z.string().default('unité'),
   prixAchat:        z.number().nonnegative(),
   prixVente:        z.number().nonnegative(),
-  tvaAchat:         z.number().min(0).max(1).default(0.1925),
-  tvaVente:         z.number().min(0).max(1).default(0.1925),
+  tvaAchat:         z.number().min(0).max(1).default(TVA_CM),
+  tvaVente:         z.number().min(0).max(1).default(TVA_CM),
   stockInitial:     z.number().nonnegative().default(0),
   stockMin:         z.number().nonnegative().default(0),
   stockMax:         z.number().nonnegative().optional(),

@@ -1,11 +1,14 @@
 import { prisma } from '../../lib/prisma.js'
+import { TVA_CM, IS_CM } from '../../lib/taxConstants.js'
 
 // ── Taux DGI Cameroun 2026 — CGI 2026 / Loi de finances 2026 ─────────────────
+// Les taux centraux (TVA, IS) viennent de lib/taxConstants.ts pour qu'une
+// modification de loi de finances ne touche qu'UN fichier.
 const CM_TAX = {
-  vatRate:              0.1925,
+  vatRate:              TVA_CM,
   vatPenaltyBase:       0.10,
   vatPenaltyMonthly:    0.015,
-  isRate:               0.33,
+  isRate:               IS_CM,
   isRateReduced:        0.308,
   isThresholdReduced:   3_000_000_000,
   isAcompteRate:        0.022,   // 2.2% du CA mensuel
