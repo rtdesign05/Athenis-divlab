@@ -221,8 +221,6 @@ export async function updatePurchaseOrder(
     include: LINES_INCLUDE,
   })
 
-  // B1 : posting déjà effectué avant l'update du statut (voir plus haut).
-  void userId
   return updated
 }
 

@@ -12,8 +12,18 @@ import type {
 const ENTREE_TYPES = ['ENTREE_ACHAT', 'ENTREE_RETOUR', 'ENTREE_INVENTAIRE', 'AJUSTEMENT'] as const
 function isEntree(type: string) { return ENTREE_TYPES.includes(type as never) }
 
-async function nextReference(companyId: string): Promise<string> {
-  const count = await prisma.article.count({ where: { companyId } })
+async function nextReference(
+  companyId: string,
+  tx?: import('@prisma/client').Prisma.TransactionClient,
+): Promise<string> {
+  const db = tx ?? prisma
+  // B13 : si appelé dans une transaction, on prend un advisory lock pour
+  //       sérialiser la lecture du compteur. Sinon (compatibilité), on
+  //       compte sans lock (mitigé par la contrainte unique companyId_reference).
+  if (tx) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId + ':ART'}))`
+  }
+  const count = await db.article.count({ where: { companyId } })
   return `ART-${String(count + 1).padStart(5, '0')}`
 }
 
@@ -121,11 +131,14 @@ export async function getArticle(companyId: string, id: string) {
 
 export async function createArticle(companyId: string, dto: CreateArticleInput) {
   const { stockInitial, ...rest } = dto
-  const reference = rest.reference || await nextReference(companyId)
-  const existing = await prisma.article.findUnique({ where: { companyId_reference: { companyId, reference } } })
-  if (existing) throw new AppError(`Référence "${reference}" déjà utilisée`, 409, 'CONFLICT')
 
   return prisma.$transaction(async (tx) => {
+    // B13 : nextReference avec tx → advisory lock actif. Et la vérif
+    //       d'unicité passe par le même tx pour rester cohérente.
+    const reference = rest.reference || await nextReference(companyId, tx)
+    const existing = await tx.article.findUnique({ where: { companyId_reference: { companyId, reference } } })
+    if (existing) throw new AppError(`Référence "${reference}" déjà utilisée`, 409, 'CONFLICT')
+
     const article = await tx.article.create({
       data: {
         companyId,

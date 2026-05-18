@@ -65,6 +65,17 @@ export async function updateQuote(companyId: string, id: string, data: UpdateQuo
   if (existing.status === 'CONVERTED')
     throw new AppError('Cannot edit a converted quote', 409, 'QUOTE_LOCKED')
 
+  // VN3 : vérifier que clientId appartient à companyId, sinon la conversion
+  //       en facture (convertQuoteToInvoice) créerait une invoice rattachée
+  //       à un client d'un autre tenant.
+  if (data.clientId) {
+    const client = await prisma.client.findFirst({
+      where: { id: data.clientId, companyId },
+      select: { id: true },
+    })
+    if (!client) throw new AppError('Client not found', 404, 'CLIENT_NOT_FOUND')
+  }
+
   const amountHT  = data.subtotal ?? existing.amountHT
   const vatRate   = data.taxRate != null ? data.taxRate / 100 : existing.vatRate
   const amountTTC = +(amountHT * (1 + vatRate)).toFixed(2)

@@ -256,15 +256,20 @@ export async function reconcileTransaction(companyId: string, data: ReconcileInp
       throw new AppError('Expense not found', 404, 'NOT_FOUND')
   }
 
-  const count = await prisma.bankTransaction.count({
-    where: { companyId, status: 'MATCHED' },
-  })
-  const lettrage = `L${String(count + 1).padStart(4, '0')}`
+  // B14 : advisory lock pour sérialiser la lecture du compteur de lettrage.
+  //       Sans ça, deux réconciliations simultanées produisent le même L0001.
+  return prisma.$transaction(async (txClient) => {
+    await txClient.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId + ':L'}))`
+    const count = await txClient.bankTransaction.count({
+      where: { companyId, status: 'MATCHED' },
+    })
+    const lettrage = `L${String(count + 1).padStart(4, '0')}`
 
-  return prisma.bankTransaction.update({
-    where:   { id: tx.id },
-    data:    { status: 'MATCHED', lettrage, invoiceId: data.invoiceId ?? null, expenseId: data.expenseId ?? null },
-    include: TX_INCLUDE,
+    return txClient.bankTransaction.update({
+      where:   { id: tx.id },
+      data:    { status: 'MATCHED', lettrage, invoiceId: data.invoiceId ?? null, expenseId: data.expenseId ?? null },
+      include: TX_INCLUDE,
+    })
   })
 }
 

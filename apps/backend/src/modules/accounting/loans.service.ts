@@ -314,8 +314,6 @@ export async function createLoan(
   if (firstPaymentDate < startDate)
     throw new AppError('La première échéance doit être postérieure ou égale à la mise à disposition', 400, 'INVALID_DATES')
 
-  const reference = data.reference?.trim() || (await nextReference(companyId, startDate.getFullYear()))
-
   // Comptes par défaut selon zone (récupérer la zone de la société)
   const company = await prisma.company.findUniqueOrThrow({ where: { id: companyId }, select: { accountingZone: true } })
   const isOhada = company.accountingZone === 'OHADA' || company.accountingZone !== 'FRANCE'
@@ -324,25 +322,31 @@ export async function createLoan(
   const bankAcct        = data.bankAccount?.trim()     ? normalizeAccountCode(data.bankAccount)     : normalizeAccountCode(isOhada ? '521' : '512')
   const interestAcct    = data.interestAccount?.trim() ? normalizeAccountCode(data.interestAccount) : normalizeAccountCode(isOhada ? '671' : '661')
 
-  return prisma.loan.create({
-    data: {
-      companyId,
-      reference,
-      name:             data.name.trim(),
-      lender:           data.lender.trim(),
-      principal:        data.principal,
-      rate:             data.rate,
-      durationMonths:   data.durationMonths,
-      startDate,
-      firstPaymentDate,
-      amortType:        data.amortType ?? 'CONSTANT_PAYMENT',
-      currency:         data.currency ?? 'XAF',
-      account:          loanAccount,
-      bankAccount:      bankAcct,
-      interestAccount:  interestAcct,
-      notes:            data.notes ?? null,
-      createdBy:        userId,
-    },
+  // B12 : envelopper dans une $transaction pour que nextReference()
+  //       bénéficie de l'advisory lock (sinon la branche if(tx) était dead-code).
+  return prisma.$transaction(async (tx) => {
+    const reference = data.reference?.trim()
+      || (await nextReference(companyId, startDate.getFullYear(), tx))
+    return tx.loan.create({
+      data: {
+        companyId,
+        reference,
+        name:             data.name.trim(),
+        lender:           data.lender.trim(),
+        principal:        data.principal,
+        rate:             data.rate,
+        durationMonths:   data.durationMonths,
+        startDate,
+        firstPaymentDate,
+        amortType:        data.amortType ?? 'CONSTANT_PAYMENT',
+        currency:         data.currency ?? 'XAF',
+        account:          loanAccount,
+        bankAccount:      bankAcct,
+        interestAccount:  interestAcct,
+        notes:            data.notes ?? null,
+        createdBy:        userId,
+      },
+    })
   })
 }
 

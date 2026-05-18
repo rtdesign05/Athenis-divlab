@@ -22,9 +22,17 @@ accountingRouter.use(authenticate)
 // ── Read-only guard ───────────────────────────────────────────────────────────
 
 /** V\u00e9rifie que l'exercice fiscal est OPEN avant toute \u00e9criture.
- *  Cherche fiscalYearId dans : body.fiscalYearId \u2192 query.fiscalYearId \u2192 params.id */
+ *
+ *  VN2 : on ne lit PLUS `req.params['id']` en fallback \u2014 cela cassait toutes
+ *        les routes `PUT/DELETE /comptes/:id`, `/transactions/:id`, etc. qui
+ *        utilisent `:id` pour autre chose qu'un fiscalYearId. Le caller doit
+ *        passer explicitement `fiscalYearId` dans le body, la query, ou
+ *        utiliser un param\u00e8tre nomm\u00e9 `:fiscalYearId`.
+ */
 async function requireFiscalYearWritable(req: Request, res: Response, next: NextFunction) {
-  const fiscalYearId = (req.body?.fiscalYearId ?? req.query['fiscalYearId'] ?? req.params['id']) as string | undefined
+  const fiscalYearId = (req.body?.fiscalYearId
+    ?? req.query['fiscalYearId']
+    ?? req.params['fiscalYearId']) as string | undefined
   if (!fiscalYearId) return next()
   try {
     // V5 : filtrer par companyId \u2014 un FY d'un autre tenant ne doit pas
@@ -51,7 +59,11 @@ async function requireFiscalYearWritable(req: Request, res: Response, next: Next
       return
     }
     next()
-  } catch { next() }
+  } catch (e) {
+    // VN1 : ne PAS swallow l'erreur \u2014 un fail-open laisserait passer
+    //       l'\u00e9criture sur un FY cl\u00f4tur\u00e9 en cas d'erreur DB transitoire.
+    next(e)
+  }
 }
 
 /** M\u00eame garde, mais r\u00e9sout le fiscalYearId via l'une des \u00e9critures de la pi\u00e8ce (pieceId dans params). */
@@ -80,7 +92,10 @@ async function requirePieceWritable(req: Request, res: Response, next: NextFunct
       return
     }
     next()
-  } catch { next() }
+  } catch (e) {
+    // VN1 : ne PAS fail-open
+    next(e)
+  }
 }
 
 const YearQuery = z.object({

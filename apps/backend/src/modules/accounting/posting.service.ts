@@ -148,25 +148,77 @@ async function generateStockEntry(
 
   const stockAvant = Number(article.stockActuel)
   const cmupAvant  = Number(article.valeurCmup)
+  const isFifo     = article.methodeValuation === 'FIFO'
 
-  // Calcul nouveau stock + CMUP
+  // B16 : pour les articles en FIFO, on consomme les lots dans l'ordre
+  //       (dateEntree asc) plutôt qu'au CMUP. Le coût de sortie devient
+  //       la somme des coûts unitaires des lots consommés (×qté).
   let stockApres: number
   let cmupApres:  number
   let prixTotal:  number
-  let coutSortie = 0  // pour ventes : coût × quantité
+  let coutSortie = 0
 
   if (type === 'ENTREE_ACHAT') {
     stockApres = stockAvant + quantite
-    // CMUP = (stockAvant × CMUP + quantite × prixAchat) / stockApres
     cmupApres  = stockApres > 0
       ? (stockAvant * cmupAvant + quantite * prixUnitaire) / stockApres
       : prixUnitaire
     prixTotal  = quantite * prixUnitaire
+
+    if (isFifo) {
+      // FIFO : créer un nouveau lot pour cette entrée
+      await tx.stockLot.create({
+        data: {
+          articleId,
+          quantiteInitiale: quantite,
+          quantiteRestante: quantite,
+          prixUnitaire,
+          dateEntree:       new Date(),
+          reference,
+          isEpuise:         false,
+        },
+      })
+    }
   } else { // SORTIE_VENTE
     stockApres = stockAvant - quantite
-    cmupApres  = cmupAvant  // CMUP inchangé sur sortie
-    prixTotal  = quantite * prixUnitaire  // pour traçabilité (prix vente)
-    coutSortie = quantite * cmupAvant     // pour écriture variation
+    prixTotal  = quantite * prixUnitaire
+
+    if (isFifo) {
+      // FIFO : consommer les lots non épuisés dans l'ordre d'entrée
+      const lots = await tx.stockLot.findMany({
+        where:   { articleId, isEpuise: false, quantiteRestante: { gt: 0 } },
+        orderBy: { dateEntree: 'asc' },
+      })
+      let qteRestanteAConsommer = quantite
+      let coutCumul = 0
+      for (const lot of lots) {
+        if (qteRestanteAConsommer <= 0) break
+        const qteDispo  = Number(lot.quantiteRestante)
+        const qteAConsommer = Math.min(qteDispo, qteRestanteAConsommer)
+        const lotPrix  = Number(lot.prixUnitaire)
+        coutCumul += qteAConsommer * lotPrix
+        const nouvelleQte = qteDispo - qteAConsommer
+        await tx.stockLot.update({
+          where: { id: lot.id },
+          data:  {
+            quantiteRestante: nouvelleQte,
+            isEpuise:         nouvelleQte <= 0.0001, // tolérance float
+          },
+        })
+        qteRestanteAConsommer -= qteAConsommer
+      }
+      if (qteRestanteAConsommer > 0.0001) {
+        // Pas assez de lots — fallback au CMUP pour le reliquat (rupture)
+        coutCumul += qteRestanteAConsommer * cmupAvant
+      }
+      coutSortie = coutCumul
+      // Le CMUP reste tel quel (inchangé sur sortie en FIFO comme en CMUP)
+      cmupApres = cmupAvant
+    } else {
+      // CMUP : coût de sortie = qté × CMUP courant
+      cmupApres  = cmupAvant
+      coutSortie = quantite * cmupAvant
+    }
   }
 
   // Crée le mouvement de stock
