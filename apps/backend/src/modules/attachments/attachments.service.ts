@@ -28,6 +28,31 @@ export function validateFile(mimeType: string, size: number) {
   }
 }
 
+/**
+ * V1 : vérifie que les invoiceId/expenseId reçus appartiennent bien à
+ *      l'entreprise courante. À appeler avant toute création d'attachment
+ *      liée à une facture ou une dépense.
+ */
+export async function assertInvoiceOrExpenseBelongsToCompany(
+  companyId: string,
+  refs: { invoiceId?: string; expenseId?: string },
+): Promise<void> {
+  if (refs.invoiceId) {
+    const inv = await prisma.invoice.findFirst({
+      where: { id: refs.invoiceId, companyId },
+      select: { id: true },
+    })
+    if (!inv) throw new AppError('Facture introuvable', 404, 'INVOICE_NOT_FOUND')
+  }
+  if (refs.expenseId) {
+    const exp = await prisma.expense.findFirst({
+      where: { id: refs.expenseId, companyId },
+      select: { id: true },
+    })
+    if (!exp) throw new AppError('Dépense introuvable', 404, 'EXPENSE_NOT_FOUND')
+  }
+}
+
 export async function listAttachments(companyId: string, opts: {
   invoiceId?: string
   expenseId?: string

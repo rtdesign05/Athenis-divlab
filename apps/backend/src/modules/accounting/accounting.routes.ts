@@ -27,8 +27,22 @@ async function requireFiscalYearWritable(req: Request, res: Response, next: Next
   const fiscalYearId = (req.body?.fiscalYearId ?? req.query['fiscalYearId'] ?? req.params['id']) as string | undefined
   if (!fiscalYearId) return next()
   try {
-    const fy = await prisma.fiscalYear.findUnique({ where: { id: fiscalYearId }, select: { status: true } })
-    if (fy?.status === 'CLOSED') {
+    // V5 : filtrer par companyId \u2014 un FY d'un autre tenant ne doit pas
+    //      renvoyer 403 (oracle d'\u00e9num\u00e9ration), il doit \u00eatre 404.
+    const companyId = getCompanyId(req)
+    const fy = await prisma.fiscalYear.findFirst({
+      where: { id: fiscalYearId, companyId },
+      select: { status: true },
+    })
+    if (!fy) {
+      res.status(404).json({
+        success: false,
+        error:   'Exercice fiscal introuvable.',
+        code:    'FISCAL_YEAR_NOT_FOUND',
+      })
+      return
+    }
+    if (fy.status === 'CLOSED') {
       res.status(403).json({
         success: false,
         error:   'Exercice cl\u00f4tur\u00e9 \u2014 lecture seule. Les modifications ne sont pas autoris\u00e9es.',
@@ -45,16 +59,18 @@ async function requirePieceWritable(req: Request, res: Response, next: NextFunct
   const pieceId = req.params['pieceId'] as string | undefined
   const entryId = req.params['id'] as string | undefined
   try {
+    // V5 : filtre par companyId pour \u00e9viter l'oracle cross-tenant.
+    const companyId = getCompanyId(req)
     let fy: { status: string } | null = null
     if (pieceId) {
       const entry = await prisma.journalEntry.findFirst({
-        where:  { pieceId },
+        where:  { pieceId, companyId },
         select: { fiscalYear: { select: { status: true } } },
       })
       fy = entry?.fiscalYear ?? null
     } else if (entryId) {
-      const entry = await prisma.journalEntry.findUnique({
-        where:  { id: entryId },
+      const entry = await prisma.journalEntry.findFirst({
+        where:  { id: entryId, companyId },
         select: { fiscalYear: { select: { status: true } } },
       })
       fy = entry?.fiscalYear ?? null

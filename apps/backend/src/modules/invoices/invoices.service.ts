@@ -71,6 +71,19 @@ export async function createInvoice(companyId: string, data: CreateInvoiceInput,
     if (!client || client.companyId !== companyId)
       throw new AppError('Client not found', 404, 'NOT_FOUND')
 
+    // V2 : vérifier articleIds appartiennent à companyId
+    const articleIds = (data.lines ?? [])
+      .map(l => l.articleId)
+      .filter((x): x is string => typeof x === 'string' && x.length > 0)
+    if (articleIds.length > 0) {
+      const found = await tx.article.count({
+        where: { id: { in: articleIds }, companyId },
+      })
+      if (found !== new Set(articleIds).size) {
+        throw new AppError('Article(s) introuvable(s)', 404, 'ARTICLE_NOT_FOUND')
+      }
+    }
+
     const amountHT  = new Prisma.Decimal(data.subtotal ?? 0)
     const vatRatePct = new Prisma.Decimal(data.taxRate ?? 20)
     const taxAmount = amountHT.mul(vatRatePct).div(100).toDecimalPlaces(2)
@@ -118,6 +131,30 @@ export async function updateInvoice(companyId: string, id: string, data: UpdateI
   const existing = await getInvoice(companyId, id)
   if (existing.status === 'PAID' || existing.status === 'CANCELLED')
     throw new AppError('Cannot edit a paid or cancelled invoice', 409, 'INVOICE_LOCKED')
+
+  // V2 : vérifier que les FK reçues appartiennent bien à companyId, sinon
+  //      un user pourrait rattacher sa facture à un client/article d'un autre
+  //      tenant (fuite côté PDF + corruption comptable au posting).
+  if (data.clientId) {
+    const client = await prisma.client.findFirst({
+      where: { id: data.clientId, companyId },
+      select: { id: true },
+    })
+    if (!client) throw new AppError('Client not found', 404, 'CLIENT_NOT_FOUND')
+  }
+  if (data.lines?.length) {
+    const articleIds = data.lines
+      .map(l => l.articleId)
+      .filter((x): x is string => typeof x === 'string' && x.length > 0)
+    if (articleIds.length > 0) {
+      const found = await prisma.article.count({
+        where: { id: { in: articleIds }, companyId },
+      })
+      if (found !== new Set(articleIds).size) {
+        throw new AppError('Article(s) introuvable(s)', 404, 'ARTICLE_NOT_FOUND')
+      }
+    }
+  }
 
   const amountHT  = data.subtotal != null ? new Prisma.Decimal(data.subtotal) : existing.amountHT
   const vatRatePct = new Prisma.Decimal(data.taxRate ?? Number(existing.vatRate))

@@ -72,6 +72,28 @@ export async function createPurchaseOrder(
 ) {
   const agenceId = user?.agenceId ?? null
 
+  // V6 : vérifier que fiscalYearId reçu appartient à companyId, sinon on
+  //      pourrait rattacher une commande à un exercice d'un autre tenant.
+  if (data.fiscalYearId) {
+    const fy = await prisma.fiscalYear.findFirst({
+      where: { id: data.fiscalYearId, companyId },
+      select: { id: true },
+    })
+    if (!fy) throw new AppError('Exercice fiscal invalide', 400, 'INVALID_FISCAL_YEAR')
+  }
+  // V2-like : vérifier que les articleIds des lignes appartiennent à companyId
+  const articleIds = data.lines
+    .map(l => l.articleId)
+    .filter((x): x is string => typeof x === 'string' && x.length > 0)
+  if (articleIds.length > 0) {
+    const found = await prisma.article.count({
+      where: { id: { in: articleIds }, companyId },
+    })
+    if (found !== new Set(articleIds).size) {
+      throw new AppError('Article(s) introuvable(s)', 404, 'ARTICLE_NOT_FOUND')
+    }
+  }
+
   return prisma.$transaction(async (tx) => {
     // Si l'utilisateur fournit un numéro de facture (cas typique des factures
     // d'achat — le numéro vient du fournisseur), on l'utilise tel quel après

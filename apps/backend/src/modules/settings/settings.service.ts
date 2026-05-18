@@ -365,6 +365,15 @@ export async function updateUserRole(
   const member = await prisma.companyMember.findFirst({ where: { companyId, userId } })
   if (!member) throw new AppError('Utilisateur non trouvé dans cette entreprise', 404, 'NOT_FOUND')
 
+  // V3 : vérifier que le rôle appartient bien à la même entreprise. Sinon
+  //      un admin pourrait assigner à son propre user un CompanyRole d'un
+  //      autre tenant (futur RBAC = élévation de privilèges).
+  const companyRole = await prisma.companyRole.findFirst({
+    where: { id: role, companyId },
+    select: { id: true },
+  })
+  if (!companyRole) throw new AppError('Rôle invalide', 400, 'INVALID_ROLE')
+
   return prisma.companyMember.update({
     where: { id: member.id },
     data: { roleId: role },

@@ -15,11 +15,17 @@ attachmentsRouter.use(authenticate)
 // multer stores to disk under uploads/<companyId>/
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    let companyId: string
-    try { companyId = getCompanyId(req) } catch { companyId = 'unknown' }
-    const dir = path.join(svc.getUploadsDir(), companyId)
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
-    cb(null, dir)
+    // V7 : pas de fallback "unknown" — on rejette l'upload si le contexte
+    //      company manque (sinon des fichiers de différents tenants seraient
+    //      mélangés et l'attaquant pourrait pré-déposer des fichiers).
+    try {
+      const companyId = getCompanyId(req)
+      const dir = path.join(svc.getUploadsDir(), companyId)
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+      cb(null, dir)
+    } catch {
+      cb(new Error('Contexte entreprise manquant — upload refusé'), '')
+    }
   },
   filename: (_req, file, cb) => {
     const ext  = path.extname(file.originalname)
@@ -27,6 +33,14 @@ const storage = multer.diskStorage({
     cb(null, key)
   },
 })
+
+// V4 : sanitize un nom de fichier pour Content-Disposition.
+//      Évite l'injection de CRLF / guillemets / caractères de contrôle.
+function sanitizeFileName(name: string): string {
+  // Retire tout sauf alphanum, espaces, .-_()
+  const safe = (name || 'file').replace(/[^\w. \-()]/g, '_').slice(0, 200)
+  return safe || 'file'
+}
 
 const upload = multer({
   storage,
@@ -52,6 +66,14 @@ attachmentsRouter.post(
       const files      = req.files as Express.Multer.File[]
 
       if (!files?.length) throw new AppError('Aucun fichier reçu', 400, 'NO_FILE')
+
+      // V1 : vérifier que invoiceId/expenseId appartiennent bien à companyId
+      //      avant d'y rattacher des pièces. Sinon un user pourrait polluer la
+      //      compta d'un autre tenant en énumérant les CUID.
+      const refs: { invoiceId?: string; expenseId?: string } = {}
+      if (invoiceId) refs.invoiceId = invoiceId
+      if (expenseId) refs.expenseId = expenseId
+      await svc.assertInvoiceOrExpenseBelongsToCompany(companyId, refs)
 
       const results = await Promise.all(files.map(f => {
         const uploadsDir    = svc.getUploadsDir()
@@ -127,7 +149,12 @@ attachmentsRouter.get('/:id/download', async (req, res, next) => {
     const filePath   = path.resolve(uploadsDir, att.storageKey)
     if (!filePath.startsWith(uploadsDir + path.sep)) throw new AppError('Accès refusé', 403, 'FORBIDDEN')
     if (!fs.existsSync(filePath)) throw new AppError('Fichier introuvable sur le serveur', 404, 'FILE_MISSING')
-    res.setHeader('Content-Disposition', `attachment; filename="${att.fileName}"`)
+    // V4 : sanitize + filename* RFC-5987 pour les non-ASCII.
+    const safe = sanitizeFileName(att.fileName)
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(att.fileName)}`,
+    )
     res.setHeader('Content-Type', att.mimeType)
     fs.createReadStream(filePath).pipe(res)
   } catch (e) { next(e) }
