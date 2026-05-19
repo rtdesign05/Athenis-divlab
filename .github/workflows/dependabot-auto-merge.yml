@@ -1,0 +1,69 @@
+name: Dependabot auto-merge
+
+# Merge automatique des PRs Dependabot qui passent CI, AVEC filtre :
+#  ✅ patch/minor de devDeps / @types / GitHub Actions (faible risque)
+#  ⚠️ majors et certains paquets sensibles : merge manuel uniquement
+#  🚫 Sentry 10.x (réintroduit @prisma/instrumentation@7) → close auto
+#  🚫 Prisma 7.x (migration DB requise, sprint dédié) → close auto
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  dependabot:
+    name: Auto-merge / Auto-close
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Get Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 🚫 Close-auto des paquets connus pour casser le build
+      - name: Close incompatible Sentry/Prisma majors
+        if: |
+          (steps.meta.outputs.dependency-names == '@sentry/node' ||
+           steps.meta.outputs.dependency-names == '@sentry/react' ||
+           contains(steps.meta.outputs.dependency-names, '@prisma/client') ||
+           contains(steps.meta.outputs.dependency-names, 'prisma'))
+          && steps.meta.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr close "$PR_URL" --comment "🚫 Major version refusée automatiquement : ce paquet a un breaking change documenté dans UPGRADE.md. Sera traité en sprint dédié."
+        env:
+          PR_URL:      ${{ github.event.pull_request.html_url }}
+          GH_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+
+      # ✅ Auto-merge des updates patch/minor sur devDeps + GH Actions
+      - name: Enable auto-merge for safe updates
+        if: |
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          (steps.meta.outputs.update-type == 'version-update:semver-minor' &&
+           (steps.meta.outputs.dependency-type == 'direct:development' ||
+            startsWith(steps.meta.outputs.dependency-names, '@types/') ||
+            github.event.pull_request.head.ref == 'dependabot/github_actions'))
+        run: |
+          gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL:      ${{ github.event.pull_request.html_url }}
+          GH_TOKEN:    ${{ secrets.GITHUB_TOKEN }}
+
+      # ⚠️ Pour le reste (majors non-bloquants, deps de prod) : commenter pour review manuelle
+      - name: Comment for manual review
+        if: |
+          steps.meta.outputs.update-type == 'version-update:semver-major' &&
+          steps.meta.outputs.dependency-names != '@sentry/node' &&
+          steps.meta.outputs.dependency-names != '@sentry/react' &&
+          !contains(steps.meta.outputs.dependency-names, '@prisma/client') &&
+          !contains(steps.meta.outputs.dependency-names, 'prisma')
+        run: |
+          gh pr comment "$PR_URL" --body "⚠️ Major version — review manuelle recommandée. Voir UPGRADE.md pour les breaking changes connus."
+        env:
+          PR_URL:      ${{ github.event.pull_request.html_url }}
+          GH_TOKEN:    ${{ secrets.GITHUB_TOKEN }}

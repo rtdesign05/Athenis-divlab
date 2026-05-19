@@ -38,3 +38,7 @@ infra/nginx/certs/*.key
 UsersadminAppDataLocalTemptoken.json
 **/Temptoken.json
 *token.json
+
+# Guides générés (PDF/HTML compilés depuis le .md)
+GUIDE_DEPLOIEMENT_ATHENIS.html
+GUIDE_DEPLOIEMENT_ATHENIS.pdf
