@@ -48,6 +48,14 @@ jobs:
 
       - name: Unit tests (backend)
         run: npm test -w apps/backend
+        env:
+          # Les tests unitaires ne touchent pas la DB (mocks Prisma), mais
+          # src/config/env.ts charge ces vars au module-load des helpers
+          # qui importent indirectement logger.ts → env.ts.
+          DATABASE_URL:       postgresql://test:test@localhost:5432/test
+          JWT_SECRET:         test-jwt-secret-ci-only
+          JWT_REFRESH_SECRET: test-jwt-refresh-secret-ci-only
+          ENCRYPTION_KEY:     0123456789abcdef0123456789abcdef
 
   # ── Lint frontend ────────────────────────────────────────────────────────────
   lint-frontend:
