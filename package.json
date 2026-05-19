@@ -7,8 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run build -w packages/shared-types && concurrently -n backend,frontend,types -c blue,green,yellow \"npm run dev -w apps/backend\" \"npm run dev -w apps/frontend\" \"npm run dev -w packages/shared-types\"",
-    "build": "npm run build -w packages/shared-types && npm run build -w apps/backend && npm run build -w apps/frontend",
+    "dev": "npm run build -w packages/shared-types && npm run prisma:generate -w apps/backend && concurrently -n backend,frontend,types -c blue,green,yellow \"npm run dev -w apps/backend\" \"npm run dev -w apps/frontend\" \"npm run dev -w packages/shared-types\"",
+    "build": "npm run build -w packages/shared-types && npm run prisma:generate -w apps/backend && npm run build -w apps/backend && npm run build -w apps/frontend",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "prisma:generate": "npm run prisma:generate -w apps/backend",
