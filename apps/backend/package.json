@@ -22,7 +22,7 @@
     "@anthropic-ai/sdk": "^0.30.1",
     "@athenis/shared-types": "*",
     "@prisma/client": "^5.15.0",
-    "@sentry/node": "^10.51.0",
+    "@sentry/node": "^9.0.0",
     "@types/multer": "^2.1.0",
     "@types/pdf-parse": "^1.1.5",
     "@types/sanitize-html": "^2.16.1",
@@ -53,13 +53,13 @@
     "@types/nodemailer": "^8.0.0",
     "@types/qrcode": "^1.5.5",
     "@types/supertest": "^6.0.3",
-    "@vitest/coverage-v8": "^1.6.1",
+    "@vitest/coverage-v8": "^2.1.0",
     "prisma": "^5.15.0",
     "supertest": "^7.2.2",
     "tsx": "^4.15.7",
     "typescript": "*",
-    "vitest": "^1.6.1",
-    "vitest-mock-extended": "^4.0.0"
+    "vitest": "^2.1.0",
+    "vitest-mock-extended": "^2.0.2"
   },
   "prisma": {
     "seed": "tsx --env-file=../../.env prisma/seed.ts"
