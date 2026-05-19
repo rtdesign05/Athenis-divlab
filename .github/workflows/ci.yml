@@ -23,6 +23,12 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      # Aligne npm sur la version qui a généré package-lock.json (11.x).
+      # npm 10 (livré avec Node 20) lit mal certains lockfile versionVersion=3
+      # générés par npm 11 → "Missing: X from lock file" sur les peer deps.
+      - name: Upgrade npm to 11
+        run: npm install -g npm@11
+
       - name: Install dependencies
         run: npm ci
 
@@ -53,6 +59,8 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+      - name: Upgrade npm to 11
+        run: npm install -g npm@11
       - run: npm ci
       - run: npm run lint -w apps/frontend
         continue-on-error: true  # non-bloquant tant que la dette n'est pas résorbée
@@ -68,6 +76,12 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      # Aligne npm sur la version qui a généré package-lock.json (11.x).
+      # npm 10 (livré avec Node 20) lit mal certains lockfile versionVersion=3
+      # générés par npm 11 → "Missing: X from lock file" sur les peer deps.
+      - name: Upgrade npm to 11
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: npm ci
@@ -87,6 +101,12 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      # Aligne npm sur la version qui a généré package-lock.json (11.x).
+      # npm 10 (livré avec Node 20) lit mal certains lockfile versionVersion=3
+      # générés par npm 11 → "Missing: X from lock file" sur les peer deps.
+      - name: Upgrade npm to 11
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: npm ci
@@ -124,6 +144,12 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+
+      # Aligne npm sur la version qui a généré package-lock.json (11.x).
+      # npm 10 (livré avec Node 20) lit mal certains lockfile versionVersion=3
+      # générés par npm 11 → "Missing: X from lock file" sur les peer deps.
+      - name: Upgrade npm to 11
+        run: npm install -g npm@11
 
       - name: Install dependencies
         run: npm ci

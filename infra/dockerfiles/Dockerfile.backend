@@ -1,6 +1,8 @@
 # ── Build ────────────────────────────────────────────────────────────
 FROM node:20-alpine AS builder
 WORKDIR /app
+# Aligne npm sur la version qui a généré package-lock.json (11.x)
+RUN npm install -g npm@11
 
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared-types/package.json ./packages/shared-types/
@@ -21,6 +23,8 @@ RUN npm run build -w apps/backend
 # ── Runtime ──────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 WORKDIR /app
+# Aligne npm sur la version qui a généré package-lock.json (11.x)
+RUN npm install -g npm@11
 
 ENV NODE_ENV=production
 
