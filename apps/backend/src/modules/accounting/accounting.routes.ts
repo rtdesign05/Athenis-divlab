@@ -13,6 +13,7 @@ import * as rev from './revision.service.js'
 import * as assSvc from './assets.service.js'
 import * as regSvc from './regularization.service.js'
 import * as loanSvc from './loans.service.js'
+import { CreateJournalEntryBatchDto, CreateJournalEntryDto } from './accounting.dto.js'
 import * as postSvc from './posting.service.js'
 
 export const accountingRouter = Router()
@@ -443,15 +444,10 @@ accountingRouter.post(
   '/journal/batch',
   checkModule('comptabilite', 'write'),
   requireFiscalYearWritable,
+  validateRequest({ body: CreateJournalEntryBatchDto }),
   async (req, res, next) => {
     try {
-      const { fiscalYearId, date, journal, reference, lines } = req.body as {
-        fiscalYearId: string; date: string; journal: string; reference?: string
-        lines: { compte: string; libelle: string; intituleCompte?: string; debit: number; credit: number }[]
-      }
-      if (!fiscalYearId || !journal || !date || !Array.isArray(lines) || lines.length === 0) {
-        throw new AppError('Champs requis manquants', 400, 'VALIDATION_ERROR')
-      }
+      const { fiscalYearId, date, journal, reference, lines } = req.body as CreateJournalEntryBatchDto
       const entries = await svc.createJournalEntryBatch(
         getCompanyId(req)!,
         fiscalYearId,
@@ -460,11 +456,11 @@ accountingRouter.post(
           journal,
           reference: reference ?? null,
           lines: lines.map(l => ({
-            compte:  String(l.compte).trim(),
-            libelle: String(l.libelle).trim(),
-            ...(l.intituleCompte ? { intituleCompte: String(l.intituleCompte).trim() } : {}),
-            debit:   Number(l.debit)  || 0,
-            credit:  Number(l.credit) || 0,
+            compte:  l.compte,
+            libelle: l.libelle,
+            ...(l.intituleCompte ? { intituleCompte: l.intituleCompte } : {}),
+            debit:   l.debit,
+            credit:  l.credit,
           })),
         },
         req.user!.sub,
@@ -478,19 +474,14 @@ accountingRouter.post(
   '/journal',
   checkModule('comptabilite', 'write'),
   requireFiscalYearWritable,
+  validateRequest({ body: CreateJournalEntryDto }),
   async (req, res, next) => {
     try {
-      const { fiscalYearId, date, journal, compte, libelle, debit, credit, reference } = req.body as {
-        fiscalYearId: string; date: string; journal: string; compte: string
-        libelle: string; debit: number; credit: number; reference?: string
-      }
-      if (!fiscalYearId || !journal || !compte || !libelle || !date) {
-        throw new AppError('Champs requis manquants', 400, 'VALIDATION_ERROR')
-      }
+      const { fiscalYearId, date, journal, compte, libelle, debit, credit, reference } = req.body as CreateJournalEntryDto
       const entry = await svc.createJournalEntry(
         getCompanyId(req)!,
         fiscalYearId,
-        { date: new Date(date), journal, compte, libelle, debit: Number(debit) || 0, credit: Number(credit) || 0, reference: reference ?? null },
+        { date: new Date(date), journal, compte, libelle, debit, credit, reference: reference ?? null },
         req.user!.sub,
       )
       res.status(201).json({ success: true, data: entry })
