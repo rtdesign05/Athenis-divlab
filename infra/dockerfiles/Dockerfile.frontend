@@ -4,6 +4,19 @@ WORKDIR /app
 # Aligne npm sur la version qui a généré package-lock.json (11.x)
 RUN npm install -g npm@11
 
+# Build args : VITE_* doivent être disponibles au moment du `npm run build`
+# car Vite les "inline" dans les bundles JS. Sans ça, ils restent undefined
+# en runtime (problème typique : Sentry, PostHog, API URL, etc.).
+ARG VITE_API_URL
+ARG VITE_SENTRY_DSN
+ARG VITE_POSTHOG_KEY
+ARG VITE_POSTHOG_HOST
+
+ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
+ENV VITE_POSTHOG_KEY=$VITE_POSTHOG_KEY
+ENV VITE_POSTHOG_HOST=$VITE_POSTHOG_HOST
+
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared-types/package.json ./packages/shared-types/
 COPY apps/frontend/package.json ./apps/frontend/

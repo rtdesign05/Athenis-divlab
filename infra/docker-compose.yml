@@ -35,6 +35,13 @@ services:
     build:
       context: ..
       dockerfile: infra/dockerfiles/Dockerfile.frontend
+      args:
+        # Variables Vite — injectées au moment du `npm run build` côté Dockerfile.
+        # Récupérées du fichier .env grâce à --env-file (cf scripts/deploy).
+        VITE_API_URL:      ${VITE_API_URL:-https://athenis360.com/api}
+        VITE_SENTRY_DSN:   ${VITE_SENTRY_DSN:-}
+        VITE_POSTHOG_KEY:  ${VITE_POSTHOG_KEY:-}
+        VITE_POSTHOG_HOST: ${VITE_POSTHOG_HOST:-https://eu.i.posthog.com}
     restart: unless-stopped
     networks:
       - athenis
