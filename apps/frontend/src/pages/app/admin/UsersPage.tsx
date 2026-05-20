@@ -146,7 +146,7 @@ function ConfirmActionModal({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function UsersPage() {
-  const { user: currentUser } = useAuth()
+  const { user: currentUser, startImpersonation } = useAuth()
   const qc = useQueryClient()
 
   const [page, setPage]     = useState(1)
@@ -208,6 +208,24 @@ export function UsersPage() {
     },
     onError: (err: { response?: { data?: { error?: string } } }) => {
       setFeedback({ kind: 'err', msg: err.response?.data?.error ?? 'Erreur lors de la suppression.' })
+    },
+  })
+
+  const impersonateMut = useMutation({
+    mutationFn: (id: string) =>
+      api.post<{ data: { accessToken: string; targetUser: { accountType: string } } }>(`/admin/users/${id}/impersonate`).then(r => r.data.data),
+    onSuccess: (data) => {
+      startImpersonation(data.accessToken)
+      // Redirige vers l'espace adapté au type de compte impersonné
+      const home =
+        data.targetUser.accountType === 'PERSONAL' ? '/personal'
+        : data.targetUser.accountType === 'CABINET'  ? '/cabinet'
+        : '/app'
+      // Hard navigation pour forcer un reload propre avec le nouveau JWT actif
+      window.location.href = home
+    },
+    onError: (err: { response?: { data?: { error?: string } } }) => {
+      setFeedback({ kind: 'err', msg: err.response?.data?.error ?? 'Impossible d\'accéder à ce compte.' })
     },
   })
 
@@ -324,6 +342,21 @@ export function UsersPage() {
                         <span className="text-xs text-gray-400 italic">votre compte</span>
                       ) : (
                         <div className="flex justify-end gap-1.5">
+                          {/* Impersonation : accessible seulement pour les comptes ACTIFS et NON super-admin */}
+                          {u.isActive && u.platformRole !== 'SUPER_ADMIN' && (
+                            <button
+                              onClick={() => {
+                                if (confirm(`Accéder au compte ${u.email} ?\n\nVous allez agir en tant que cet utilisateur pendant 30 min. Toutes vos actions seront tracées et le user recevra un email de notification.`)) {
+                                  impersonateMut.mutate(u.id)
+                                }
+                              }}
+                              disabled={impersonateMut.isPending}
+                              className="text-xs font-medium text-amber-700 hover:text-amber-900 px-2 py-1 rounded hover:bg-amber-50 disabled:opacity-50"
+                              title="Accéder à ce compte (impersonation)"
+                            >
+                              🎭 Accéder
+                            </button>
+                          )}
                           {u.isActive ? (
                             <button
                               onClick={() => setModalTarget({ user: u, action: 'deactivate' })}

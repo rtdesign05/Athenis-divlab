@@ -1305,6 +1305,75 @@ export async function sendAccountDeletedEmail(
   })
 }
 
+// ── 8d. Impersonation d\'un compte par un SUPER_ADMIN ─────────────────────────
+// Transparence RGPD : le user est notifié quand un admin se connecte avec son compte.
+
+export async function sendImpersonationStartedEmail(
+  to: string,
+  opts: { firstName?: string | null; adminEmail: string; startedAt: Date },
+): Promise<void> {
+  const greeting = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+  const when     = opts.startedAt.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })
+  const admin    = escapeHtml(opts.adminEmail)
+
+  await sendMail({
+    to,
+    subject: 'Accès administrateur à votre compte Athenis',
+    text: [
+      `Bonjour,`,
+      ``,
+      `Pour des raisons techniques (support, vérification de configuration), un administrateur Athenis vient d'accéder temporairement à votre compte.`,
+      ``,
+      `Date    : ${when}`,
+      `Admin   : ${opts.adminEmail}`,
+      ``,
+      `Cette session expire automatiquement après 30 minutes. Toutes les actions effectuées pendant cette période sont tracées dans le journal d'audit.`,
+      ``,
+      `Si vous estimez que cet accès n'est pas justifié, contactez-nous immédiatement à dpo@athenis360.com.`,
+      ``,
+      `L'équipe Athenis`,
+    ].join('\n'),
+    html: emailLayout({
+      preheader: 'Un administrateur a accédé à votre compte pour des raisons techniques.',
+      headerColor: '#0369a1',
+      headerSubtitle: '🛡️ Accès administrateur',
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
+        <h1 style="margin:0 0 14px;font-size:20px;color:#111827;line-height:1.3">
+          Un administrateur a accédé à votre compte
+        </h1>
+        <p style="margin:0 0 16px;color:#6b7280;line-height:1.6;font-size:14px">
+          Pour des raisons techniques (support, vérification de configuration, debug),
+          un administrateur Athenis vient d'accéder temporairement à votre compte.
+        </p>
+
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;margin:16px 0">
+          <tr><td style="padding:12px 16px;border-bottom:1px solid #bfdbfe;font-size:13px;color:#1e40af">Date</td><td style="padding:12px 16px;border-bottom:1px solid #bfdbfe;font-size:13px;color:#1e3a8a;font-weight:600">${escapeHtml(when)}</td></tr>
+          <tr><td style="padding:12px 16px;font-size:13px;color:#1e40af">Administrateur</td><td style="padding:12px 16px;font-size:13px;color:#1e3a8a;font-family:monospace">${admin}</td></tr>
+        </table>
+
+        <div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:14px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#14532d;line-height:1.5">
+            ℹ️ <strong>Session limitée à 30 minutes</strong> — toutes les actions sont tracées dans
+            notre journal d'audit. Vous restez le seul propriétaire de vos données.
+          </p>
+        </div>
+
+        <div style="background:#fef2f2;border-left:3px solid #dc2626;padding:14px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#991b1b;line-height:1.5">
+            <strong>Vous n'avez pas demandé cet accès ?</strong> Écrivez immédiatement à
+            <a href="mailto:dpo@athenis360.com" style="color:#7f1d1d;font-weight:600">dpo@athenis360.com</a>.
+          </p>
+        </div>
+
+        <p style="margin:20px 0 0;color:#9ca3af;font-size:13px">
+          L'équipe Athenis
+        </p>
+      `,
+    }),
+  })
+}
+
 // ── 9. Notification interne au SUPER_ADMIN ────────────────────────────────────
 
 export async function sendAdminNewSignupNotification(opts: {

@@ -486,6 +486,40 @@ adminRouter.delete('/users/:id', async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
+// ── POST /api/admin/users/:id/impersonate ────────────────────────────────────
+// Génère un JWT pour le user cible. Le SUPER_ADMIN peut alors agir comme lui
+// pendant 30 min. Le JWT contient un claim `impersonatedBy` qui sera utilisé :
+// 1. Côté frontend pour afficher un banner permanent
+// 2. Côté backend pour auditer chaque action sous cet alias
+// Limitations :
+//  - Ne peut pas impersonner un autre SUPER_ADMIN (sécurité)
+//  - Email envoyé au user impersonné (transparence RGPD)
+// Voir authService.createImpersonationToken pour les détails.
+import { createImpersonationToken } from '../auth/auth.service.js'
+
+adminRouter.post('/users/:id/impersonate', async (req, res, next) => {
+  try {
+    const targetUserId = String(req.params['id'])
+    const adminId      = req.user!.sub
+    const adminEmail   = req.user!.email
+    const ip           = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? 'unknown').split(',')[0]?.trim() ?? 'unknown'
+    const ua           = req.headers['user-agent'] ?? 'unknown'
+
+    const { accessToken, targetProfile } = await createImpersonationToken(
+      targetUserId, adminId, adminEmail, ip, ua,
+    )
+
+    res.json({
+      success: true,
+      data: {
+        accessToken,
+        targetUser: targetProfile,
+        expiresInMinutes: 30,
+      },
+    })
+  } catch (err) { next(err) }
+})
+
 // ── GET /api/admin/stats/growth — inscriptions J-14 ──────────────────────────
 adminRouter.get('/stats/growth', async (_req, res, next) => {
   try {

@@ -9,6 +9,7 @@ import { queryClient } from './lib/queryClient'
 import { initAnalytics } from './lib/analytics'
 import { initSentry } from './lib/sentry'
 import { UpdateBanner } from './components/UpdateBanner'
+import { ImpersonationBanner } from './components/ImpersonationBanner'
 import './lib/i18n'  // bootstrap i18next — doit être importé avant App
 import './index.css'
 
@@ -23,6 +24,7 @@ ReactDOM.createRoot(root).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <ImpersonationBanner />
         <App />
         <Toaster />
         <UpdateBanner />

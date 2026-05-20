@@ -36,6 +36,12 @@ export interface AuthContextValue {
   enterCompanyView: (viewToken: string, companyName: string) => void
   /** Returns from company view back to cabinet space */
   exitCompanyView: () => void
+  /** SUPER_ADMIN starts impersonating a user: stores admin token, switches to target token */
+  startImpersonation: (impersonationToken: string) => void
+  /** Returns from impersonation to original SUPER_ADMIN session */
+  stopImpersonation: () => void
+  /** True when the active JWT has an impersonatedBy claim */
+  isImpersonating: boolean
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
@@ -157,6 +163,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setToken])
 
+  // SUPER_ADMIN impersonation ─────────────────────────────────────────────────
+  // On stocke le token du SUPER_ADMIN dans un ref pour pouvoir y revenir.
+  const savedAdminToken = useRef<string | null>(null)
+
+  const startImpersonation = useCallback(
+    (impersonationToken: string) => {
+      // Sauvegarde le JWT SUPER_ADMIN courant pour pouvoir revenir
+      savedAdminToken.current = tokenStore.get()
+      setToken(impersonationToken)
+    },
+    [setToken],
+  )
+
+  const stopImpersonation = useCallback(() => {
+    const adminToken = savedAdminToken.current
+    if (adminToken) {
+      savedAdminToken.current = null
+      setToken(adminToken)
+    }
+  }, [setToken])
+
+  // True quand le JWT actif a un claim impersonatedBy (= on agit en tant qu'un autre user)
+  const isImpersonating = Boolean(user?.impersonatedBy)
+
   // Derived flag: we are in cabinet view mode when the active JWT has
   // accountType=COMPANY AND cabinetId set (cabinet token keeps cabinetId)
   const isViewingAsCompany =
@@ -177,6 +207,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken,
         enterCompanyView,
         exitCompanyView,
+        startImpersonation,
+        stopImpersonation,
+        isImpersonating,
       }}
     >
       {children}

@@ -19,6 +19,7 @@ import {
   sendTwoFactorEnabledEmail,
   sendAccountLockedEmail,
   sendMfaCodeEmail,
+  sendImpersonationStartedEmail,
 } from '../../lib/email.js'
 import { sendSms, isSmsConfigured } from '../../lib/sms.js'
 import {
@@ -95,6 +96,95 @@ function signAccessToken(payload: Omit<JwtPayload, 'iat' | 'exp'>): string {
   const expiresIn = env.jwtAccessExpiresIn as jwt.SignOptions['expiresIn']
   if (!expiresIn) throw new Error('JWT_ACCESS_EXPIRES_IN is not set')
   return jwt.sign(payload, env.jwtSecret, { expiresIn })
+}
+
+/**
+ * Génère un token d'impersonation : un SUPER_ADMIN agit en tant que l'utilisateur cible.
+ * Le token contient le profil COMPLET de la cible + 2 claims spéciaux (impersonatedBy,
+ * impersonatorEmail) pour traçabilité.
+ * Durée : 30 min (volontairement courte — l'admin ne doit pas oublier qu'il est impersonné).
+ */
+export async function createImpersonationToken(
+  targetUserId: string,
+  superAdminId: string,
+  superAdminEmail: string,
+  ip: string,
+  ua: string,
+): Promise<{ accessToken: string; targetProfile: UserProfile }> {
+  // Garde : seul un SUPER_ADMIN actif peut impersonner
+  const admin = await prisma.user.findUnique({
+    where: { id: superAdminId },
+    select: { platformRole: true, isActive: true, email: true },
+  })
+  if (!admin || admin.platformRole !== 'SUPER_ADMIN' || !admin.isActive) {
+    throw new AppError('Impersonation refusée : super-admin requis.', 403, 'FORBIDDEN')
+  }
+
+  if (targetUserId === superAdminId) {
+    throw new AppError('Inutile de vous impersonner vous-même.', 400, 'CANNOT_IMPERSONATE_SELF')
+  }
+
+  // Charge le profil cible complet
+  const target = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    select: { ...USER_SELECT, platformRole: true },
+  })
+  if (!target) throw new AppError('Utilisateur cible introuvable.', 404, 'USER_NOT_FOUND')
+
+  // Refuse d'impersonner un autre SUPER_ADMIN (sécurité : tu ne peux pas voler le compte
+  // d'un autre admin de la plateforme)
+  if (target.platformRole === 'SUPER_ADMIN') {
+    throw new AppError(
+      'Impossible d\'impersonner un autre super-administrateur.',
+      403, 'CANNOT_IMPERSONATE_SUPER_ADMIN',
+    )
+  }
+
+  const companyId = target.companyId ?? null
+  const cabinetId = target.cabinetId ?? null
+  const plan      = await getEffectivePlan(target.accountType as AccountType, companyId)
+  const modules   = await getEffectiveModules(target.accountType as AccountType, companyId)
+  const { country, currencySymbol } = await resolveLocale(target.accountType, companyId, cabinetId, target.id)
+  const { agenceId, agenceNom, agenceIds, isRestricted } = await getUserAgence(target.id, companyId)
+  const role = dbRoleToUserRole(target.role)
+
+  // Token court : 30 min (vs 15 min normal — un peu plus long pour faciliter le debug
+  // sans trop l'oublier)
+  const accessToken = jwt.sign(
+    {
+      sub: target.id,
+      email: target.email,
+      accountType: target.accountType as AccountType,
+      role,
+      platformRole: 'USER' as const, // ← important : le token cible n'a PAS les droits SUPER_ADMIN
+      companyId, cabinetId, plan, modules,
+      country, currencySymbol,
+      atheisNumber: target.atheisNumber ?? null,
+      agenceId, agenceNom, agenceIds, isRestricted,
+      impersonatedBy:    superAdminId,
+      impersonatorEmail: superAdminEmail,
+    } satisfies Omit<JwtPayload, 'iat' | 'exp'>,
+    env.jwtSecret,
+    { expiresIn: '30m' },
+  )
+
+  await audit('IMPERSONATION_STARTED', superAdminId, target.companyId ?? null, ip, ua, {
+    targetUserId,
+    targetEmail: target.email,
+    targetAccountType: target.accountType,
+  })
+
+  // Notif sécurité au user impersonné (transparence RGPD)
+  void sendImpersonationStartedEmail(target.email, {
+    firstName: target.nom,
+    adminEmail: admin.email,
+    startedAt: new Date(),
+  }).catch((e) => logger.error('sendImpersonationStartedEmail failed', { error: e }))
+
+  return {
+    accessToken,
+    targetProfile: toUserProfile(target as unknown as DbUser, plan, modules, agenceId, agenceNom),
+  }
 }
 
 function signTotpPendingToken(userId: string): string {

@@ -20,6 +20,13 @@ export interface JwtPayload {
   agenceIds: string[]
   /** true → l'utilisateur ne voit que ses agences rattachées */
   isRestricted: boolean
+  /** Impersonation : si défini, c'est l'ID du SUPER_ADMIN qui agit en tant
+   *  que cet user. Présent uniquement sur les tokens issus de
+   *  POST /admin/users/:id/impersonate. Permet d'auditer toutes les actions
+   *  sous cet alias et d'afficher un banner UI. */
+  impersonatedBy?: string | null
+  /** Email du SUPER_ADMIN qui impersonne (pour affichage UI) */
+  impersonatorEmail?: string | null
   iat?: number
   exp?: number
 }
