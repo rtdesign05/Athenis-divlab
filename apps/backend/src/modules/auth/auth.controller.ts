@@ -116,6 +116,15 @@ export async function logout(req: Request, res: Response, next: NextFunction): P
   }
 }
 
+export async function totpStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const enabled = await authService.getTotpStatus(req.user!.sub)
+    res.json({ success: true, data: { enabled } })
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function setupTotp(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const data = await authService.setupTotp(req.user!.sub)

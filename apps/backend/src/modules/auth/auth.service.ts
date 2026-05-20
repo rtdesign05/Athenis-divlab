@@ -708,6 +708,14 @@ export async function logout(rawToken: string, userId: string, companyId: string
 
 // ── TOTP ──────────────────────────────────────────────────────────────────────
 
+export async function getTotpStatus(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { twoFAEnabled: true },
+  })
+  return user.twoFAEnabled
+}
+
 export async function setupTotp(userId: string): Promise<TotpSetupResponse> {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },

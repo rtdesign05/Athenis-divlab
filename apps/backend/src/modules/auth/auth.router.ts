@@ -25,6 +25,7 @@ router.post('/resend-verification', authLimiter, ctrl.resendVerification)
 
 // Protected routes
 router.post('/logout', authenticate, ctrl.logout)
+router.get('/totp/status', authenticate, ctrl.totpStatus)
 router.post('/totp/setup', authenticate, sensitiveLimiter, ctrl.setupTotp)
 router.post('/totp/enable', authenticate, validateRequest({ body: TotpEnableDto }), ctrl.enableTotp)
 router.post('/totp/disable', authenticate, validateRequest({ body: TotpDisableDto }), ctrl.disableTotp)

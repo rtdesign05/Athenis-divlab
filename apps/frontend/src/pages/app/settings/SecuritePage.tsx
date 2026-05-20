@@ -1,6 +1,7 @@
 import { useState, useEffect, useId, type FormEvent } from 'react'
 import { settingsApi, type SecurityPolicy, type AuditLogEntry } from '@/services/settingsApi'
 import { useChangePassword } from '@/hooks/useSecurity'
+import { MyTwoFactorSection } from './MyTwoFactorSection'
 
 // ── Toggle component ──────────────────────────────────────────────────────────
 
@@ -390,6 +391,9 @@ export function SecuritePage() {
 
       {/* Change password */}
       <ChangePasswordSection />
+
+      {/* Personal 2FA setup (QR code + backup codes) */}
+      <MyTwoFactorSection />
 
       {/* Passwords */}
       <Section title="Politique de mots de passe">
