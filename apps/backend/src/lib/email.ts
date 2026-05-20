@@ -738,6 +738,98 @@ export async function sendRejectionEmail(to: string, opts: { firstName?: string 
   })
 }
 
+// ── Code MFA (envoyé à chaque connexion si méthode = EMAIL) ──────────────────
+//
+// Doit être minimaliste, ultra-clair, code en évidence. L'utilisateur le lit
+// dans Gmail, copie le code, retourne sur Athenis. Pas de fioritures.
+
+export async function sendMfaCodeEmail(
+  to: string,
+  opts: {
+    code:      string
+    purpose?:  'login' | 'setup'
+    expiresInMinutes?: number
+    ip?:       string | null
+  },
+): Promise<void> {
+  const code      = opts.code
+  const purpose   = opts.purpose ?? 'login'
+  const minutes   = opts.expiresInMinutes ?? 10
+  const safeCode  = escapeHtml(code)
+  const safeIp    = opts.ip ? escapeHtml(opts.ip) : null
+
+  const subjectByPurpose = {
+    login: `Code de connexion Athenis : ${code}`,
+    setup: `Code de configuration Athenis : ${code}`,
+  }
+
+  const titleByPurpose = {
+    login: 'Code de connexion',
+    setup: 'Code de vérification de votre adresse e-mail',
+  }
+
+  const explainByPurpose = {
+    login: 'Saisissez ce code sur la page de connexion pour finaliser votre authentification.',
+    setup: 'Saisissez ce code pour confirmer que vous souhaitez utiliser cet e-mail comme méthode d\'authentification à deux facteurs.',
+  }
+
+  await sendMail({
+    to,
+    subject: subjectByPurpose[purpose],
+    text: [
+      `Votre code Athenis : ${code}`,
+      ``,
+      explainByPurpose[purpose],
+      ``,
+      `Ce code expire dans ${minutes} minutes.`,
+      opts.ip ? `Origine : ${opts.ip}` : '',
+      ``,
+      `Si vous n'avez pas demandé ce code, ignorez ce message. Si vous voyez plusieurs codes apparaître sans demande de votre part, changez immédiatement votre mot de passe.`,
+      ``,
+      `L'équipe Athenis`,
+    ].filter(Boolean).join('\n'),
+    html: emailLayout({
+      preheader: `Votre code Athenis : ${code} — valable ${minutes} minutes`,
+      headerColor: '#1a3a2a',
+      headerSubtitle: purpose === 'login' ? '🔐 Connexion en cours' : '✉️ Vérification e-mail',
+      bodyHtml: `
+        <h1 style="margin:0 0 8px;font-size:20px;color:#111827">${titleByPurpose[purpose]}</h1>
+        <p style="margin:0 0 24px;color:#6b7280;font-size:14px;line-height:1.6">
+          ${explainByPurpose[purpose]}
+        </p>
+
+        <div style="text-align:center;margin:28px 0">
+          <div style="display:inline-block;background:#f0fdf4;border:2px solid #16a34a;border-radius:14px;padding:22px 36px">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:700;letter-spacing:.15em;text-transform:uppercase;color:#166534">Votre code</p>
+            <p style="margin:0;font-family:'SF Mono','Monaco','Cascadia Code',monospace;font-size:38px;font-weight:700;letter-spacing:.4em;color:#14532d">${safeCode}</p>
+          </div>
+        </div>
+
+        <p style="margin:0 0 8px;font-size:13px;color:#6b7280;text-align:center">
+          Ce code expire dans <strong style="color:#111827">${minutes} minutes</strong>.
+        </p>
+
+        ${safeIp ? `
+        <p style="margin:16px 0 0;font-size:12px;color:#9ca3af;text-align:center">
+          Demande effectuée depuis l'adresse <code style="background:#f3f4f6;padding:1px 6px;border-radius:4px;font-family:monospace;font-size:11px">${safeIp}</code>
+        </p>
+        ` : ''}
+
+        <div style="background:#fef2f2;border-left:3px solid #dc2626;padding:12px 18px;margin:24px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#991b1b;line-height:1.5">
+            <strong>⚠️ Vous n'avez pas demandé ce code ?</strong>
+            Ignorez ce message. Si vous recevez plusieurs codes inattendus, changez immédiatement votre mot de passe Athenis.
+          </p>
+        </div>
+
+        <p style="margin:24px 0 0;color:#9ca3af;font-size:12px">
+          L'équipe Athenis
+        </p>
+      `,
+    }),
+  })
+}
+
 // ── 5. Première connexion ─────────────────────────────────────────────────────
 // Déclenché à la 1ère connexion réussie (lastLoginAt était null avant).
 // Plus court et plus actionnable que le welcome mail : "tu es là, voici TES

@@ -161,3 +161,82 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
     next(err)
   }
 }
+
+// ── MFA multi-méthode (EMAIL / SMS) ──────────────────────────────────────────
+
+export async function mfaStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await authService.getMfaStatus(req.user!.sub)
+    res.json({ success: true, data })
+  } catch (err) { next(err) }
+}
+
+export async function setupEmailMfa(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await authService.setupEmailMfa(req.user!.sub, clientIp(req), userAgent(req))
+    res.json({ success: true, data })
+  } catch (err) { next(err) }
+}
+
+export async function setupSmsMfa(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const phone = String(req.body?.phone ?? '').trim()
+    if (!phone) {
+      res.status(400).json({ success: false, error: 'Numéro de téléphone requis', code: 'PHONE_REQUIRED' })
+      return
+    }
+    const data = await authService.setupSmsMfa(req.user!.sub, phone, clientIp(req), userAgent(req))
+    res.json({ success: true, data })
+  } catch (err) { next(err) }
+}
+
+export async function verifyMfaSetup(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const method = String(req.body?.method ?? '').toUpperCase()
+    const code   = String(req.body?.code ?? '').trim()
+    if (method !== 'EMAIL' && method !== 'SMS') {
+      res.status(400).json({ success: false, error: 'Méthode invalide', code: 'INVALID_METHOD' })
+      return
+    }
+    if (!/^\d{6}$/.test(code)) {
+      res.status(400).json({ success: false, error: 'Code à 6 chiffres requis', code: 'INVALID_CODE_FORMAT' })
+      return
+    }
+    const data = await authService.verifyMfaSetup(req.user!.sub, method as 'EMAIL' | 'SMS', code, clientIp(req), userAgent(req))
+    res.json({ success: true, data })
+  } catch (err) { next(err) }
+}
+
+export async function disableMfa(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const password = String(req.body?.password ?? '')
+    const code     = String(req.body?.code ?? '').trim()
+    if (!password || !code) {
+      res.status(400).json({ success: false, error: 'Mot de passe et code requis', code: 'MISSING_FIELDS' })
+      return
+    }
+    await authService.disableMfa(req.user!.sub, password, code, clientIp(req), userAgent(req))
+    res.json({ success: true, data: null })
+  } catch (err) { next(err) }
+}
+
+export async function sendMfaLoginCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const data = await authService.sendMfaLoginCode(req.user!.sub, clientIp(req), userAgent(req))
+    res.json({ success: true, data })
+  } catch (err) { next(err) }
+}
+
+export async function loginVerifyMfaCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const tempToken = String(req.body?.tempToken ?? '')
+    const code      = String(req.body?.code ?? '').trim()
+    if (!tempToken || !/^\d{6}$/.test(code)) {
+      res.status(400).json({ success: false, error: 'tempToken et code à 6 chiffres requis', code: 'BAD_REQUEST' })
+      return
+    }
+    const { response, refreshToken } = await authService.loginVerifyMfaCode(tempToken, code, clientIp(req), userAgent(req))
+    authService.setRefreshCookie(res, refreshToken)
+    res.json({ success: true, data: response })
+  } catch (err) { next(err) }
+}

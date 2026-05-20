@@ -112,7 +112,7 @@ function GoogleIcon() {
 // ── LoginPage ─────────────────────────────────────────────────────────────────
 
 export function LoginPage() {
-  const { login, loginVerifyTotp } = useAuth()
+  const { login, loginVerifyTotp, loginVerifyMfaCode } = useAuth()
   const navigate = useNavigate()
   const { t } = useTranslation()
 
@@ -132,6 +132,11 @@ export function LoginPage() {
   const [emailNotVerified, setEmailNotVerified] = useState(false)
   const [resendSent, setResendSent]       = useState(false)
   const [resendLoading, setResendLoading] = useState(false)
+  // MFA multi-méthode
+  const [mfaMethod, setMfaMethod]         = useState<'TOTP' | 'EMAIL' | 'SMS'>('TOTP')
+  const [maskedTarget, setMaskedTarget]   = useState<string | null>(null)
+  const [codeResent, setCodeResent]       = useState(false)
+  const [resendCodeLoading, setResendCodeLoading] = useState(false)
 
   const formRef = useRef<HTMLDivElement>(null)
 
@@ -151,9 +156,11 @@ export function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const { requires2fa, tempToken: tt, user: loggedUser } = await login(email, password)
+      const { requires2fa, tempToken: tt, mfaMethod: method, maskedTarget: target, user: loggedUser } = await login(email, password)
       if (requires2fa && tt) {
         setTempToken(tt)
+        setMfaMethod(method)
+        setMaskedTarget(target)
         setStep('totp')
       } else if (loggedUser) {
         navigate(homeForUser(loggedUser), { replace: true })
@@ -193,14 +200,45 @@ export function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const loggedUser = await loginVerifyTotp(tempToken, otp)
+      // TOTP = app authenticator (vérification via /auth/login/2fa)
+      // EMAIL/SMS = code envoyé (vérification via /auth/login/mfa/verify)
+      const loggedUser = mfaMethod === 'TOTP'
+        ? await loginVerifyTotp(tempToken, otp)
+        : await loginVerifyMfaCode(tempToken, otp)
       navigate(loggedUser ? homeForUser(loggedUser) : homeForType('COMPANY'), { replace: true })
-    } catch {
-      setError('Code incorrect ou expiré')
+    } catch (err: unknown) {
+      const code = (err as { response?: { data?: { code?: string } } })?.response?.data?.code
+      setError(
+        code === 'MFA_CODE_EXPIRED'      ? 'Le code a expiré. Demande un nouveau code.'
+        : code === 'MFA_TOO_MANY_ATTEMPTS' ? 'Trop de tentatives. Demande un nouveau code.'
+        : 'Code incorrect ou expiré',
+      )
       setShake(true)
       setOtp('')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleResendCode() {
+    if (!tempToken || resendCodeLoading) return
+    setResendCodeLoading(true)
+    setError('')
+    try {
+      // Call public endpoint with tempToken — pas besoin d'auth, on est en mid-login
+      await fetch('/api/auth/mfa/send-code-public', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tempToken }),
+      }).catch(() => { /* fall back to login again */ })
+      // Plus simple en pratique : refaire login pour redéclencher l'envoi
+      await login(email, password)
+      setCodeResent(true)
+      setTimeout(() => setCodeResent(false), 4000)
+    } catch {
+      setError('Impossible de renvoyer un code.')
+    } finally {
+      setResendCodeLoading(false)
     }
   }
 
@@ -411,14 +449,27 @@ export function LoginPage() {
 
               </form>
             ) : (
-              /* ── Étape TOTP ────────────────────────────────────────────── */
+              /* ── Étape MFA (TOTP / EMAIL / SMS) ─────────────────────────── */
               <div className="space-y-4">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-green-50">
-                  <ShieldIcon />
+                  {mfaMethod === 'EMAIL' ? <span className="text-2xl">✉️</span>
+                   : mfaMethod === 'SMS' ? <span className="text-2xl">📱</span>
+                   : <ShieldIcon />}
                 </div>
                 <div className="text-center">
                   <p className="text-lg font-bold text-gray-900">Vérification en 2 étapes</p>
-                  <p className="mt-1 text-sm text-gray-400">Entrez le code de votre application d'authentification</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {mfaMethod === 'TOTP'  && 'Entrez le code de votre application d\'authentification'}
+                    {mfaMethod === 'EMAIL' && (
+                      <>Un code a été envoyé{maskedTarget ? <> à <strong className="text-gray-700">{maskedTarget}</strong></> : ' à votre adresse e-mail'}</>
+                    )}
+                    {mfaMethod === 'SMS' && (
+                      <>Un code a été envoyé{maskedTarget ? <> au <strong className="text-gray-700">{maskedTarget}</strong></> : ' à votre numéro'}</>
+                    )}
+                  </p>
+                  {(mfaMethod === 'EMAIL' || mfaMethod === 'SMS') && (
+                    <p className="mt-1 text-xs text-gray-400">Le code expire dans 10 minutes.</p>
+                  )}
                 </div>
                 <input
                   id={codeId}
@@ -431,14 +482,30 @@ export function LoginPage() {
                   className="h-14 w-full rounded-lg border-2 border-gray-200 text-center text-2xl font-mono tracking-[10px] focus:border-green-600 focus:outline-none"
                   placeholder="······"
                   aria-label="Code 2FA à 6 chiffres"
+                  autoComplete="one-time-code"
                 />
                 {error && (
                   <p role="alert" className="text-center text-sm text-red-600">{error}</p>
                 )}
+                {codeResent && (
+                  <p className="text-center text-sm text-green-700">✓ Nouveau code envoyé</p>
+                )}
                 {loading && <div className="flex justify-center text-gray-400"><Spinner /></div>}
+
+                {(mfaMethod === 'EMAIL' || mfaMethod === 'SMS') && (
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={resendCodeLoading}
+                    className="w-full text-center text-sm text-green-700 hover:underline disabled:opacity-50"
+                  >
+                    {resendCodeLoading ? 'Envoi…' : 'Renvoyer un code'}
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => { setStep('credentials'); setError(''); setOtp('') }}
+                  onClick={() => { setStep('credentials'); setError(''); setOtp(''); setCodeResent(false) }}
                   className="w-full text-center text-sm text-gray-400 transition hover:text-gray-600"
                 >
                   ← Retour à la connexion

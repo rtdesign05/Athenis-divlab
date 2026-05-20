@@ -33,6 +33,19 @@ model User {
   lastLoginAt    DateTime? @map("last_login_at")
   isActive       Boolean   @default(true) @map("is_active")
 
+  // Multi-factor authentication
+  // NONE     = pas de 2FA
+  // TOTP     = application (Google Authenticator, Authy…) — utilise twoFASecret
+  // EMAIL    = code envoyé par e-mail à chaque connexion
+  // SMS      = code envoyé par SMS au numéro mfaPhone
+  mfaMethod        MfaMethod @default(NONE) @map("mfa_method")
+  mfaPhone         String?                  @map("mfa_phone")           // format E.164 (ex: +237691234567)
+  mfaPhoneVerified Boolean   @default(false) @map("mfa_phone_verified")
+  // Code temporaire (one-time) pour EMAIL/SMS — hashé en SHA-256
+  mfaActiveCodeHash   String?   @map("mfa_active_code_hash")
+  mfaCodeExpiresAt    DateTime? @map("mfa_code_expires_at")
+  mfaCodeAttempts     Int       @default(0) @map("mfa_code_attempts")
+
   // Vérification email
   emailVerified              Boolean   @default(false) @map("email_verified")
   emailVerificationToken     String?   @unique         @map("email_verification_token")
@@ -100,6 +113,13 @@ enum ApprovalStatus {
   PENDING_APPROVAL
   APPROVED
   REJECTED
+}
+
+enum MfaMethod {
+  NONE
+  TOTP
+  EMAIL
+  SMS
 }
 
 model RefreshToken {

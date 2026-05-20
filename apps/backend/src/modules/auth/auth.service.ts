@@ -18,7 +18,19 @@ import {
   sendPasswordChangedEmail,
   sendTwoFactorEnabledEmail,
   sendAccountLockedEmail,
+  sendMfaCodeEmail,
 } from '../../lib/email.js'
+import { sendSms, isSmsConfigured } from '../../lib/sms.js'
+import {
+  generateMfaCode,
+  hashMfaCode,
+  safeEqualHashes,
+  normalizePhoneE164,
+  maskEmail,
+  maskPhone,
+  MFA_CODE_TTL_MS,
+  MFA_MAX_ATTEMPTS,
+} from '../../lib/mfa.js'
 import type {
   JwtPayload,
   UserProfile,
@@ -140,6 +152,9 @@ type DbUser = {
   prenom: string | null
   accountType: string
   twoFAEnabled: boolean
+  mfaMethod: 'NONE' | 'TOTP' | 'EMAIL' | 'SMS'
+  mfaPhone: string | null
+  mfaPhoneVerified: boolean
   isActive: boolean
   lastLoginAt: Date | null
   createdAt: Date
@@ -193,6 +208,9 @@ const USER_SELECT = {
   prenom: true,
   accountType: true,
   twoFAEnabled: true,
+  mfaMethod: true,
+  mfaPhone: true,
+  mfaPhoneVerified: true,
   isActive: true,
   lastLoginAt: true,
   createdAt: true,
@@ -490,7 +508,42 @@ export async function login(
   }
 
   if (user.twoFAEnabled) {
-    return { response: { requiresTotp: true, tempToken: signTotpPendingToken(user.id) } as LoginResponse }
+    const tempToken = signTotpPendingToken(user.id)
+    // Pour EMAIL/SMS, on déclenche tout de suite l'envoi du code afin que
+    // l'utilisateur reçoive son code dans la foulée (1 étape de moins côté UX).
+    if (user.mfaMethod === 'EMAIL' || user.mfaMethod === 'SMS') {
+      try {
+        const sent = await sendMfaLoginCode(user.id, ip, ua)
+        return {
+          response: {
+            requiresTotp: true,
+            mfaMethod:    user.mfaMethod,
+            maskedTarget: sent.maskedTarget,
+            tempToken,
+          } as unknown as LoginResponse,
+        }
+      } catch (e) {
+        // Si l'envoi rate (SMS provider down, etc.), on retourne quand même
+        // le tempToken : le frontend pourra réessayer via /auth/mfa/send-code
+        logger.error('login: failed to send MFA code, frontend will retry', { userId: user.id, error: e })
+        return {
+          response: {
+            requiresTotp: true,
+            mfaMethod:    user.mfaMethod,
+            maskedTarget: null,
+            tempToken,
+          } as unknown as LoginResponse,
+        }
+      }
+    }
+    // TOTP : le code est déjà dans l'app du user, rien à envoyer
+    return {
+      response: {
+        requiresTotp: true,
+        mfaMethod:    'TOTP',
+        tempToken,
+      } as unknown as LoginResponse,
+    }
   }
 
   const companyId = user.companyId ?? null
@@ -781,7 +834,10 @@ export async function enableTotp(userId: string, dto: TotpEnableDto, ip: string,
   if (!authenticator.check(dto.code, decrypt(user.twoFASecret))) throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
 
   const enabledAt = new Date()
-  await prisma.user.update({ where: { id: userId }, data: { twoFAEnabled: true } })
+  await prisma.user.update({
+    where: { id: userId },
+    data:  { twoFAEnabled: true, mfaMethod: 'TOTP' },
+  })
   await audit('TOTP_ENABLED', userId, user.companyId ?? null, ip, ua)
 
   // Notif sécurité au user — confirmation visible du changement critique
@@ -964,6 +1020,366 @@ export async function acceptInvitation(
       null,
       null,
     ),
+  }
+}
+
+// ── MFA multi-méthode (EMAIL / SMS) ───────────────────────────────────────────
+//
+// TOTP est déjà géré par setupTotp/enableTotp/disableTotp/loginVerifyTotp
+// (méthode "code généré par l'app, jamais envoyé").
+// Ici on ajoute EMAIL et SMS : code à 6 chiffres envoyé à chaque setup ET à
+// chaque login. Le code est hashé en DB (SHA-256), expire en 10 min, et
+// invalidé après 5 essais ratés.
+
+type MfaSendableMethod = 'EMAIL' | 'SMS'
+
+async function generateAndStoreMfaCode(userId: string): Promise<string> {
+  const code = generateMfaCode()
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      mfaActiveCodeHash: hashMfaCode(code),
+      mfaCodeExpiresAt:  new Date(Date.now() + MFA_CODE_TTL_MS),
+      mfaCodeAttempts:   0,
+    },
+  })
+  return code
+}
+
+async function sendMfaCodeViaMethod(opts: {
+  method:   MfaSendableMethod
+  email:    string
+  phone:    string | null
+  code:     string
+  purpose:  'login' | 'setup'
+  ip:       string | null
+}): Promise<void> {
+  if (opts.method === 'EMAIL') {
+    await sendMfaCodeEmail(opts.email, {
+      code: opts.code,
+      purpose: opts.purpose,
+      expiresInMinutes: Math.floor(MFA_CODE_TTL_MS / 60_000),
+      ip: opts.ip,
+    })
+    return
+  }
+  // SMS
+  if (!opts.phone) throw new AppError('Numéro de téléphone non configuré.', 400, 'SMS_PHONE_MISSING')
+  const message = opts.purpose === 'login'
+    ? `Athenis - votre code de connexion : ${opts.code} (valable 10 min). N'envoyez ce code à personne.`
+    : `Athenis - code de vérification : ${opts.code} (valable 10 min). Confirmez votre numéro pour activer le 2FA.`
+  const result = await sendSms(opts.phone, message)
+  if (!result.success) {
+    logger.error('sendMfaCodeViaMethod: SMS provider failure', { error: result.error, provider: result.provider })
+    throw new AppError(
+      result.error === 'INVALID_PHONE_FORMAT'
+        ? 'Format de numéro invalide (utiliser le format international +XXX...).'
+        : 'Échec d\'envoi du SMS. Vérifiez votre numéro ou contactez le support.',
+      500, 'SMS_SEND_FAILED',
+    )
+  }
+}
+
+/** Démarre la configuration MFA par email (envoie un code de vérification) */
+export async function setupEmailMfa(userId: string, ip: string, ua: string): Promise<{ maskedEmail: string }> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { email: true, twoFAEnabled: true, mfaMethod: true, companyId: true },
+  })
+  if (user.twoFAEnabled) throw new AppError('Une méthode MFA est déjà active. Désactivez-la d\'abord.', 409, 'MFA_ALREADY_ENABLED')
+
+  const code = await generateAndStoreMfaCode(userId)
+  await sendMfaCodeViaMethod({ method: 'EMAIL', email: user.email, phone: null, code, purpose: 'setup', ip })
+  await audit('MFA_EMAIL_SETUP_REQUESTED', userId, user.companyId ?? null, ip, ua)
+
+  return { maskedEmail: maskEmail(user.email) }
+}
+
+/** Démarre la configuration MFA par SMS (envoie un code de vérification au téléphone) */
+export async function setupSmsMfa(
+  userId: string,
+  phoneInput: string,
+  ip: string,
+  ua: string,
+): Promise<{ maskedPhone: string; smsConfigured: boolean }> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { email: true, twoFAEnabled: true, companyId: true },
+  })
+  if (user.twoFAEnabled) throw new AppError('Une méthode MFA est déjà active. Désactivez-la d\'abord.', 409, 'MFA_ALREADY_ENABLED')
+
+  const phone = normalizePhoneE164(phoneInput)
+  if (!phone) throw new AppError('Format de numéro invalide. Utilisez le format international +237691234567.', 400, 'INVALID_PHONE_FORMAT')
+
+  const smsReady = isSmsConfigured()
+  if (!smsReady) {
+    // Mode dev / phase de test sans provider SMS : on log le code dans la console
+    // pour permettre les tests, et on indique au frontend que le SMS n'est pas réel.
+    logger.warn('setupSmsMfa: SMS provider not configured — code will be logged only', { userId })
+  }
+
+  // Persiste le téléphone (non vérifié pour l'instant) + génère le code
+  await prisma.user.update({
+    where: { id: userId },
+    data:  { mfaPhone: phone, mfaPhoneVerified: false },
+  })
+  const code = await generateAndStoreMfaCode(userId)
+  await sendMfaCodeViaMethod({ method: 'SMS', email: user.email, phone, code, purpose: 'setup', ip })
+  await audit('MFA_SMS_SETUP_REQUESTED', userId, user.companyId ?? null, ip, ua, { phoneE164: phone })
+
+  return { maskedPhone: maskPhone(phone), smsConfigured: smsReady }
+}
+
+/** Vérifie le code envoyé pendant le setup et active la méthode MFA correspondante */
+export async function verifyMfaSetup(
+  userId: string,
+  method: MfaSendableMethod,
+  code: string,
+  ip: string,
+  ua: string,
+): Promise<{ enabled: true; backupCodes: string[] }> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      email: true, nom: true, companyId: true,
+      twoFAEnabled: true,
+      mfaActiveCodeHash: true, mfaCodeExpiresAt: true, mfaCodeAttempts: true,
+      mfaPhone: true,
+    },
+  })
+  if (user.twoFAEnabled) throw new AppError('MFA déjà activé.', 409, 'MFA_ALREADY_ENABLED')
+  if (!user.mfaActiveCodeHash || !user.mfaCodeExpiresAt) throw new AppError('Aucun code en attente. Recommencez la configuration.', 400, 'MFA_NO_CODE')
+  if (user.mfaCodeExpiresAt < new Date()) throw new AppError('Code expiré. Demandez un nouveau code.', 410, 'MFA_CODE_EXPIRED')
+
+  if (user.mfaCodeAttempts >= MFA_MAX_ATTEMPTS) {
+    await prisma.user.update({ where: { id: userId }, data: { mfaActiveCodeHash: null, mfaCodeExpiresAt: null, mfaCodeAttempts: 0 } })
+    throw new AppError('Trop de tentatives. Demandez un nouveau code.', 429, 'MFA_TOO_MANY_ATTEMPTS')
+  }
+
+  if (!safeEqualHashes(user.mfaActiveCodeHash, hashMfaCode(code))) {
+    await prisma.user.update({ where: { id: userId }, data: { mfaCodeAttempts: { increment: 1 } } })
+    await audit('MFA_CODE_INVALID', userId, user.companyId ?? null, ip, ua, { method })
+    throw new AppError('Code incorrect.', 401, 'MFA_CODE_INVALID')
+  }
+
+  // Code valide → active la méthode + nettoie le code one-time
+  const updateData: { twoFAEnabled: boolean; mfaMethod: 'EMAIL' | 'SMS'; mfaActiveCodeHash: null; mfaCodeExpiresAt: null; mfaCodeAttempts: number; mfaPhoneVerified?: boolean } = {
+    twoFAEnabled:      true,
+    mfaMethod:         method,
+    mfaActiveCodeHash: null,
+    mfaCodeExpiresAt:  null,
+    mfaCodeAttempts:   0,
+  }
+  if (method === 'SMS') updateData.mfaPhoneVerified = true
+
+  await prisma.user.update({ where: { id: userId }, data: updateData })
+  await audit(method === 'EMAIL' ? 'MFA_EMAIL_ENABLED' : 'MFA_SMS_ENABLED', userId, user.companyId ?? null, ip, ua)
+
+  void sendTwoFactorEnabledEmail(user.email, { firstName: user.nom, enabledAt: new Date() })
+    .catch((e) => logger.error('sendTwoFactorEnabledEmail failed', { userId, error: e }))
+
+  const backupCodes = Array.from({ length: 8 }, () => crypto.randomBytes(5).toString('hex').toUpperCase())
+  return { enabled: true, backupCodes }
+}
+
+/** Renvoie l'état MFA complet du user — pour /auth/mfa/status */
+export async function getMfaStatus(userId: string): Promise<{
+  enabled: boolean
+  method: 'NONE' | 'TOTP' | 'EMAIL' | 'SMS'
+  maskedPhone: string | null
+  maskedEmail: string | null
+  smsConfigured: boolean
+}> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { email: true, twoFAEnabled: true, mfaMethod: true, mfaPhone: true, mfaPhoneVerified: true },
+  })
+  return {
+    enabled:        user.twoFAEnabled,
+    method:         user.mfaMethod,
+    maskedPhone:    user.mfaPhone && user.mfaPhoneVerified ? maskPhone(user.mfaPhone) : null,
+    maskedEmail:    maskEmail(user.email),
+    smsConfigured:  isSmsConfigured(),
+  }
+}
+
+/** Désactive toute méthode MFA (password + code MFA actuel requis pour confirmer) */
+export async function disableMfa(
+  userId: string,
+  password: string,
+  code: string,
+  ip: string,
+  ua: string,
+): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      email: true, passwordHash: true,
+      twoFAEnabled: true, mfaMethod: true,
+      twoFASecret: true,
+      mfaActiveCodeHash: true, mfaCodeExpiresAt: true,
+      companyId: true,
+    },
+  })
+  if (!user.twoFAEnabled || user.mfaMethod === 'NONE') throw new AppError('MFA non activé.', 400, 'MFA_NOT_ENABLED')
+  if (!await bcrypt.compare(password, user.passwordHash)) throw new AppError('Mot de passe incorrect.', 401, 'INVALID_CREDENTIALS')
+
+  // Vérifier le code selon la méthode
+  if (user.mfaMethod === 'TOTP') {
+    if (!user.twoFASecret || !authenticator.check(code, decrypt(user.twoFASecret))) {
+      throw new AppError('Code 2FA incorrect.', 401, 'MFA_CODE_INVALID')
+    }
+  } else {
+    // EMAIL/SMS : on attend que le user ait d'abord demandé un code via
+    // /auth/mfa/send-code, qui aura mis mfaActiveCodeHash en DB.
+    if (!user.mfaActiveCodeHash || !user.mfaCodeExpiresAt || user.mfaCodeExpiresAt < new Date()) {
+      throw new AppError('Aucun code valide. Demandez un nouveau code d\'abord.', 400, 'MFA_NO_CODE')
+    }
+    if (!safeEqualHashes(user.mfaActiveCodeHash, hashMfaCode(code))) {
+      throw new AppError('Code incorrect.', 401, 'MFA_CODE_INVALID')
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFAEnabled:      false,
+        mfaMethod:         'NONE',
+        twoFASecret:       null,
+        mfaPhone:          null,
+        mfaPhoneVerified:  false,
+        mfaActiveCodeHash: null,
+        mfaCodeExpiresAt:  null,
+        mfaCodeAttempts:   0,
+      },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data:  { revokedAt: new Date() },
+    }),
+  ])
+  await audit('MFA_DISABLED', userId, user.companyId ?? null, ip, ua, { previousMethod: user.mfaMethod })
+}
+
+/**
+ * Envoie un code de connexion par EMAIL ou SMS.
+ * Appelé pendant le 2e step du login pour méthode EMAIL/SMS, OU pendant
+ * la désactivation pour valider l'identité.
+ */
+export async function sendMfaLoginCode(userId: string, ip: string, ua: string): Promise<{ maskedTarget: string; method: 'EMAIL' | 'SMS' }> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { email: true, mfaMethod: true, mfaPhone: true, mfaPhoneVerified: true, twoFAEnabled: true, companyId: true },
+  })
+  if (!user.twoFAEnabled) throw new AppError('MFA non activé.', 400, 'MFA_NOT_ENABLED')
+  if (user.mfaMethod !== 'EMAIL' && user.mfaMethod !== 'SMS') {
+    throw new AppError('Cette méthode n\'envoie pas de code (utilisez votre application d\'authentification).', 400, 'MFA_WRONG_METHOD')
+  }
+  if (user.mfaMethod === 'SMS' && (!user.mfaPhone || !user.mfaPhoneVerified)) {
+    throw new AppError('Numéro de téléphone non vérifié.', 400, 'SMS_NOT_VERIFIED')
+  }
+
+  const code = await generateAndStoreMfaCode(userId)
+  await sendMfaCodeViaMethod({
+    method:  user.mfaMethod,
+    email:   user.email,
+    phone:   user.mfaPhone,
+    code,
+    purpose: 'login',
+    ip,
+  })
+  await audit('MFA_CODE_SENT', userId, user.companyId ?? null, ip, ua, { method: user.mfaMethod })
+
+  return {
+    method:       user.mfaMethod,
+    maskedTarget: user.mfaMethod === 'SMS' ? maskPhone(user.mfaPhone!) : maskEmail(user.email),
+  }
+}
+
+/** Vérifie le code EMAIL/SMS pendant le login (étape 2 après password OK) */
+export async function loginVerifyMfaCode(
+  tempToken: string,
+  code: string,
+  ip: string,
+  ua: string,
+): Promise<{ response: LoginResponse; refreshToken: string }> {
+  let userId: string
+  try {
+    userId = verifyTotpPendingToken(tempToken)  // réutilise le même tempToken
+  } catch {
+    throw new AppError('Token invalide ou expiré.', 401, 'TOKEN_INVALID')
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      ...USER_SELECT,
+      twoFASecret:    true,
+      mfaActiveCodeHash: true, mfaCodeExpiresAt: true, mfaCodeAttempts: true,
+      failedAttempts: true, lockedUntil: true,
+    },
+  })
+  if (!user) throw new AppError('Utilisateur introuvable.', 404, 'USER_NOT_FOUND')
+  if (user.mfaMethod !== 'EMAIL' && user.mfaMethod !== 'SMS') throw new AppError('Méthode MFA incompatible.', 400, 'MFA_WRONG_METHOD')
+
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    throw new AppError(`Compte verrouillé jusqu'à ${user.lockedUntil.toLocaleTimeString('fr-FR')}.`, 423, 'ACCOUNT_LOCKED')
+  }
+  if (!user.isActive) throw new AppError('Compte désactivé.', 403, 'ACCOUNT_INACTIVE')
+
+  // Validation du code
+  if (!user.mfaActiveCodeHash || !user.mfaCodeExpiresAt) throw new AppError('Aucun code en attente. Demandez un nouveau code.', 400, 'MFA_NO_CODE')
+  if (user.mfaCodeExpiresAt < new Date()) throw new AppError('Code expiré. Demandez un nouveau code.', 410, 'MFA_CODE_EXPIRED')
+
+  if (user.mfaCodeAttempts >= MFA_MAX_ATTEMPTS) {
+    // Trop d'essais ratés sur ce code : on l'invalide. L'utilisateur devra redemander un code.
+    await prisma.user.update({ where: { id: userId }, data: { mfaActiveCodeHash: null, mfaCodeExpiresAt: null, mfaCodeAttempts: 0 } })
+    await audit('MFA_CODE_LOCKED', userId, user.companyId ?? null, ip, ua)
+    throw new AppError('Trop de tentatives. Demandez un nouveau code.', 429, 'MFA_TOO_MANY_ATTEMPTS')
+  }
+
+  if (!safeEqualHashes(user.mfaActiveCodeHash, hashMfaCode(code))) {
+    await prisma.user.update({ where: { id: userId }, data: { mfaCodeAttempts: { increment: 1 } } })
+    await audit('MFA_CODE_INVALID', userId, user.companyId ?? null, ip, ua, { method: user.mfaMethod })
+    throw new AppError('Code incorrect.', 401, 'MFA_CODE_INVALID')
+  }
+
+  // Code OK → invalider + login complet
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      mfaActiveCodeHash: null, mfaCodeExpiresAt: null, mfaCodeAttempts: 0,
+      failedAttempts: 0, lockedUntil: null,
+      lastLoginAt: new Date(),
+    },
+  })
+
+  const companyId = user.companyId ?? null
+  const cabinetId = user.cabinetId ?? null
+  const plan      = await getEffectivePlan(user.accountType as AccountType, companyId)
+  const modules   = await getEffectiveModules(user.accountType as AccountType, companyId)
+  const { country, currencySymbol } = await resolveLocale(user.accountType, companyId, cabinetId, user.id)
+  const { agenceId, agenceNom, agenceIds, isRestricted } = await getUserAgence(user.id, companyId)
+
+  const role = dbRoleToUserRole(user.role)
+  const accessToken = signAccessToken({
+    sub: user.id,
+    email: user.email,
+    accountType: user.accountType as AccountType,
+    role,
+    platformRole: (user.platformRole ?? 'USER') as 'USER' | 'SUPER_ADMIN',
+    companyId, cabinetId, plan, modules,
+    country, currencySymbol,
+    atheisNumber: user.atheisNumber ?? null,
+    agenceId, agenceNom, agenceIds, isRestricted,
+  })
+  const refreshToken = await createRefreshToken(user.id)
+  await audit('LOGIN', user.id, companyId, ip, ua, { mfaMethod: user.mfaMethod })
+
+  return {
+    response: { accessToken, user: toUserProfile(user as unknown as DbUser, plan, modules, agenceId, agenceNom) },
+    refreshToken,
   }
 }
 

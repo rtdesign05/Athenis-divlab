@@ -19,6 +19,7 @@ router.post('/accept-invitation/:token', authLimiter, ctrl.acceptInvitation)
 router.post('/register', authLimiter, validateRequest({ body: RegisterDto }), ctrl.register)
 router.post('/login', authLimiter, validateRequest({ body: LoginDto }), ctrl.login)
 router.post('/login/2fa', authLimiter, validateRequest({ body: TotpVerifyDto }), ctrl.loginVerifyTotp)
+router.post('/login/mfa/verify', authLimiter, ctrl.loginVerifyMfaCode)
 router.post('/refresh', ctrl.refresh)
 router.get('/verify-email', authLimiter, ctrl.verifyEmail)
 router.post('/resend-verification', authLimiter, ctrl.resendVerification)
@@ -29,6 +30,14 @@ router.get('/totp/status', authenticate, ctrl.totpStatus)
 router.post('/totp/setup', authenticate, sensitiveLimiter, ctrl.setupTotp)
 router.post('/totp/enable', authenticate, validateRequest({ body: TotpEnableDto }), ctrl.enableTotp)
 router.post('/totp/disable', authenticate, validateRequest({ body: TotpDisableDto }), ctrl.disableTotp)
+
+// MFA multi-méthode (TOTP / EMAIL / SMS)
+router.get('/mfa/status',       authenticate, ctrl.mfaStatus)
+router.post('/mfa/setup/email', authenticate, sensitiveLimiter, ctrl.setupEmailMfa)
+router.post('/mfa/setup/sms',   authenticate, sensitiveLimiter, ctrl.setupSmsMfa)
+router.post('/mfa/setup/verify', authenticate, ctrl.verifyMfaSetup)
+router.post('/mfa/disable',     authenticate, sensitiveLimiter, ctrl.disableMfa)
+router.post('/mfa/send-code',   authenticate, ctrl.sendMfaLoginCode)
 router.post(
   '/password',
   authenticate,

@@ -20,8 +20,15 @@ export interface AuthContextValue {
   login: (
     email: string,
     password: string,
-  ) => Promise<{ requires2fa: boolean; tempToken: string | null; user: import('@athenis/shared-types').JwtPayload | null }>
-  loginVerifyTotp: (tempToken: string, code: string) => Promise<JwtPayload | null>
+  ) => Promise<{
+    requires2fa:  boolean
+    tempToken:    string | null
+    mfaMethod:    'TOTP' | 'EMAIL' | 'SMS'
+    maskedTarget: string | null
+    user:         import('@athenis/shared-types').JwtPayload | null
+  }>
+  loginVerifyTotp:    (tempToken: string, code: string) => Promise<JwtPayload | null>
+  loginVerifyMfaCode: (tempToken: string, code: string) => Promise<JwtPayload | null>
   register: (data: RegisterRequest) => Promise<{ requiresEmailVerification: boolean }>
   logout: () => Promise<void>
   setToken: (token: string) => void
@@ -73,11 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const res = await authApi.login(email, password)
-      const { accessToken, requiresTotp, tempToken } = res.data.data
+      const { accessToken, requiresTotp, tempToken, mfaMethod, maskedTarget } = res.data.data
       const requires2fa = requiresTotp ?? false
       if (!requires2fa && accessToken) setToken(accessToken)
       const decodedUser = accessToken ? decodeJwt(accessToken) : null
-      return { requires2fa, tempToken: tempToken ?? null, user: decodedUser }
+      return {
+        requires2fa,
+        tempToken:    tempToken ?? null,
+        mfaMethod:    (mfaMethod ?? 'TOTP') as 'TOTP' | 'EMAIL' | 'SMS',
+        maskedTarget: maskedTarget ?? null,
+        user:         decodedUser,
+      }
     },
     [setToken],
   )
@@ -85,6 +98,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginVerifyTotp = useCallback(
     async (tempToken: string, code: string): Promise<JwtPayload | null> => {
       const res = await authApi.loginTotp(tempToken, code)
+      const { accessToken } = res.data.data
+      if (accessToken) setToken(accessToken)
+      return accessToken ? decodeJwt(accessToken) : null
+    },
+    [setToken],
+  )
+
+  const loginVerifyMfaCode = useCallback(
+    async (tempToken: string, code: string): Promise<JwtPayload | null> => {
+      const res = await authApi.loginMfaVerify(tempToken, code)
       const { accessToken } = res.data.data
       if (accessToken) setToken(accessToken)
       return accessToken ? decodeJwt(accessToken) : null
@@ -148,6 +171,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         companyViewName,
         login,
         loginVerifyTotp,
+        loginVerifyMfaCode,
         register,
         logout,
         setToken,

@@ -3,9 +3,13 @@ import type { JwtPayload } from '@athenis/shared-types'
 
 export interface LoginData {
   accessToken?: string
-  /** Backend field name — true when TOTP is required before full login */
+  /** Backend field name — true when MFA (TOTP / EMAIL / SMS) is required before full login */
   requiresTotp?: boolean
   tempToken?: string
+  /** Quelle méthode MFA est active sur le compte */
+  mfaMethod?:   'TOTP' | 'EMAIL' | 'SMS'
+  /** Pour EMAIL/SMS : cible masquée (ex: m••••5@gmail.com ou +237***567) — informatif pour l'UI */
+  maskedTarget?: string | null
   user?: UserProfile
   requiresEmailVerification?: boolean
 }
@@ -32,6 +36,10 @@ export const authApi = {
 
   loginTotp: (tempToken: string, code: string) =>
     api.post<ApiWrap<LoginData>>('/auth/login/2fa', { tempToken, code }),
+
+  /** Vérifie un code EMAIL/SMS pendant le login (différent de TOTP) */
+  loginMfaVerify: (tempToken: string, code: string) =>
+    api.post<ApiWrap<LoginData>>('/auth/login/mfa/verify', { tempToken, code }),
 
   refresh: () =>
     api.post<ApiWrap<{ accessToken: string }>>('/auth/refresh'),
