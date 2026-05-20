@@ -14,7 +14,29 @@ const lz =
     f().then((m) => ({ Component: m[k] }))
 
 const router = createBrowserRouter([
-  { path: '/', element: <Navigate to="/auth/login" replace /> },
+  // ── Marketing site (public) ────────────────────────────────────────────────
+  // En Tauri (desktop), on saute le site marketing : l'app desktop va direct au login
+  // (le user a déjà téléchargé l'app, il sait ce qu'il fait).
+  ...(isTauri() ? [
+    { path: '/', element: <Navigate to="/auth/login" replace /> },
+  ] : [
+    {
+      element: undefined,
+      lazy: lz(() => import('@/pages/marketing/MarketingLayout'), 'MarketingLayout'),
+      children: [
+        { path: '/',                  lazy: lz(() => import('@/pages/marketing/HomePage'),     'HomePage') },
+        { path: '/fonctionnalites',   lazy: lz(() => import('@/pages/marketing/FeaturesPage'), 'FeaturesPage') },
+        { path: '/tarifs',            lazy: lz(() => import('@/pages/marketing/PricingPage'),  'PricingPage') },
+        { path: '/a-propos',          lazy: lz(() => import('@/pages/marketing/OtherPages'),   'AboutPage') },
+        { path: '/securite',          lazy: lz(() => import('@/pages/marketing/OtherPages'),   'SecurityPage') },
+        { path: '/contact',           lazy: lz(() => import('@/pages/marketing/OtherPages'),   'ContactPage') },
+        { path: '/rgpd',              lazy: lz(() => import('@/pages/marketing/LegalPages'),   'RgpdPage') },
+        { path: '/cgu',               lazy: lz(() => import('@/pages/marketing/LegalPages'),   'CguPage') },
+        { path: '/mentions-legales',  lazy: lz(() => import('@/pages/marketing/LegalPages'),   'MentionsLegalesPage') },
+        { path: '/cookies',           lazy: lz(() => import('@/pages/marketing/LegalPages'),   'CookiesPage') },
+      ],
+    },
+  ]),
 
   // ── Auth (public) ───────────────────────────────────────────────────────────
   { path: '/auth/login',         lazy: lz(() => import('@/features/auth/LoginPage'),       'LoginPage') },
