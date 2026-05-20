@@ -38,6 +38,10 @@ const router = createBrowserRouter([
     },
   ]),
 
+  // ── Billing return pages (semi-public — pas d'auth requise, mais pas dans le marketing layout) ──
+  { path: '/billing/success', lazy: lz(() => import('@/pages/app/billing/BillingReturnPages'), 'BillingSuccessPage') },
+  { path: '/billing/cancel',  lazy: lz(() => import('@/pages/app/billing/BillingReturnPages'), 'BillingCancelPage') },
+
   // ── Auth (public) ───────────────────────────────────────────────────────────
   { path: '/auth/login',         lazy: lz(() => import('@/features/auth/LoginPage'),       'LoginPage') },
   { path: '/auth/register',      lazy: lz(() => import('@/pages/auth/AccountTypePage'),    'AccountTypePage') },

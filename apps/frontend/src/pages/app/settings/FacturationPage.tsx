@@ -1,6 +1,9 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/features/auth/useAuth'
 import type { Plan, Module } from '@athenis/shared-types'
 import { getAllPlansPricing, getCountryConfig } from '@athenis/shared-types'
+import { saasBillingApi } from '@/services/saasBillingApi'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -66,6 +69,7 @@ function ProgressBar({ value, max }: { value: number; max: number }) {
 
 export function FacturationPage() {
   const { user } = useAuth()
+  const qc = useQueryClient()
 
   const plan: Plan = user?.plan ?? 'FREE'
   const modules: Module[] = (user?.modules ?? []) as Module[]
@@ -77,6 +81,38 @@ export function FacturationPage() {
   const countryCfg   = getCountryConfig(countryCode)
   const allPricing   = getAllPlansPricing(countryCfg.currencyCode, countryCfg.locale, countryCfg.currencySymbol)
   const currentPrice = allPricing[plan]
+
+  // ── Billing SaaS (Stripe + CinetPay) ────────────────────────────────────────
+  const [upgradeOpen, setUpgradeOpen] = useState<Plan | null>(null)
+  const [interval, setInterval] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY')
+  const [provider, setProvider] = useState<'STRIPE' | 'CINETPAY'>(
+    ['XAF', 'XOF', 'CDF', 'GNF'].includes(countryCfg.currencyCode) ? 'CINETPAY' : 'STRIPE'
+  )
+
+  const statusQuery = useQuery({
+    queryKey: ['saas-billing', 'status'],
+    queryFn:  () => saasBillingApi.status(),
+    staleTime: 30_000,
+  })
+
+  const checkoutMut = useMutation({
+    mutationFn: saasBillingApi.checkout,
+    onSuccess: (data) => {
+      if (data.url) window.location.href = data.url
+    },
+  })
+
+  const cancelMut = useMutation({
+    mutationFn: saasBillingApi.cancel,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['saas-billing', 'status'] }) },
+  })
+
+  const portalMut = useMutation({
+    mutationFn: saasBillingApi.portal,
+    onSuccess: (data) => { if (data.url) window.location.href = data.url },
+  })
+
+  const sub = statusQuery.data
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -128,18 +164,65 @@ export function FacturationPage() {
             <ProgressBar value={DEMO_USER_COUNT} max={maxUsers} />
           </div>
 
+          {/* Status badges */}
+          {sub && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {sub.status === 'TRIALING' && sub.trialEnd && (
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
+                  Essai gratuit · fin le {new Date(sub.trialEnd).toLocaleDateString('fr-FR')}
+                </span>
+              )}
+              {sub.status === 'ACTIVE' && (
+                <span className="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                  ● Actif
+                </span>
+              )}
+              {sub.status === 'PAST_DUE' && (
+                <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">
+                  ⚠️ Paiement en échec
+                </span>
+              )}
+              {sub.cancelAtEnd && sub.currentPeriodEnd && (
+                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">
+                  Annulé à la fin de la période ({new Date(sub.currentPeriodEnd).toLocaleDateString('fr-FR')})
+                </span>
+              )}
+              {sub.provider && sub.provider !== 'FREE' && (
+                <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs text-blue-700">
+                  via {sub.provider === 'STRIPE' ? '💳 Carte bancaire' : '📱 Mobile Money'}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* CTA */}
-          <div className="pt-1">
-            <button className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors">
-              Changer de forfait
-              <svg className="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fillRule="evenodd"
-                  d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </button>
+          <div className="pt-1 flex flex-wrap gap-2">
+            {plan === 'FREE' && (
+              <button
+                onClick={() => { setUpgradeOpen('PRO') }}
+                className="inline-flex items-center gap-2 rounded-lg bg-forest-900 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-800"
+              >
+                🚀 Passer au plan Pro
+              </button>
+            )}
+            {plan !== 'FREE' && sub?.provider === 'STRIPE' && (
+              <button
+                onClick={() => portalMut.mutate()}
+                disabled={portalMut.isPending}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+              >
+                {portalMut.isPending ? 'Chargement…' : '⚙️ Gérer mon abonnement'}
+              </button>
+            )}
+            {plan !== 'FREE' && !sub?.cancelAtEnd && (
+              <button
+                onClick={() => { if (confirm('Annuler votre abonnement ? Vous restez actif jusqu\'à la fin de la période.')) cancelMut.mutate() }}
+                disabled={cancelMut.isPending}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                {cancelMut.isPending ? 'Annulation…' : 'Annuler l\'abonnement'}
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -191,15 +274,109 @@ export function FacturationPage() {
                 <p className="mt-3 text-xs font-medium text-gray-600">
                   Jusqu'à {PLAN_LIMITS[p]} utilisateur{PLAN_LIMITS[p] > 1 ? 's' : ''}
                 </p>
+                {!isCurrent && p !== 'FREE' && (
+                  <button
+                    onClick={() => setUpgradeOpen(p)}
+                    className="mt-3 w-full rounded-lg bg-forest-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-forest-800"
+                  >
+                    Choisir ce plan
+                  </button>
+                )}
               </div>
             )
           })}
         </div>
 
         <p className="text-[11px] text-gray-400 italic">
-          Tarifs adaptés au pouvoir d'achat local. Les paiements seront prélevés dans cette devise lorsque la facturation sera activée.
+          Tarifs adaptés au pouvoir d'achat local. Paiements via Stripe (carte) ou CinetPay (Mobile Money).
         </p>
       </section>
+
+      {/* ── Modal upgrade ─────────────────────────────────────────────────────── */}
+      {upgradeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setUpgradeOpen(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-gray-900">Passer au plan {PLAN_LABELS[upgradeOpen]}</h2>
+            <p className="mt-1 text-sm text-gray-500">14 jours d'essai gratuit. Annulez à tout moment.</p>
+
+            {/* Interval toggle */}
+            <div className="mt-5">
+              <p className="text-xs font-semibold text-gray-700 mb-2">Périodicité</p>
+              <div className="inline-flex bg-gray-100 rounded-lg p-1 w-full">
+                <button
+                  onClick={() => setInterval('MONTHLY')}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium ${interval === 'MONTHLY' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'}`}
+                >
+                  Mensuel · {allPricing[upgradeOpen].formatted}/mois
+                </button>
+                <button
+                  onClick={() => setInterval('YEARLY')}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-sm font-medium ${interval === 'YEARLY' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'}`}
+                >
+                  Annuel · -17%
+                </button>
+              </div>
+            </div>
+
+            {/* Provider choice */}
+            <div className="mt-5">
+              <p className="text-xs font-semibold text-gray-700 mb-2">Méthode de paiement</p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => setProvider('STRIPE')}
+                  className={`w-full flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-colors ${provider === 'STRIPE' ? 'border-forest-500 bg-forest-50/40' : 'border-gray-200 hover:border-gray-300'}`}
+                >
+                  <span className="text-xl">💳</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-900">Carte bancaire</p>
+                    <p className="text-xs text-gray-500">Visa, MasterCard. Sécurisé par Stripe. International.</p>
+                  </div>
+                  {sub?.capabilities?.stripeEnabled === false && (
+                    <span className="text-[9px] uppercase font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Mode test</span>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => setProvider('CINETPAY')}
+                  disabled={!['XAF', 'XOF', 'CDF', 'GNF'].includes(countryCfg.currencyCode)}
+                  className={`w-full flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-colors ${
+                    provider === 'CINETPAY' ? 'border-forest-500 bg-forest-50/40' : 'border-gray-200 hover:border-gray-300'
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  <span className="text-xl">📱</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-900">Mobile Money</p>
+                    <p className="text-xs text-gray-500">
+                      {['XAF', 'XOF', 'CDF', 'GNF'].includes(countryCfg.currencyCode)
+                        ? 'Orange Money, MTN MoMo, Moov, Wave. Via CinetPay.'
+                        : 'Disponible uniquement pour la zone OHADA (F CFA)'}
+                    </p>
+                  </div>
+                  {sub?.capabilities?.cinetpayEnabled === false && ['XAF', 'XOF', 'CDF', 'GNF'].includes(countryCfg.currencyCode) && (
+                    <span className="text-[9px] uppercase font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">Mode test</span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-2 justify-end">
+              <button
+                onClick={() => setUpgradeOpen(null)}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={() => checkoutMut.mutate({ plan: upgradeOpen as 'STARTER' | 'PRO' | 'PREMIUM', interval, provider })}
+                disabled={checkoutMut.isPending}
+                className="rounded-lg bg-forest-900 px-5 py-2 text-sm font-semibold text-white hover:bg-forest-800 disabled:opacity-50"
+              >
+                {checkoutMut.isPending ? 'Redirection…' : `Payer ${interval === 'MONTHLY' ? allPricing[upgradeOpen].formatted : allPricing[upgradeOpen].yearlyFormatted}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modules section */}
       <section className="space-y-3">

@@ -122,6 +122,111 @@ enum MfaMethod {
   SMS
 }
 
+// ─────────────────────────────────────────
+// SaaS BILLING (Stripe + CinetPay/Mobile Money)
+// ─────────────────────────────────────────
+
+enum SubscriptionStatus {
+  TRIALING          // période d'essai en cours
+  ACTIVE            // abonnement actif et payé
+  PAST_DUE          // échec paiement, période de grâce
+  CANCELED          // annulé par l'utilisateur (encore actif jusqu'à fin de période)
+  EXPIRED           // période terminée, retour à FREE
+  INCOMPLETE        // session de paiement créée mais pas complétée
+}
+
+enum PaymentProvider {
+  STRIPE
+  CINETPAY
+  FREE              // pas de paiement (plan gratuit)
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+model Subscription {
+  id            String   @id @default(cuid())
+  companyId     String   @unique  @map("company_id")
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  plan          Plan     // FREE | STARTER | PRO | PREMIUM
+  status        SubscriptionStatus @default(TRIALING)
+  interval      BillingInterval    @default(MONTHLY)
+
+  // Stripe
+  stripeCustomerId       String?  @unique @map("stripe_customer_id")
+  stripeSubscriptionId   String?  @unique @map("stripe_subscription_id")
+  stripePriceId          String?         @map("stripe_price_id")
+
+  // CinetPay (Mobile Money) — pas de subscription native, on track manuellement
+  cinetpayLastTransactionId String?       @map("cinetpay_last_transaction_id")
+
+  // Périodes
+  currentPeriodStart  DateTime?  @map("current_period_start")
+  currentPeriodEnd    DateTime?  @map("current_period_end")
+  trialEnd            DateTime?  @map("trial_end")
+  cancelAt            DateTime?  @map("cancel_at")
+  canceledAt          DateTime?  @map("canceled_at")
+
+  // Montant en centimes (ou unité minimale selon devise — FCFA n'a pas de centimes)
+  amountCents   Int      @map("amount_cents")
+  currency      String           // EUR, XAF, XOF, USD…
+  provider      PaymentProvider  @default(FREE)
+
+  payments      Payment[]
+
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt      @map("updated_at")
+
+  @@index([status])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id              String   @id @default(cuid())
+  subscriptionId  String?  @map("subscription_id")
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  companyId       String   @map("company_id")
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  provider        PaymentProvider
+  providerPaymentId String?  @unique  @map("provider_payment_id")  // Stripe payment_intent_id ou CinetPay transaction_id
+  providerInvoiceId String?           @map("provider_invoice_id")  // Stripe invoice id
+
+  status          PaymentStatus  @default(PENDING)
+  amountCents     Int            @map("amount_cents")
+  currency        String
+
+  description     String?
+  failureReason   String?  @map("failure_reason")
+
+  paidAt          DateTime? @map("paid_at")
+
+  // Mobile Money info (CinetPay)
+  mobileMoneyOperator  String? @map("mobile_money_operator")  // ORANGE_CM, MTN_CM, etc.
+  mobileMoneyPhone     String? @map("mobile_money_phone")
+
+  // Carte (Stripe)
+  cardLast4       String? @map("card_last4")
+  cardBrand       String? @map("card_brand")
+
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([companyId])
+  @@index([providerPaymentId])
+  @@index([status])
+  @@map("payments")
+}
+
 model RefreshToken {
   id              String    @id @default(cuid())
   tokenHash       String    @unique @map("token_hash")
@@ -251,6 +356,10 @@ model Company {
   securityPolicy Json? @map("security_policy")
   // Paramètres écritures de paie (compte 641, 431, 447, 521 par défaut + journal PAY)
   payrollConfig  Json? @map("payroll_config")
+
+  // Billing SaaS (Stripe + CinetPay)
+  subscription   Subscription?
+  payments       Payment[]
 
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")

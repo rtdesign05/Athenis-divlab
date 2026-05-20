@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authRouter } from '../modules/auth/auth.router.js'
+import { billingRouter } from '../modules/billing/billing.router.js'
 import { invoicesRouter } from '../modules/invoices/invoices.routes.js'
 import { quotesRouter } from '../modules/quotes/quotes.routes.js'
 import { clientsRouter } from '../modules/clients/clients.routes.js'
@@ -60,5 +61,6 @@ router.use('/invitations', invitationRouter)
 router.use('/mail', mailRouter)
 router.use('/scan', scanRouter)
 router.use('/treasury', treasuryRouter)
+router.use('/billing', billingRouter)
 
 export { router }
