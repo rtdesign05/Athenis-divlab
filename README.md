@@ -159,3 +159,4 @@ Guide pas-à-pas complet pour profane : `GUIDE_DEPLOIEMENT_ATHENIS.pdf` (en raci
 ## Licence
 
 Propriétaire — © Athenis 2026.
+# Test auto-deploy : 2026-05-20 23:42:12
