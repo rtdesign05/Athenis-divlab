@@ -1,20 +1,32 @@
 # Athenis — robots.txt
+# https://athenis360.com/
 
-# Bloquer les crawlers sur toutes les pages authentifiées
 User-agent: *
+
+# Pages publiques à indexer
+Allow: /$
+Allow: /auth/login
+Allow: /auth/register
+Allow: /auth/verify-email
+
+# Assets publics
+Allow: /*.png$
+Allow: /*.svg$
+Allow: /*.ico$
+Allow: /*.webp$
+Allow: /manifest.json
+
+# Bloquer les zones authentifiées et l'API (jamais indexer)
 Disallow: /app/
 Disallow: /personal/
 Disallow: /cabinet/
+Disallow: /admin/
 Disallow: /api/
-Disallow: /auth/
+Disallow: /invitation/
+Disallow: /pay/
 
-# Autoriser la page de connexion et les assets publics
-Allow: /auth/login
-Allow: /auth/register
-Allow: /*.png
-Allow: /*.svg
-Allow: /*.ico
-Allow: /manifest.json
+# Bloquer le service worker (pas pertinent en SERP)
+Disallow: /sw.js
+Disallow: /workbox-*
 
-# Sitemap (décommenter si un sitemap est généré)
-# Sitemap: https://app.athenis.cm/sitemap.xml
+Sitemap: https://athenis360.com/sitemap.xml

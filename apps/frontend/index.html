@@ -3,11 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="Athenis — Gestion financière 360" />
 
-    <!-- PWA -->
+    <!-- ── SEO de base ──────────────────────────────────────────────────── -->
+    <title>Athenis — Logiciel de gestion comptable et financière pour PME (SYSCOHADA / France)</title>
+    <meta name="description" content="Athenis est le logiciel SaaS de gestion comptable, RH, juridique et ESG conçu pour les PME d'Afrique francophone (SYSCOHADA OHADA) et de France. Comptabilité, facturation, paie, fiscalité — tout-en-un, en français." />
+    <meta name="keywords" content="Athenis, athenis360, logiciel comptabilité, SaaS gestion PME, SYSCOHADA, OHADA, comptabilité OHADA, logiciel paie Cameroun, facturation Afrique, ERP PME, comptabilité en ligne" />
+    <meta name="author" content="Athenis" />
+    <link rel="canonical" href="https://athenis360.com/" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="googlebot" content="index, follow" />
+
+    <!-- Langue / géolocalisation -->
+    <meta name="language" content="French" />
+    <meta http-equiv="content-language" content="fr" />
+    <meta name="geo.region" content="CM" />
+    <meta name="geo.placename" content="Douala" />
+
+    <!-- ── Open Graph (Facebook, LinkedIn, WhatsApp) ────────────────────── -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://athenis360.com/" />
+    <meta property="og:title" content="Athenis — Comptabilité et gestion 360° pour PME" />
+    <meta property="og:description" content="Le logiciel SaaS qui gère comptabilité (SYSCOHADA + France), facturation, RH, paie, juridique et ESG pour les PME. Simple, sécurisé, conforme." />
+    <meta property="og:image" content="https://athenis360.com/icon-512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:locale" content="fr_FR" />
+    <meta property="og:site_name" content="Athenis" />
+
+    <!-- ── Twitter Card ─────────────────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Athenis — Gestion 360° pour PME (OHADA / France)" />
+    <meta name="twitter:description" content="Le SaaS tout-en-un pour la comptabilité, la facturation, la paie, et le juridique des PME africaines et françaises." />
+    <meta name="twitter:image" content="https://athenis360.com/icon-512.png" />
+
+    <!-- ── PWA ──────────────────────────────────────────────────────────── -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#16a34a" />
+    <meta name="application-name" content="Athenis" />
 
     <!-- iOS PWA -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -19,6 +51,43 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/svg+xml" href="/logo-athenis.svg" />
 
+    <!-- ── Schema.org / JSON-LD (Google rich results) ───────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Athenis",
+      "alternateName": ["Athenis 360", "athenis360"],
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "Accounting Software",
+      "operatingSystem": "Web, iOS, Android, Windows, macOS, Linux",
+      "url": "https://athenis360.com/",
+      "description": "Logiciel SaaS de gestion comptable et financière pour les PME d'Afrique francophone (SYSCOHADA OHADA) et de France. Comptabilité, facturation, RH, paie, juridique, fiscalité, ESG — tout-en-un.",
+      "inLanguage": "fr",
+      "offers": [
+        { "@type": "Offer", "name": "Free",    "price": "0",  "priceCurrency": "EUR" },
+        { "@type": "Offer", "name": "Starter", "price": "9",  "priceCurrency": "EUR" },
+        { "@type": "Offer", "name": "Pro",     "price": "29", "priceCurrency": "EUR" },
+        { "@type": "Offer", "name": "Premium", "price": "79", "priceCurrency": "EUR" }
+      ],
+      "publisher": {
+        "@type": "Organization",
+        "name": "Athenis",
+        "url": "https://athenis360.com/",
+        "logo": "https://athenis360.com/icon-512.png"
+      },
+      "featureList": [
+        "Comptabilité SYSCOHADA Révisé 2017",
+        "Comptabilité Plan Comptable Général français",
+        "Facturation et devis multi-devises",
+        "Gestion RH et paie (Cameroun, France)",
+        "Module juridique (contrats, conformité)",
+        "Reporting ESG/CSRD",
+        "Multi-tenant (cabinet comptable + entreprises)"
+      ]
+    }
+    </script>
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -26,8 +95,6 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-
-    <title>Athenis</title>
   </head>
   <body>
     <div id="root"></div>
