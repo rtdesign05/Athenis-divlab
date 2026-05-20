@@ -261,6 +261,7 @@ adminRouter.post('/users/:id/approve', async (req, res, next) => {
         id: true, email: true, nom: true, accountType: true,
         emailVerified: true, approvalStatus: true,
         company: { select: { nom: true } },
+        cabinet: { select: { nom: true } },
       },
     })
 
@@ -292,7 +293,8 @@ adminRouter.post('/users/:id/approve', async (req, res, next) => {
 
     void sendWelcomeEmail(user.email, {
       firstName:   user.nom,
-      companyName: user.company?.nom ?? null,
+      companyName: user.company?.nom ?? user.cabinet?.nom ?? null,
+      accountType: user.accountType,
     }).catch((e) => logger.error('sendWelcomeEmail failed', { userId, error: e }))
 
     res.json({ success: true, data: { id: userId, approvalStatus: 'APPROVED' } })

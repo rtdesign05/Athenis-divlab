@@ -436,13 +436,151 @@ export async function sendPendingApprovalEmail(to: string, opts: { firstName?: s
   })
 }
 
-// ── 3. Compte approuvé : bienvenue + invitation à se connecter ────────────────
+// ── 3. Compte approuvé : bienvenue avec présentation exhaustive ──────────────
 
-export async function sendWelcomeEmail(to: string, opts: { firstName?: string | null; companyName?: string | null }): Promise<void> {
-  const loginUrl = `${env.frontendUrl}/auth/login`
+export async function sendWelcomeEmail(
+  to: string,
+  opts: {
+    firstName?: string | null
+    companyName?: string | null
+    accountType?: 'PERSONAL' | 'COMPANY' | 'CABINET' | null
+  },
+): Promise<void> {
+  const loginUrl     = `${env.frontendUrl}/auth/login`
   const safeLoginUrl = escapeHtml(loginUrl)
-  const greeting = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
-  const companyLine = opts.companyName ? `pour ${escapeHtml(opts.companyName)}` : ''
+  const greeting     = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+  const accountType  = opts.accountType ?? 'COMPANY'
+
+  // Liste des modules à mettre en avant selon le type de compte
+  const moduleSections: Array<{ icon: string; title: string; desc: string; features: string[] }> =
+    accountType === 'PERSONAL'
+      ? [
+          {
+            icon:  '💰',
+            title: 'Gestion personnelle',
+            desc:  'Gérez vos revenus, dépenses et épargne au quotidien.',
+            features: [
+              'Suivi de vos revenus (salaire, freelance, autres)',
+              'Catégorisation automatique des dépenses',
+              'Objectifs d\'épargne avec graphiques de progression',
+              'Comptes multiples (banque, mobile money, espèces)',
+            ],
+          },
+          {
+            icon:  '📊',
+            title: 'Tableau de bord',
+            desc:  'Vue d\'ensemble de votre situation financière.',
+            features: [
+              'Bilan mensuel revenus / dépenses',
+              'Top 5 des postes de dépense',
+              'Évolution de votre épargne sur 12 mois',
+            ],
+          },
+        ]
+      : accountType === 'CABINET'
+      ? [
+          {
+            icon:  '🏛️',
+            title: 'Espace cabinet',
+            desc:  'Gérez les comptabilités de vos clients depuis un point unique.',
+            features: [
+              'Tableau de bord multi-clients',
+              'Bascule rapide entre les dossiers clients',
+              'Invitations et délégations de missions',
+              'Facturation des honoraires',
+            ],
+          },
+          {
+            icon:  '📒',
+            title: 'Comptabilité complète',
+            desc:  'SYSCOHADA Révisé 2017 + Plan Comptable Général français.',
+            features: [
+              'Journal, grand livre, balance',
+              'États financiers normés (Bilan, CR, TAFIRE)',
+              'Révision comptable assistée',
+              'Exports FEC / DSF / fiscaux',
+            ],
+          },
+        ]
+      : [
+          // COMPANY — le cas le plus riche
+          {
+            icon:  '🧾',
+            title: 'Gestion commerciale',
+            desc:  'Tout votre cycle de vente, multi-devises.',
+            features: [
+              'Devis → factures → encaissements',
+              'Clients et fournisseurs centralisés',
+              'Articles, stocks, bons de livraison',
+              'Achats et factures fournisseurs',
+              'Trésorerie en temps réel (banque, caisse, mobile money)',
+            ],
+          },
+          {
+            icon:  '📒',
+            title: 'Comptabilité',
+            desc:  'SYSCOHADA Révisé 2017 (OHADA) ou PCG (France).',
+            features: [
+              'Écritures automatiques depuis ventes/achats',
+              'Journal, grand livre, balance interactifs',
+              'États financiers : Bilan, Compte de résultat, TAFIRE',
+              'Révision comptable et clôture annuelle',
+              'Exports FEC, DSF et déclarations fiscales',
+            ],
+          },
+          {
+            icon:  '👥',
+            title: 'Ressources humaines',
+            desc:  'Tout le parcours employé, paie incluse.',
+            features: [
+              'Fiches employés, contrats, planning, congés',
+              'Bulletins de paie (CNPS Cameroun ou URSSAF France)',
+              'Déclarations sociales automatisées',
+              'Organigramme et historique des évaluations',
+            ],
+          },
+          {
+            icon:  '⚖️',
+            title: 'Juridique',
+            desc:  'Conformité et gestion des contrats.',
+            features: [
+              'Bibliothèque de contrats avec versions',
+              'Signature électronique conforme OHADA',
+              'Suivi RGPD / protection des données',
+              'Alertes de conformité (échéances légales)',
+            ],
+          },
+          {
+            icon:  '🌿',
+            title: 'ESG / CSRD',
+            desc:  'Reporting environnemental et social.',
+            features: [
+              'Bilan carbone (Scope 1, 2, 3)',
+              'Indicateurs sociaux et de gouvernance',
+              'Benchmark sectoriel',
+              'Rapport DPEF / CSRD exportable PDF',
+            ],
+          },
+        ]
+
+  const moduleHtml = moduleSections.map((m) => `
+    <div style="margin:0 0 18px;padding:18px 20px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px">
+      <p style="margin:0 0 6px;font-size:15px;color:#111827;font-weight:700">
+        ${m.icon} ${escapeHtml(m.title)}
+      </p>
+      <p style="margin:0 0 10px;font-size:13px;color:#6b7280">
+        ${escapeHtml(m.desc)}
+      </p>
+      <ul style="margin:0;padding:0 0 0 16px;color:#374151;font-size:13px;line-height:1.6">
+        ${m.features.map((f) => `<li>${escapeHtml(f)}</li>`).join('')}
+      </ul>
+    </div>
+  `).join('')
+
+  // Récap text pour les clients mail non-HTML
+  const textFeatures = moduleSections.map((m) =>
+    `• ${m.title} : ${m.desc}\n  ${m.features.map(f => `    - ${f}`).join('\n  ')}`,
+  ).join('\n\n')
 
   await sendMail({
     to,
@@ -450,60 +588,94 @@ export async function sendWelcomeEmail(to: string, opts: { firstName?: string | 
     text: [
       `Bienvenue sur Athenis !`,
       ``,
-      `Bonne nouvelle : votre compte ${opts.companyName ? `pour ${opts.companyName} ` : ''}vient d'être validé par notre équipe. Vous pouvez désormais vous connecter et commencer à utiliser Athenis.`,
+      `Excellente nouvelle : votre compte ${opts.companyName ? `pour ${opts.companyName} ` : ''}vient d'être validé par notre équipe.`,
+      `Vous pouvez désormais vous connecter et accéder à toutes les fonctionnalités.`,
       ``,
-      `Connectez-vous ici :`,
-      loginUrl,
+      `Connectez-vous : ${loginUrl}`,
       ``,
-      `Quelques points de départ recommandés :`,
-      `- Tableau de bord : vue d'ensemble de votre activité`,
-      `- Gestion : factures, clients, fournisseurs, stocks`,
-      `- Comptabilité : journal, grand livre, états financiers`,
-      `- RH : employés, paie, contrats, congés`,
+      `═══════════════════════════════════════════════════════════════`,
+      `CE QUE VOUS POUVEZ FAIRE SUR ATHENIS`,
+      `═══════════════════════════════════════════════════════════════`,
       ``,
-      `Si vous avez la moindre question, répondez simplement à cet e-mail.`,
+      textFeatures,
+      ``,
+      `═══════════════════════════════════════════════════════════════`,
+      `VOS 7 PREMIERS JOURS — Parcours conseillé`,
+      `═══════════════════════════════════════════════════════════════`,
+      ``,
+      `Jour 1  → Connexion, tour de l'interface, paramétrage du profil`,
+      `Jour 2  → Activez le 2FA (Paramètres → Sécurité) pour protéger votre compte`,
+      `Jour 3  → Créez vos 3-5 premiers clients et fournisseurs`,
+      `Jour 4  → Émettez votre 1ère facture (Gestion → Factures de vente)`,
+      `Jour 5  → Importez vos employés et créez leurs contrats`,
+      `Jour 6  → Paramétrez votre exercice fiscal et zone comptable`,
+      `Jour 7  → Invitez vos collaborateurs (Paramètres → Utilisateurs)`,
+      ``,
+      `═══════════════════════════════════════════════════════════════`,
+      ``,
+      `Un souci, une question, une idée ? Répondez simplement à cet e-mail.`,
+      `Notre équipe lit chaque message — promis.`,
       ``,
       `Excellente prise en main,`,
       `L'équipe Athenis`,
     ].join('\n'),
     html: emailLayout({
-      preheader: 'Votre compte Athenis est activé. Connectez-vous et démarrez !',
+      preheader: 'Votre compte Athenis est activé. Voici un tour d\'horizon complet de ce que vous pouvez faire.',
       headerColor: '#15803d',
       headerSubtitle: '✅ Compte activé',
       bodyHtml: `
         <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
-        <h1 style="margin:0 0 12px;font-size:24px;color:#111827;line-height:1.3">
+        <h1 style="margin:0 0 12px;font-size:26px;color:#111827;line-height:1.2;font-weight:800">
           🎉 Bienvenue sur Athenis !
         </h1>
-        <p style="margin:0 0 24px;color:#6b7280;line-height:1.6;font-size:15px">
-          Excellente nouvelle — votre compte ${companyLine} vient d'être validé par notre équipe.
-          Vous pouvez désormais vous connecter et commencer à utiliser la plateforme.
+        <p style="margin:0 0 22px;color:#6b7280;line-height:1.6;font-size:15px">
+          Excellente nouvelle — votre compte ${opts.companyName ? `pour <strong>${escapeHtml(opts.companyName)}</strong> ` : ''}vient d'être validé par notre équipe.
+          Vous pouvez désormais vous connecter et accéder à toutes les fonctionnalités.
         </p>
-        ${ctaButton(loginUrl, 'Me connecter à Athenis', '#15803d')}
-        <h2 style="margin:32px 0 12px;font-size:16px;color:#111827">Quelques points de départ</h2>
-        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin-bottom:8px">
-          <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6">
-            <p style="margin:0;font-size:14px;color:#111827"><strong>📊 Tableau de bord</strong></p>
-            <p style="margin:2px 0 0;font-size:13px;color:#6b7280">Vue d'ensemble de votre activité, indicateurs clés.</p>
-          </td></tr>
-          <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6">
-            <p style="margin:0;font-size:14px;color:#111827"><strong>🧾 Gestion</strong></p>
-            <p style="margin:2px 0 0;font-size:13px;color:#6b7280">Factures, devis, clients, fournisseurs, stocks.</p>
-          </td></tr>
-          <tr><td style="padding:10px 0;border-bottom:1px solid #f3f4f6">
-            <p style="margin:0;font-size:14px;color:#111827"><strong>📒 Comptabilité</strong></p>
-            <p style="margin:2px 0 0;font-size:13px;color:#6b7280">Journal, grand livre, balance, états financiers.</p>
-          </td></tr>
-          <tr><td style="padding:10px 0">
-            <p style="margin:0;font-size:14px;color:#111827"><strong>👥 RH</strong></p>
-            <p style="margin:2px 0 0;font-size:13px;color:#6b7280">Employés, paie, contrats, congés, planning.</p>
-          </td></tr>
+
+        ${ctaButton(loginUrl, 'Me connecter à Athenis →', '#15803d')}
+
+        <h2 style="margin:36px 0 14px;font-size:18px;color:#111827;font-weight:700">
+          Ce que vous pouvez faire sur Athenis
+        </h2>
+        <p style="margin:0 0 18px;color:#6b7280;font-size:14px;line-height:1.6">
+          Athenis regroupe tous les outils dont une PME a besoin pour piloter son activité, en un seul logiciel.
+        </p>
+
+        ${moduleHtml}
+
+        <h2 style="margin:36px 0 12px;font-size:18px;color:#111827;font-weight:700">
+          📅 Vos 7 premiers jours — parcours conseillé
+        </h2>
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:8px">
+          <tr><td style="padding:10px 16px;font-size:13px;color:#78350f"><strong>Jour 1</strong> · Connexion + tour de l'interface + paramétrage du profil</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:#78350f;border-top:1px solid #fde68a"><strong>Jour 2</strong> · 🔒 Activer le 2FA (Paramètres → Sécurité)</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:#78350f;border-top:1px solid #fde68a"><strong>Jour 3</strong> · Créer vos 3-5 premiers clients et fournisseurs</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:#78350f;border-top:1px solid #fde68a"><strong>Jour 4</strong> · Émettre votre 1ère facture (Gestion → Factures de vente)</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:#78350f;border-top:1px solid #fde68a"><strong>Jour 5</strong> · Importer vos employés et créer leurs contrats</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:#78350f;border-top:1px solid #fde68a"><strong>Jour 6</strong> · Paramétrer votre exercice fiscal + zone comptable (OHADA / France)</td></tr>
+          <tr><td style="padding:10px 16px;font-size:13px;color:#78350f;border-top:1px solid #fde68a"><strong>Jour 7</strong> · Inviter vos collaborateurs (Paramètres → Utilisateurs)</td></tr>
         </table>
-        <div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:14px 18px;margin:28px 0 8px;border-radius:0 6px 6px 0">
-          <p style="margin:0;font-size:13px;color:#14532d;line-height:1.5">
-            <strong>Une question ?</strong> Répondez simplement à cet e-mail, nous sommes là pour vous aider.
+
+        <h2 style="margin:36px 0 12px;font-size:18px;color:#111827;font-weight:700">
+          💡 Astuces pour démarrer rapidement
+        </h2>
+        <ul style="margin:0 0 20px;padding-left:20px;color:#374151;font-size:14px;line-height:1.7">
+          <li><strong>Multi-devises</strong> : vos factures s'affichent automatiquement dans la devise de votre pays (F CFA, €, $…).</li>
+          <li><strong>Imprimer / PDF</strong> : tous les documents (factures, bulletins, états financiers) sont exportables en PDF.</li>
+          <li><strong>Recherche globale</strong> : tapez <kbd style="background:#f3f4f6;padding:1px 6px;border-radius:4px;font-size:11px">Ctrl + K</kbd> n'importe où pour chercher un client, une facture, un employé…</li>
+          <li><strong>App mobile</strong> : Athenis est aussi une PWA — ajoutez-la à l'écran d'accueil de votre téléphone.</li>
+        </ul>
+
+        <div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:16px 20px;margin:28px 0;border-radius:0 8px 8px 0">
+          <p style="margin:0 0 4px;font-size:14px;color:#14532d;font-weight:600">
+            👋 Une question ? Une idée ? Un bug ?
+          </p>
+          <p style="margin:0;font-size:13px;color:#166534;line-height:1.5">
+            Répondez simplement à cet e-mail — notre équipe lit et répond à chaque message.
           </p>
         </div>
+
         <p style="margin:24px 0 0;color:#9ca3af;font-size:13px">
           Excellente prise en main,<br>
           L'équipe Athenis
@@ -566,7 +738,354 @@ export async function sendRejectionEmail(to: string, opts: { firstName?: string 
   })
 }
 
-// ── 5. Notification interne au SUPER_ADMIN ────────────────────────────────────
+// ── 5. Première connexion ─────────────────────────────────────────────────────
+// Déclenché à la 1ère connexion réussie (lastLoginAt était null avant).
+// Plus court et plus actionnable que le welcome mail : "tu es là, voici TES
+// 3 premières actions concrètes maintenant".
+
+export async function sendFirstLoginEmail(
+  to: string,
+  opts: {
+    firstName?: string | null
+    accountType?: 'PERSONAL' | 'COMPANY' | 'CABINET' | null
+    companyName?: string | null
+  },
+): Promise<void> {
+  const greeting    = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+  const accountType = opts.accountType ?? 'COMPANY'
+
+  // 3 premières actions concrètes selon le profil
+  const firstSteps: Array<{ emoji: string; title: string; desc: string; path: string }> =
+    accountType === 'PERSONAL'
+      ? [
+          { emoji: '💸', title: 'Ajoutez votre premier revenu', desc: 'Salaire, freelance, ou autre source. Athenis catégorise ensuite tout automatiquement.', path: '/personal/income' },
+          { emoji: '📊', title: 'Définissez un objectif d\'épargne', desc: 'Un projet, une vacance, un fonds de sécurité — Athenis suit votre progression.', path: '/personal/savings' },
+          { emoji: '🔒', title: 'Activez le 2FA', desc: 'Protégez vos données financières avec une authentification à 2 facteurs.', path: '/app/settings/securite' },
+        ]
+      : accountType === 'CABINET'
+      ? [
+          { emoji: '👥', title: 'Invitez vos premiers clients', desc: 'Envoyez une invitation au gérant d\'une PME — il accepte et vous accédez à sa compta.', path: '/cabinet/clients' },
+          { emoji: '🔒', title: 'Sécurisez votre cabinet', desc: 'Activez le 2FA et configurez la politique de mots de passe pour votre équipe.', path: '/app/settings/securite' },
+          { emoji: '📒', title: 'Familiarisez-vous avec la vue client', desc: 'Choisissez un dossier de test, naviguez dans les modules comptabilité/gestion.', path: '/cabinet/dashboard' },
+        ]
+      : [
+          { emoji: '🏢', title: 'Renseignez votre entreprise', desc: 'Coordonnées, RCCM/SIRET, NIU, devise — base pour vos factures et déclarations.', path: '/app/settings' },
+          { emoji: '🧾', title: 'Créez votre 1ère facture', desc: 'Ajoutez un client, un article, et émettez votre facture en 2 minutes.', path: '/app/billing' },
+          { emoji: '🔒', title: 'Activez le 2FA', desc: 'Protégez votre compte avec une authentification à 2 facteurs.', path: '/app/settings/securite' },
+        ]
+
+  const stepsHtml = firstSteps.map((s, i) => {
+    const url = `${env.frontendUrl}${s.path}`
+    return `
+      <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin:0 0 12px;background:#fff;border:1px solid #e5e7eb;border-radius:10px">
+        <tr>
+          <td width="50" style="padding:18px 0 18px 18px;vertical-align:top">
+            <div style="width:34px;height:34px;border-radius:50%;background:#15803d;color:#fff;text-align:center;line-height:34px;font-weight:700;font-size:14px">${i + 1}</div>
+          </td>
+          <td style="padding:14px 18px;vertical-align:top">
+            <p style="margin:0 0 4px;font-size:15px;color:#111827;font-weight:700">${s.emoji} ${escapeHtml(s.title)}</p>
+            <p style="margin:0 0 8px;font-size:13px;color:#6b7280;line-height:1.5">${escapeHtml(s.desc)}</p>
+            <a href="${escapeHtml(url)}" style="display:inline-block;font-size:13px;color:#15803d;font-weight:600;text-decoration:none">→ Aller à cette étape</a>
+          </td>
+        </tr>
+      </table>
+    `
+  }).join('')
+
+  const stepsText = firstSteps.map((s, i) => `${i + 1}. ${s.title}\n   ${s.desc}\n   → ${env.frontendUrl}${s.path}`).join('\n\n')
+
+  await sendMail({
+    to,
+    subject: `👋 Heureux de vous revoir sur Athenis !`,
+    text: [
+      `${opts.firstName ? `${opts.firstName}, b` : 'B'}ienvenue dans votre espace !`,
+      ``,
+      `Vous venez de vous connecter pour la première fois${opts.companyName ? ` pour ${opts.companyName}` : ''}. Pour bien démarrer, voici 3 actions concrètes à réaliser dès maintenant :`,
+      ``,
+      stepsText,
+      ``,
+      `Besoin d'aide ? Répondez à cet e-mail.`,
+      ``,
+      `Bon démarrage,`,
+      `L'équipe Athenis`,
+    ].join('\n'),
+    html: emailLayout({
+      preheader: 'Trois actions concrètes pour bien démarrer sur Athenis.',
+      headerColor: '#15803d',
+      headerSubtitle: '👋 Première connexion',
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
+        <h1 style="margin:0 0 14px;font-size:22px;color:#111827;line-height:1.3">
+          Heureux de vous revoir sur Athenis !
+        </h1>
+        <p style="margin:0 0 24px;color:#6b7280;line-height:1.6;font-size:14px">
+          Vous venez de vous connecter pour la première fois${opts.companyName ? ` pour <strong>${escapeHtml(opts.companyName)}</strong>` : ''}.
+          Pour démarrer du bon pied, voici <strong>3 actions concrètes</strong> à réaliser dès maintenant :
+        </p>
+
+        ${stepsHtml}
+
+        <div style="background:#eff6ff;border-left:3px solid #2563eb;padding:14px 18px;margin:24px 0;border-radius:0 8px 8px 0">
+          <p style="margin:0;font-size:13px;color:#1e3a8a;line-height:1.5">
+            💡 <strong>Astuce</strong> : tapez <kbd style="background:#dbeafe;padding:1px 6px;border-radius:4px;font-size:11px">Ctrl + K</kbd>
+            (ou <kbd style="background:#dbeafe;padding:1px 6px;border-radius:4px;font-size:11px">Cmd + K</kbd> sur Mac) pour
+            ouvrir la recherche globale depuis n'importe où.
+          </p>
+        </div>
+
+        <p style="margin:24px 0 0;color:#9ca3af;font-size:13px">
+          Besoin d'un coup de main ? Répondez à cet e-mail, on vous accompagne.<br><br>
+          Bon démarrage,<br>
+          L'équipe Athenis
+        </p>
+      `,
+    }),
+  })
+}
+
+// ── 6. Mot de passe modifié — alerte sécurité ────────────────────────────────
+
+export async function sendPasswordChangedEmail(
+  to: string,
+  opts: {
+    firstName?: string | null
+    ip?: string | null
+    userAgent?: string | null
+    changedAt?: Date | null
+  },
+): Promise<void> {
+  const greeting = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+  const when     = (opts.changedAt ?? new Date()).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })
+  const ip       = opts.ip       ? escapeHtml(opts.ip)       : 'inconnue'
+  const device   = opts.userAgent ? escapeHtml(opts.userAgent.slice(0, 120)) : 'inconnu'
+
+  await sendMail({
+    to,
+    subject: '🔐 Votre mot de passe Athenis a été modifié',
+    text: [
+      `Bonjour,`,
+      ``,
+      `Le mot de passe de votre compte Athenis vient d'être modifié.`,
+      ``,
+      `Date     : ${when}`,
+      `Adresse  : ${ip}`,
+      `Appareil : ${opts.userAgent ?? 'inconnu'}`,
+      ``,
+      `Si c'est bien vous, vous pouvez ignorer cet e-mail.`,
+      ``,
+      `⚠️ SI CE N'EST PAS VOUS :`,
+      `Quelqu'un a probablement accès à votre compte. Agissez immédiatement :`,
+      `1. Contactez-nous en répondant à cet e-mail`,
+      `2. Si vous avez le 2FA, désactivez puis réactivez-le`,
+      `3. Vérifiez vos sessions actives dans Paramètres → Sécurité`,
+      ``,
+      `Pour votre sécurité, toutes les autres sessions ont été automatiquement déconnectées.`,
+      ``,
+      `L'équipe Athenis`,
+    ].join('\n'),
+    html: emailLayout({
+      preheader: 'Confirmation de modification du mot de passe — si ce n\'est pas vous, agissez vite.',
+      headerColor: '#0f766e',
+      headerSubtitle: '🔐 Notification de sécurité',
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
+        <h1 style="margin:0 0 14px;font-size:20px;color:#111827;line-height:1.3">
+          Votre mot de passe a été modifié
+        </h1>
+        <p style="margin:0 0 18px;color:#6b7280;line-height:1.6;font-size:14px">
+          Voici les détails de la modification — vérifiez qu'elle vient bien de vous.
+        </p>
+
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin:16px 0">
+          <tr><td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">Date et heure</td><td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;font-weight:600">${escapeHtml(when)}</td></tr>
+          <tr><td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#6b7280">Adresse IP</td><td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;font-family:monospace">${ip}</td></tr>
+          <tr><td style="padding:12px 16px;font-size:13px;color:#6b7280">Appareil</td><td style="padding:12px 16px;font-size:13px;color:#374151;line-height:1.4">${device}</td></tr>
+        </table>
+
+        <div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:12px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#14532d;line-height:1.5">
+            ✓ <strong>C'est bien vous ?</strong> Aucune action n'est requise. Toutes vos autres sessions ont été déconnectées par sécurité.
+          </p>
+        </div>
+
+        <div style="background:#fef2f2;border-left:3px solid #dc2626;padding:14px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0 0 6px;font-size:14px;color:#7f1d1d;font-weight:700">⚠️ Ce n'est pas vous ?</p>
+          <p style="margin:0;font-size:13px;color:#991b1b;line-height:1.5">
+            Quelqu'un a probablement compromis votre compte. Agissez vite :
+          </p>
+          <ol style="margin:8px 0 0;padding-left:18px;color:#991b1b;font-size:13px;line-height:1.6">
+            <li>Répondez à cet e-mail pour nous prévenir</li>
+            <li>Si vous avez le 2FA, désactivez puis réactivez-le</li>
+            <li>Vérifiez les actions récentes dans Paramètres → Sécurité</li>
+          </ol>
+        </div>
+
+        <p style="margin:20px 0 0;color:#9ca3af;font-size:13px">
+          L'équipe Athenis
+        </p>
+      `,
+    }),
+  })
+}
+
+// ── 7. 2FA activé — confirmation sécurité ────────────────────────────────────
+
+export async function sendTwoFactorEnabledEmail(
+  to: string,
+  opts: {
+    firstName?: string | null
+    enabledAt?: Date | null
+  },
+): Promise<void> {
+  const greeting = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+  const when     = (opts.enabledAt ?? new Date()).toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })
+
+  await sendMail({
+    to,
+    subject: '🔒 Authentification à 2 facteurs activée — Athenis',
+    text: [
+      `Bonjour,`,
+      ``,
+      `L'authentification à deux facteurs (2FA) vient d'être activée sur votre compte Athenis le ${when}.`,
+      ``,
+      `À chaque connexion, vous devrez désormais saisir un code à 6 chiffres généré par votre application d'authentification, en plus de votre mot de passe.`,
+      ``,
+      `Important :`,
+      `- Conservez vos 8 codes de récupération dans un endroit sûr.`,
+      `- En cas de perte de votre téléphone, ces codes vous permettent de vous reconnecter.`,
+      `- Chaque code ne fonctionne qu'une seule fois.`,
+      ``,
+      `Si vous n'êtes pas à l'origine de cette activation, contactez-nous immédiatement en répondant à cet e-mail.`,
+      ``,
+      `L'équipe Athenis`,
+    ].join('\n'),
+    html: emailLayout({
+      preheader: 'Votre compte Athenis est désormais protégé par une authentification à 2 facteurs.',
+      headerColor: '#15803d',
+      headerSubtitle: '🔒 Sécurité renforcée',
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
+        <h1 style="margin:0 0 14px;font-size:22px;color:#111827;line-height:1.3">
+          🔒 Le 2FA est activé sur votre compte
+        </h1>
+        <p style="margin:0 0 16px;color:#6b7280;line-height:1.6;font-size:14px">
+          Bravo — votre compte est désormais protégé par une authentification à deux facteurs.
+          À chaque connexion, vous devrez saisir un <strong>code à 6 chiffres</strong> généré par votre application
+          d'authentification, en plus de votre mot de passe.
+        </p>
+
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px 20px;margin:20px 0">
+          <p style="margin:0 0 6px;font-size:13px;color:#14532d;font-weight:600">
+            ✓ Activé le ${escapeHtml(when)}
+          </p>
+          <p style="margin:0;font-size:12px;color:#166534">
+            Vos 8 codes de récupération vous ont été affichés au moment de l'activation. Conservez-les.
+          </p>
+        </div>
+
+        <h2 style="margin:24px 0 10px;font-size:15px;color:#111827;font-weight:700">📋 À retenir</h2>
+        <ul style="margin:0 0 20px;padding-left:20px;color:#374151;font-size:13px;line-height:1.7">
+          <li><strong>Codes de récupération</strong> : gardez-les dans un gestionnaire de mots de passe ou imprimés dans un endroit sûr</li>
+          <li><strong>Perte du téléphone</strong> ? Utilisez un code de récupération pour vous reconnecter, puis réinitialisez le 2FA</li>
+          <li><strong>Chaque code de récupération ne fonctionne qu'une seule fois</strong></li>
+          <li>Pour désactiver le 2FA : Paramètres → Sécurité (mot de passe + code 2FA requis)</li>
+        </ul>
+
+        <div style="background:#fef2f2;border-left:3px solid #dc2626;padding:12px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#991b1b;line-height:1.5">
+            ⚠️ <strong>Ce n'est pas vous ?</strong> Répondez immédiatement à cet e-mail pour nous prévenir.
+            Nous pourrons désactiver le 2FA manuellement et sécuriser votre compte.
+          </p>
+        </div>
+
+        <p style="margin:24px 0 0;color:#9ca3af;font-size:13px">
+          L'équipe Athenis
+        </p>
+      `,
+    }),
+  })
+}
+
+// ── 8. Compte verrouillé après tentatives ratées ──────────────────────────────
+
+export async function sendAccountLockedEmail(
+  to: string,
+  opts: {
+    firstName?: string | null
+    lockedUntil: Date
+    ip?: string | null
+  },
+): Promise<void> {
+  const greeting = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+  const until    = opts.lockedUntil.toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' })
+  const ip       = opts.ip ? escapeHtml(opts.ip) : 'inconnue'
+
+  await sendMail({
+    to,
+    subject: '⚠️ Tentatives de connexion suspectes — votre compte est temporairement verrouillé',
+    text: [
+      `Bonjour,`,
+      ``,
+      `Nous avons détecté 5 tentatives de connexion infructueuses sur votre compte Athenis depuis l'adresse ${opts.ip ?? 'inconnue'}.`,
+      ``,
+      `Par sécurité, votre compte est temporairement verrouillé jusqu'au ${until}.`,
+      ``,
+      `Aucune action n'est requise de votre part. Vous pourrez retenter une connexion à la fin de la période de verrouillage.`,
+      ``,
+      `Si vous n'êtes pas à l'origine de ces tentatives, c'est probablement quelqu'un qui essaie de deviner votre mot de passe. Recommandations :`,
+      `- Changez votre mot de passe dès que possible`,
+      `- Activez le 2FA si ce n'est pas déjà fait`,
+      `- Vérifiez vos sessions actives dans Paramètres → Sécurité`,
+      ``,
+      `L'équipe Athenis`,
+    ].join('\n'),
+    html: emailLayout({
+      preheader: 'Votre compte est verrouillé pour 30 minutes suite à des tentatives de connexion infructueuses.',
+      headerColor: '#b45309',
+      headerSubtitle: '⚠️ Alerte sécurité',
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
+        <h1 style="margin:0 0 14px;font-size:20px;color:#111827;line-height:1.3">
+          Tentatives de connexion suspectes détectées
+        </h1>
+        <p style="margin:0 0 18px;color:#6b7280;line-height:1.6;font-size:14px">
+          Nous avons détecté <strong>5 tentatives de connexion infructueuses</strong> consécutives sur votre compte Athenis.
+          Par sécurité, votre compte est temporairement verrouillé.
+        </p>
+
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin:16px 0">
+          <tr><td style="padding:12px 16px;border-bottom:1px solid #fde68a;font-size:13px;color:#92400e;font-weight:600">Verrouillé jusqu'au</td><td style="padding:12px 16px;border-bottom:1px solid #fde68a;font-size:13px;color:#78350f">${escapeHtml(until)}</td></tr>
+          <tr><td style="padding:12px 16px;font-size:13px;color:#92400e;font-weight:600">Origine</td><td style="padding:12px 16px;font-size:13px;color:#78350f;font-family:monospace">${ip}</td></tr>
+        </table>
+
+        <div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:12px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#14532d;line-height:1.5">
+            ✓ <strong>C'est vous qui avez oublié votre mot de passe ?</strong>
+            Réessayez à partir de la fin du verrouillage. Aucune autre action n'est nécessaire.
+          </p>
+        </div>
+
+        <div style="background:#fef2f2;border-left:3px solid #dc2626;padding:14px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0 0 6px;font-size:14px;color:#7f1d1d;font-weight:700">⚠️ Ce n'est pas vous ?</p>
+          <p style="margin:0 0 8px;font-size:13px;color:#991b1b;line-height:1.5">
+            Quelqu'un essaie probablement de deviner votre mot de passe. Recommandations :
+          </p>
+          <ol style="margin:0;padding-left:18px;color:#991b1b;font-size:13px;line-height:1.6">
+            <li>Changez votre mot de passe dès que possible</li>
+            <li>Activez le 2FA si ce n'est pas déjà fait</li>
+            <li>Vérifiez vos sessions actives dans Paramètres → Sécurité</li>
+          </ol>
+        </div>
+
+        <p style="margin:20px 0 0;color:#9ca3af;font-size:13px">
+          L'équipe Athenis
+        </p>
+      `,
+    }),
+  })
+}
+
+// ── 9. Notification interne au SUPER_ADMIN ────────────────────────────────────
 
 export async function sendAdminNewSignupNotification(opts: {
   adminEmail: string

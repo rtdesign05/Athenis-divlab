@@ -14,6 +14,10 @@ import {
   sendVerificationEmail,
   sendPendingApprovalEmail,
   sendAdminNewSignupNotification,
+  sendFirstLoginEmail,
+  sendPasswordChangedEmail,
+  sendTwoFactorEnabledEmail,
+  sendAccountLockedEmail,
 } from '../../lib/email.js'
 import type {
   JwtPayload,
@@ -422,11 +426,12 @@ export async function login(
     if (user) {
       const attempts = user.failedAttempts + 1
       const shouldLock = attempts >= MAX_FAILED_ATTEMPTS
+      const lockedUntil = shouldLock ? new Date(Date.now() + LOCK_DURATION_MS) : null
       await prisma.user.update({
         where: { id: user.id },
         data: {
           failedAttempts: attempts,
-          ...(shouldLock ? { lockedUntil: new Date(Date.now() + LOCK_DURATION_MS) } : {}),
+          ...(lockedUntil ? { lockedUntil } : {}),
         },
       })
       await audit(
@@ -436,6 +441,15 @@ export async function login(
         ip, ua,
         { attempts },
       )
+
+      // Notif sécurité au user quand son compte vient d'être verrouillé
+      if (lockedUntil) {
+        void sendAccountLockedEmail(user.email, {
+          firstName:   user.nom,
+          lockedUntil,
+          ip,
+        }).catch((e) => logger.error('sendAccountLockedEmail failed', { userId: user.id, error: e }))
+      }
     }
     throw new AppError('Email ou mot de passe incorrect', 401, 'INVALID_CREDENTIALS')
   }
@@ -507,8 +521,29 @@ export async function login(
     isRestricted,
   })
   const refreshToken = await createRefreshToken(user.id)
+
+  // Détection de la première connexion : lastLoginAt était null avant cet update.
+  // On envoie un mail "premiers pas" différent du mail de bienvenue (qui est
+  // déclenché par l'approbation admin, parfois plusieurs heures avant la 1ère
+  // connexion effective).
+  const isFirstLogin = user.lastLoginAt === null
+
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
   await audit('LOGIN', user.id, companyId, ip, ua)
+
+  if (isFirstLogin) {
+    // Charge le nom de l'entreprise/cabinet pour personnaliser le mail
+    const orgName = companyId
+      ? (await prisma.company.findUnique({ where: { id: companyId }, select: { nom: true } }))?.nom
+      : cabinetId
+        ? (await prisma.cabinet.findUnique({ where: { id: cabinetId }, select: { nom: true } }))?.nom
+        : null
+    void sendFirstLoginEmail(user.email, {
+      firstName:   user.nom,
+      accountType: user.accountType as 'PERSONAL' | 'COMPANY' | 'CABINET',
+      companyName: orgName ?? null,
+    }).catch((e) => logger.error('sendFirstLoginEmail failed', { userId: user.id, error: e }))
+  }
 
   return {
     response: { accessToken, user: toUserProfile(user as unknown as DbUser, plan, modules, agenceId, agenceNom) },
@@ -734,17 +769,26 @@ export async function enableTotp(userId: string, dto: TotpEnableDto, ip: string,
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: {
-      twoFASecret: true,
+      email:        true,
+      nom:          true,
+      twoFASecret:  true,
       twoFAEnabled: true,
-      companyId: true,
+      companyId:    true,
     },
   })
   if (user.twoFAEnabled) throw new AppError('TOTP déjà activé', 409, 'TOTP_ALREADY_ENABLED')
   if (!user.twoFASecret) throw new AppError('Lancez la configuration TOTP d\'abord', 400, 'TOTP_NOT_SETUP')
   if (!authenticator.check(dto.code, decrypt(user.twoFASecret))) throw new AppError('Code TOTP invalide', 401, 'TOTP_INVALID')
 
+  const enabledAt = new Date()
   await prisma.user.update({ where: { id: userId }, data: { twoFAEnabled: true } })
   await audit('TOTP_ENABLED', userId, user.companyId ?? null, ip, ua)
+
+  // Notif sécurité au user — confirmation visible du changement critique
+  void sendTwoFactorEnabledEmail(user.email, {
+    firstName: user.nom,
+    enabledAt,
+  }).catch((e) => logger.error('sendTwoFactorEnabledEmail failed', { userId, error: e }))
 
   const backupCodes = Array.from({ length: 8 }, () => crypto.randomBytes(5).toString('hex').toUpperCase())
   return { enabled: true, backupCodes }
@@ -1058,8 +1102,10 @@ export async function changePassword(userId: string, dto: ChangePasswordDto, ip:
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: {
+      email:        true,
+      nom:          true,
       passwordHash: true,
-      companyId: true,
+      companyId:    true,
     },
   })
   if (!await bcrypt.compare(dto.currentPassword, user.passwordHash)) throw new AppError('Mot de passe actuel incorrect', 401, 'INVALID_CREDENTIALS')
@@ -1070,4 +1116,12 @@ export async function changePassword(userId: string, dto: ChangePasswordDto, ip:
     prisma.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } }),
   ])
   await audit('PASSWORD_CHANGED', userId, user.companyId ?? null, ip, ua)
+
+  // Notif sécurité au user (toujours bonne pratique : confirmer un changement de mdp)
+  void sendPasswordChangedEmail(user.email, {
+    firstName: user.nom,
+    ip,
+    userAgent: ua,
+    changedAt: new Date(),
+  }).catch((e) => logger.error('sendPasswordChangedEmail failed', { userId, error: e }))
 }
