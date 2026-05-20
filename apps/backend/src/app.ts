@@ -36,11 +36,27 @@ export function createApp() {
   )
 
   // ── CORS ──────────────────────────────────────────────────────────────────
+  // On accepte FRONTEND_URL + sa variante www (ou apex si FRONTEND_URL inclut www).
+  // Sentry a remonté un cas où https://www.athenis360.com appelait l'API alors
+  // que la canonique est https://athenis360.com — pour ne pas casser ces users
+  // pendant que nginx redirige, on liste les deux côté backend.
+  const allowedOrigins = (() => {
+    const list = [env.frontendUrl]
+    try {
+      const u = new URL(env.frontendUrl)
+      if (u.hostname.startsWith('www.')) {
+        list.push(`${u.protocol}//${u.hostname.slice(4)}${u.port ? ':' + u.port : ''}`)
+      } else {
+        list.push(`${u.protocol}//www.${u.hostname}${u.port ? ':' + u.port : ''}`)
+      }
+    } catch { /* env.frontendUrl mal formé : on n'ajoute pas de variante */ }
+    return new Set(list)
+  })()
+
   app.use(
     cors({
       origin: (origin, cb) => {
-        const allowed = [env.frontendUrl]
-        if (!origin || allowed.includes(origin)) return cb(null, true)
+        if (!origin || allowedOrigins.has(origin)) return cb(null, true)
         cb(new Error(`CORS: origin ${origin} not allowed`))
       },
       credentials: true,
