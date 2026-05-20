@@ -531,37 +531,38 @@ export function LoginPage() {
                 Télécharger l'application
               </p>
               <div className="flex flex-col gap-2 sm:flex-row">
-                {/* Google Play */}
-                <a
-                  href="#"
-                  className="flex flex-1 items-center gap-2.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 transition hover:bg-gray-50 hover:border-gray-300"
-                  aria-label="Télécharger sur Google Play"
+                {/* Google Play — bientôt disponible */}
+                <div
+                  className="flex flex-1 items-center gap-2.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 opacity-60 cursor-not-allowed relative"
+                  aria-label="Google Play — bientôt disponible"
+                  title="Bientôt disponible"
                 >
                   <PlayStoreIcon />
                   <div className="min-w-0">
-                    <p className="text-[9px] leading-none text-gray-400">Disponible sur</p>
-                    <p className="text-xs font-semibold text-gray-800 leading-tight">Google Play</p>
+                    <p className="text-[9px] leading-none text-gray-400">Bientôt sur</p>
+                    <p className="text-xs font-semibold text-gray-500 leading-tight">Google Play</p>
                   </div>
-                </a>
+                </div>
 
-                {/* App Store */}
-                <a
-                  href="#"
-                  className="flex flex-1 items-center gap-2.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 transition hover:bg-gray-50 hover:border-gray-300 text-gray-800"
-                  aria-label="Télécharger sur l'App Store"
+                {/* App Store — bientôt disponible */}
+                <div
+                  className="flex flex-1 items-center gap-2.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 opacity-60 cursor-not-allowed relative"
+                  aria-label="App Store — bientôt disponible"
+                  title="Bientôt disponible"
                 >
                   <AppStoreIcon />
                   <div className="min-w-0">
-                    <p className="text-[9px] leading-none text-gray-400">Disponible sur</p>
-                    <p className="text-xs font-semibold text-gray-800 leading-tight">App Store</p>
+                    <p className="text-[9px] leading-none text-gray-400">Bientôt sur</p>
+                    <p className="text-xs font-semibold text-gray-500 leading-tight">App Store</p>
                   </div>
-                </a>
+                </div>
 
-                {/* Windows */}
+                {/* Windows — hébergé sur le VPS */}
                 <a
-                  href="#"
+                  href="https://athenis360.com/downloads/Athenis_x64_fr-FR.msi"
                   className="flex flex-1 items-center gap-2.5 rounded-lg border border-gray-200 bg-white px-3 py-2.5 transition hover:bg-gray-50 hover:border-gray-300 text-[#0078D4]"
                   aria-label="Télécharger pour Windows"
+                  download
                 >
                   <WindowsIcon />
                   <div className="min-w-0">
