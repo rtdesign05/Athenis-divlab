@@ -1,5 +1,6 @@
 import { useAuth } from '@/features/auth/useAuth'
 import type { Plan, Module } from '@athenis/shared-types'
+import { getAllPlansPricing, getCountryConfig } from '@athenis/shared-types'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -8,13 +9,6 @@ const PLAN_LABELS: Record<Plan, string> = {
   STARTER: 'Starter',
   PRO:     'Pro',
   PREMIUM: 'Premium',
-}
-
-const PLAN_PRICES: Record<Plan, string> = {
-  FREE:    '0€',
-  STARTER: '9€',
-  PRO:     '29€',
-  PREMIUM: '79€',
 }
 
 const PLAN_BADGE_STYLES: Record<Plan, string> = {
@@ -43,11 +37,8 @@ const MODULE_LABELS: Record<Module, string> = {
 // Demo data
 const DEMO_USER_COUNT = 3
 
-const DEMO_INVOICES = [
-  { date: '01/04/2026', amount: '29,00€', status: 'Payé' },
-  { date: '01/03/2026', amount: '29,00€', status: 'Payé' },
-  { date: '01/02/2026', amount: '29,00€', status: 'Payé' },
-]
+// Demo invoice dates — montants calculés dynamiquement avec la devise locale
+const DEMO_INVOICE_DATES = ['01/04/2026', '01/03/2026', '01/02/2026']
 
 // Renewal date: first day of next month
 const RENEWAL_DATE = '01/05/2026'
@@ -80,6 +71,13 @@ export function FacturationPage() {
   const modules: Module[] = (user?.modules ?? []) as Module[]
   const maxUsers = PLAN_LIMITS[plan]
 
+  // ── Tarification multi-devise basée sur le pays de l'entreprise ─────────────
+  // Cameroun → F CFA (XAF), France → €, Sénégal → F CFA (XOF), USA → $, etc.
+  const countryCode  = user?.country ?? 'FR'
+  const countryCfg   = getCountryConfig(countryCode)
+  const allPricing   = getAllPlansPricing(countryCfg.currencyCode, countryCfg.locale, countryCfg.currencySymbol)
+  const currentPrice = allPricing[plan]
+
   return (
     <div className="max-w-3xl space-y-8">
       {/* Header */}
@@ -104,9 +102,9 @@ export function FacturationPage() {
                 {PLAN_LABELS[plan]}
               </span>
               <span className="text-lg font-bold text-gray-900">
-                {PLAN_PRICES[plan]}
+                {currentPrice.formatted}
                 {plan !== 'FREE' && (
-                  <span className="text-sm font-normal text-gray-500">/mois</span>
+                  <span className="text-sm font-normal text-gray-500"> / mois</span>
                 )}
               </span>
             </div>
@@ -144,6 +142,63 @@ export function FacturationPage() {
             </button>
           </div>
         </div>
+      </section>
+
+      {/* ── Compare all plans (multi-currency) ──────────────────────────────── */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold text-gray-800">Tous les forfaits</h2>
+          <span className="text-xs text-gray-400">
+            Prix affichés en <strong className="text-gray-600">{countryCfg.currency}</strong> ({countryCfg.currencySymbol})
+          </span>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {(['FREE', 'STARTER', 'PRO', 'PREMIUM'] as Plan[]).map((p) => {
+            const pricing = allPricing[p]
+            const isCurrent = p === plan
+            return (
+              <div
+                key={p}
+                className={`relative rounded-xl border p-4 transition-all ${
+                  isCurrent
+                    ? 'border-forest-500 bg-forest-50/40 ring-1 ring-forest-200'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                {isCurrent && (
+                  <span className="absolute -top-2 right-3 rounded-full bg-forest-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    Actuel
+                  </span>
+                )}
+                <p className={`text-xs font-bold uppercase tracking-wide ${PLAN_BADGE_STYLES[p].split(' ')[1] ?? 'text-gray-600'}`}>
+                  {PLAN_LABELS[p]}
+                </p>
+                <p className="mt-1 text-2xl font-bold text-gray-900 leading-none">
+                  {pricing.amount === 0 ? '0' : pricing.formatted.replace(/[^\d\s.,]/g, '').trim()}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {pricing.amount === 0
+                    ? 'Gratuit'
+                    : <>{pricing.symbol} <span className="text-gray-400">/ mois</span></>
+                  }
+                </p>
+                {pricing.amount > 0 && (
+                  <p className="mt-2 text-[11px] text-gray-400">
+                    ou {pricing.yearlyFormatted}/an (2 mois offerts)
+                  </p>
+                )}
+                <p className="mt-3 text-xs font-medium text-gray-600">
+                  Jusqu'à {PLAN_LIMITS[p]} utilisateur{PLAN_LIMITS[p] > 1 ? 's' : ''}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+
+        <p className="text-[11px] text-gray-400 italic">
+          Tarifs adaptés au pouvoir d'achat local. Les paiements seront prélevés dans cette devise lorsque la facturation sera activée.
+        </p>
       </section>
 
       {/* Modules section */}
@@ -201,15 +256,15 @@ export function FacturationPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {DEMO_INVOICES.map((inv, i) => (
+              {DEMO_INVOICE_DATES.map((date, i) => (
                 <tr key={i} className="hover:bg-gray-50/60 transition-colors">
-                  <td className="px-4 py-3 text-sm text-gray-700">{inv.date}</td>
+                  <td className="px-4 py-3 text-sm text-gray-700">{date}</td>
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                    {inv.amount}
+                    {currentPrice.formatted}
                   </td>
                   <td className="px-4 py-3">
                     <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                      {inv.status}
+                      Payé
                     </span>
                   </td>
                   <td className="px-4 py-3">

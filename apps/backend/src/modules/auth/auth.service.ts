@@ -10,6 +10,11 @@ import { env } from '../../config/env.js'
 import { AppError } from '../../middleware/errorHandler.js'
 import { getEffectivePlan, getEffectiveModules, getDefaultModules } from '../../lib/plans.js'
 import { generateAtheisNumber } from '../../lib/atheisNumber.js'
+import {
+  sendVerificationEmail,
+  sendPendingApprovalEmail,
+  sendAdminNewSignupNotification,
+} from '../../lib/email.js'
 import type {
   JwtPayload,
   UserProfile,
@@ -38,6 +43,8 @@ const BCRYPT_ROUNDS = 12
 const MAX_FAILED_ATTEMPTS = 5
 const LOCK_DURATION_MS = 30 * 60 * 1000
 const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000   // 24 h
+const VERIFICATION_TOKEN_BYTES = 32                       // 64 hex chars
 
 // Started at module load, awaited at first login — avoids top-level await blocking tsx watch
 const DUMMY_HASH_PROMISE = bcrypt.hash('athenis-internal-noop', BCRYPT_ROUNDS)
@@ -257,6 +264,25 @@ async function audit(
 }
 
 // ── Register ──────────────────────────────────────────────────────────────────
+//
+// FLOW phase de test :
+// 1. User signup → user créé avec emailVerified=false, approvalStatus=PENDING_APPROVAL, isActive=false
+// 2. Mail de vérification envoyé → user clique le lien → emailVerified=true
+//    → mail "compte en attente de validation" envoyé au user
+//    → notification envoyée à tous les SUPER_ADMINs
+// 3. SUPER_ADMIN approuve depuis /admin/users/pending → approvalStatus=APPROVED + isActive=true
+//    → mail de bienvenue envoyé au user
+// 4. Le user peut désormais se connecter normalement
+//
+// Aucun token JWT n'est émis à l'inscription : login impossible tant que la chaîne
+// vérification + approbation n'est pas complète.
+
+async function generateVerificationToken(): Promise<{ token: string; expiresAt: Date }> {
+  return {
+    token:     crypto.randomBytes(VERIFICATION_TOKEN_BYTES).toString('hex'),
+    expiresAt: new Date(Date.now() + EMAIL_VERIFICATION_TTL_MS),
+  }
+}
 
 export async function register(
   dto: RegisterDto,
@@ -268,20 +294,30 @@ export async function register(
 
   const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS)
   const atheisNumber = await generateAtheisNumber(dto.accountType as import('@prisma/client').AccountType)
+  const { token: verificationToken, expiresAt: verificationExpiresAt } = await generateVerificationToken()
+
+  // Tous les nouveaux comptes démarrent en PENDING_APPROVAL + non-vérifiés + inactifs
+  const baseUserData = {
+    email: dto.email,
+    passwordHash,
+    nom: dto.firstName ?? (dto.email.split('@')[0] ?? 'Utilisateur'),
+    prenom: dto.lastName ?? null,
+    atheisNumber,
+    role: 'ADMIN' as const,
+    isActive: false,
+    emailVerified: false,
+    emailVerificationToken: verificationToken,
+    emailVerificationExpiresAt: verificationExpiresAt,
+    approvalStatus: 'PENDING_APPROVAL' as const,
+  }
 
   let dbUser: DbUser
+  let companyNameForNotif: string | null = null
+  let countryForNotif: string | null = null
 
   if (dto.accountType === 'PERSONAL') {
     const user = await prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        accountType: 'PERSONAL',
-        nom: dto.firstName ?? (dto.email.split('@')[0] ?? 'Utilisateur'),
-        prenom: dto.lastName ?? null,
-        atheisNumber,
-        role: 'ADMIN',
-      },
+      data: { ...baseUserData, accountType: 'PERSONAL' },
       select: USER_SELECT,
     })
     dbUser = user as unknown as DbUser
@@ -289,6 +325,8 @@ export async function register(
     const registrationPlan = (dto.plan ?? 'FREE') as import('@prisma/client').Plan
     const modules = getDefaultModules(registrationPlan)
     const countryCfg = getCountryConfig(dto.country ?? 'FR')
+    companyNameForNotif = dto.companyName
+    countryForNotif = countryCfg.name
     dbUser = await prisma.$transaction(async (tx) => {
       const company = await tx.company.create({
         data: {
@@ -307,80 +345,47 @@ export async function register(
         },
       })
       const user = await tx.user.create({
-        data: {
-          email: dto.email,
-          passwordHash,
-          accountType: 'COMPANY',
-          nom: dto.firstName ?? (dto.email.split('@')[0] ?? 'Utilisateur'),
-          prenom: dto.lastName ?? null,
-          atheisNumber,
-          role: 'ADMIN',
-          companyId: company.id,
-        },
+        data: { ...baseUserData, accountType: 'COMPANY', companyId: company.id },
         select: USER_SELECT,
       })
       return user as unknown as DbUser
     })
   } else {
+    companyNameForNotif = dto.cabinetName
     dbUser = await prisma.$transaction(async (tx) => {
       const cabinet = await tx.cabinet.create({
-        data: {
-          nom: dto.cabinetName,
-          siret: dto.siret ?? null,
-        },
+        data: { nom: dto.cabinetName, siret: dto.siret ?? null },
       })
       const user = await tx.user.create({
-        data: {
-          email: dto.email,
-          passwordHash,
-          accountType: 'CABINET',
-          nom: dto.firstName ?? (dto.email.split('@')[0] ?? 'Utilisateur'),
-          prenom: dto.lastName ?? null,
-          atheisNumber,
-          role: 'ADMIN',
-          cabinetId: cabinet.id,
-        },
+        data: { ...baseUserData, accountType: 'CABINET', cabinetId: cabinet.id },
         select: USER_SELECT,
       })
       return user as unknown as DbUser
     })
   }
 
-  const companyId = dbUser.companyId ?? null
-  await audit('USER_CREATED', dbUser.id, companyId, ip, ua)
-
-  // Auto-login: issue tokens immediately (no email verification in WSL2 schema)
-  const plan = await getEffectivePlan(dbUser.accountType as AccountType, companyId)
-  const modules = await getEffectiveModules(dbUser.accountType as AccountType, companyId)
-  const { country: regCountry, currencySymbol: regCurrencySymbol } = await resolveLocale(
-    dbUser.accountType, companyId, dbUser.cabinetId, dbUser.id,
-  )
-
-  const role = dbRoleToUserRole(dbUser.role)
-  const accessToken = signAccessToken({
-    sub: dbUser.id,
-    email: dbUser.email,
-    accountType: dbUser.accountType as AccountType,
-    role,
-    platformRole: (dbUser.platformRole ?? 'USER') as 'USER' | 'SUPER_ADMIN',
-    companyId,
-    cabinetId: dbUser.cabinetId ?? null,
-    plan,
-    modules,
-    country: regCountry,
-    currencySymbol: regCurrencySymbol,
-    atheisNumber: dbUser.atheisNumber ?? null,
-    agenceId: null,
-    agenceNom: null,
-    agenceIds:    [],
-    isRestricted: false,
+  await audit('USER_CREATED', dbUser.id, dbUser.companyId ?? null, ip, ua, {
+    accountType: dbUser.accountType,
+    pendingApproval: true,
   })
-  const refreshToken = await createRefreshToken(dbUser.id)
 
+  // Envoi du mail de vérification (non-bloquant — un échec SMTP ne casse pas le signup)
+  void sendVerificationEmail(dbUser.email, {
+    token:     verificationToken,
+    firstName: dbUser.nom,
+  }).catch((e) => logger.error('sendVerificationEmail failed', { userId: dbUser.id, error: e }))
+
+  // Réponse minimale : pas de token, pas de profil complet. Le frontend redirige
+  // vers /auth/verify-email?pending=1&email=... pour afficher "vérifie ta boîte".
+  void companyNameForNotif; void countryForNotif
   return {
-    response: { accessToken, user: toUserProfile(dbUser, plan, modules, null, null) } as unknown as RegisterResponse,
-    refreshToken,
-    requiresEmailVerification: false,
+    response: {
+      accessToken: '',
+      user: null as never,
+      requiresEmailVerification: true,
+      email: dbUser.email,
+    } as unknown as RegisterResponse,
+    requiresEmailVerification: true,
   }
 }
 
@@ -399,6 +404,8 @@ export async function login(
       twoFASecret: true,
       failedAttempts: true,
       lockedUntil: true,
+      emailVerified: true,
+      approvalStatus: true,
     },
   })
 
@@ -406,10 +413,6 @@ export async function login(
     const minutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000)
     await audit('LOGIN_FAILED', user.id, user.companyId ?? null, ip, ua, { reason: 'account_locked' })
     throw new AppError(`Compte verrouillé. Réessayez dans ${minutes} min.`, 423, 'ACCOUNT_LOCKED')
-  }
-
-  if (user && !user.isActive) {
-    throw new AppError('Compte désactivé. Contactez votre administrateur.', 403, 'ACCOUNT_INACTIVE')
   }
 
   const hashToCompare = user?.passwordHash ?? await DUMMY_HASH_PROMISE
@@ -438,6 +441,39 @@ export async function login(
   }
 
   await prisma.user.update({ where: { id: user.id }, data: { failedAttempts: 0, lockedUntil: null } })
+
+  // ── Phase de test : guards email-verified + approval ────────────────────────
+  // Note : on les place APRÈS validation du mot de passe pour ne pas révéler
+  // l'existence d'un compte non-vérifié à un attaquant qui ne connaît pas le password.
+
+  if (!user.emailVerified) {
+    await audit('LOGIN_BLOCKED', user.id, user.companyId ?? null, ip, ua, { reason: 'email_not_verified' })
+    throw new AppError(
+      'Adresse e-mail non vérifiée. Vérifiez votre boîte de réception pour activer votre compte.',
+      403, 'EMAIL_NOT_VERIFIED',
+    )
+  }
+
+  if (user.approvalStatus === 'PENDING_APPROVAL') {
+    await audit('LOGIN_BLOCKED', user.id, user.companyId ?? null, ip, ua, { reason: 'pending_approval' })
+    throw new AppError(
+      'Compte en attente de validation par notre équipe. Vous recevrez un e-mail dès l\'activation.',
+      403, 'ACCOUNT_PENDING_APPROVAL',
+    )
+  }
+
+  if (user.approvalStatus === 'REJECTED') {
+    await audit('LOGIN_BLOCKED', user.id, user.companyId ?? null, ip, ua, { reason: 'rejected' })
+    throw new AppError(
+      'Votre demande d\'inscription n\'a pas été acceptée. Consultez l\'e-mail reçu pour plus d\'informations.',
+      403, 'ACCOUNT_REJECTED',
+    )
+  }
+
+  if (!user.isActive) {
+    await audit('LOGIN_BLOCKED', user.id, user.companyId ?? null, ip, ua, { reason: 'inactive' })
+    throw new AppError('Compte désactivé. Contactez votre administrateur.', 403, 'ACCOUNT_INACTIVE')
+  }
 
   if (user.twoFAEnabled) {
     return { response: { requiresTotp: true, tempToken: signTotpPendingToken(user.id) } as LoginResponse }
@@ -880,18 +916,134 @@ export async function acceptInvitation(
 }
 
 // ── Email verification ────────────────────────────────────────────────────────
-// WSL2 users table has no email_verified column — these are no-ops / stubs.
 
 export async function verifyEmail(
-  _token: string,
-  _ip: string,
-  _ua: string,
-): Promise<{ response: LoginResponse; refreshToken: string }> {
-  throw new AppError('La vérification email n\'est pas supportée dans cette configuration.', 400, 'NOT_SUPPORTED')
+  token: string,
+  ip: string,
+  ua: string,
+): Promise<{ response: LoginResponse; refreshToken?: string }> {
+  if (!token || token.length < 32) {
+    throw new AppError('Lien invalide.', 400, 'TOKEN_INVALID')
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { emailVerificationToken: token },
+    select: {
+      ...USER_SELECT,
+      emailVerified:              true,
+      emailVerificationExpiresAt: true,
+      approvalStatus:             true,
+    },
+  })
+
+  if (!user) {
+    throw new AppError('Lien invalide ou déjà utilisé.', 404, 'TOKEN_NOT_FOUND')
+  }
+  if (user.emailVerified) {
+    // Idempotent : ne rien faire de plus, renvoyer un statut "pending approval"
+    return {
+      response: {
+        accessToken: '',
+        user: null as never,
+        requiresApproval: user.approvalStatus !== 'APPROVED',
+      } as unknown as LoginResponse,
+    }
+  }
+  if (!user.emailVerificationExpiresAt || user.emailVerificationExpiresAt < new Date()) {
+    throw new AppError('Lien expiré. Demandez un nouvel e-mail de confirmation.', 410, 'TOKEN_EXPIRED')
+  }
+
+  // Marquer vérifié, invalider le token
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerified:              true,
+      emailVerificationToken:     null,
+      emailVerificationExpiresAt: null,
+    },
+  })
+
+  await audit('EMAIL_VERIFIED', user.id, user.companyId ?? null, ip, ua)
+
+  // Notifications : 1) user "compte en attente" / 2) admins "nouvelle inscription"
+  void sendPendingApprovalEmail(user.email, { firstName: user.nom })
+    .catch((e) => logger.error('sendPendingApprovalEmail failed', { userId: user.id, error: e }))
+
+  // Notifier les SUPER_ADMINs en parallèle (non-bloquant)
+  void notifySuperAdminsOfNewSignup({
+    userEmail:     user.email,
+    userFirstName: user.nom,
+    accountType:   user.accountType,
+    companyId:     user.companyId,
+    cabinetId:     user.cabinetId,
+  }).catch((e) => logger.error('notifySuperAdminsOfNewSignup failed', { userId: user.id, error: e }))
+
+  // Pas de tokens : il faut attendre l'approbation admin
+  return {
+    response: {
+      accessToken: '',
+      user: null as never,
+      requiresApproval: true,
+      email: user.email,
+    } as unknown as LoginResponse,
+  }
 }
 
-export async function resendVerification(_email: string): Promise<void> {
-  // Silent no-op
+async function notifySuperAdminsOfNewSignup(opts: {
+  userEmail: string
+  userFirstName: string
+  accountType: string
+  companyId: string | null
+  cabinetId: string | null
+}): Promise<void> {
+  const [admins, orgInfo] = await Promise.all([
+    prisma.user.findMany({
+      where: { platformRole: 'SUPER_ADMIN', isActive: true, emailVerified: true },
+      select: { email: true },
+    }),
+    opts.companyId
+      ? prisma.company.findUnique({
+          where: { id: opts.companyId },
+          select: { nom: true, pays: true },
+        })
+      : opts.cabinetId
+        ? prisma.cabinet
+            .findUnique({ where: { id: opts.cabinetId }, select: { nom: true } })
+            .then((c) => (c ? { nom: c.nom, pays: null as string | null } : null))
+        : Promise.resolve(null),
+  ])
+
+  await Promise.all(
+    admins.map((a) =>
+      sendAdminNewSignupNotification({
+        adminEmail:    a.email,
+        userEmail:     opts.userEmail,
+        userFirstName: opts.userFirstName,
+        accountType:   opts.accountType,
+        companyName:   orgInfo?.nom ?? null,
+        country:       orgInfo?.pays ?? null,
+      }).catch((e) => logger.error('sendAdminNewSignupNotification failed', { adminEmail: a.email, error: e })),
+    ),
+  )
+}
+
+export async function resendVerification(email: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, emailVerified: true, nom: true },
+  })
+
+  // Silent : ne rien révéler sur l'existence du compte (anti-enumeration)
+  if (!user || user.emailVerified) return
+
+  const { token, expiresAt } = await generateVerificationToken()
+  await prisma.user.update({
+    where: { id: user.id },
+    data:  { emailVerificationToken: token, emailVerificationExpiresAt: expiresAt },
+  })
+
+  void sendVerificationEmail(email, { token, firstName: user.nom })
+    .catch((e) => logger.error('sendVerificationEmail (resend) failed', { userId: user.id, error: e }))
 }
 
 export async function changePassword(userId: string, dto: ChangePasswordDto, ip: string, ua: string): Promise<void> {

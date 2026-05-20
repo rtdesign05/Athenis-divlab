@@ -33,6 +33,18 @@ model User {
   lastLoginAt    DateTime? @map("last_login_at")
   isActive       Boolean   @default(true) @map("is_active")
 
+  // Vérification email
+  emailVerified              Boolean   @default(false) @map("email_verified")
+  emailVerificationToken     String?   @unique         @map("email_verification_token")
+  emailVerificationExpiresAt DateTime?                 @map("email_verification_expires_at")
+
+  // Validation admin (workflow phase de test : chaque signup doit être approuvé par SUPER_ADMIN)
+  approvalStatus   ApprovalStatus @default(PENDING_APPROVAL) @map("approval_status")
+  approvedAt       DateTime?                                  @map("approved_at")
+  approvedById     String?                                    @map("approved_by_id")
+  rejectedAt       DateTime?                                  @map("rejected_at")
+  rejectionReason  String?                                    @map("rejection_reason")
+
   // Type de compte
   accountType  AccountType  @map("account_type")
 
@@ -82,6 +94,12 @@ enum Role {
 enum PlatformRole {
   USER
   SUPER_ADMIN
+}
+
+enum ApprovalStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
 }
 
 model RefreshToken {

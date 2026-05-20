@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
-import { PLAN_INFO, ALL_COUNTRIES, getCountryConfig } from '@athenis/shared-types'
+import { PLAN_INFO, ALL_COUNTRIES, getCountryConfig, getAllPlansPricing } from '@athenis/shared-types'
 import type { RegisterRequest, AccountType, Plan, CountryListItem } from '@athenis/shared-types'
 
 type Step = 1 | 2 | 3 | 4
@@ -433,10 +433,19 @@ export function Register() {
       )}
 
       {/* ── Step 3 — Plan selection (company only) ────────────────────────────── */}
-      {step === 3 && isCompany && (
+      {step === 3 && isCompany && (() => {
+        // Tarifs adaptés au pays sélectionné en step 2
+        const cfg     = getCountryConfig(form.country)
+        const pricing = getAllPlansPricing(cfg.currencyCode, cfg.locale, cfg.currencySymbol)
+        return (
         <div className="space-y-4">
           <button onClick={() => setStep(2)} className="text-sm text-gray-500 hover:text-gray-700">← Retour</button>
-          <h2 className="text-lg font-semibold text-gray-900">Choisissez votre forfait</h2>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Choisissez votre forfait</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Prix affichés en <strong className="text-gray-700">{cfg.currency}</strong> ({cfg.currencySymbol}) — adaptés à {cfg.name}.
+            </p>
+          </div>
 
           {error && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 font-medium">
@@ -445,7 +454,9 @@ export function Register() {
           )}
 
           <div className="space-y-3">
-            {PLAN_INFO.map((info) => (
+            {PLAN_INFO.map((info) => {
+              const price = pricing[info.plan]
+              return (
               <button
                 key={info.plan}
                 onClick={() => set('plan', info.plan)}
@@ -454,10 +465,10 @@ export function Register() {
                 }`}
               >
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-gray-900">{info.label}</p>
                     <span className="text-sm font-bold text-forest-700">
-                      {info.price === 0 ? 'Gratuit' : `${info.price}€/mois`}
+                      {price.amount === 0 ? 'Gratuit' : `${price.formatted}/mois`}
                     </span>
                   </div>
                   <p className="mt-0.5 text-sm text-gray-500">{info.description}</p>
@@ -469,16 +480,19 @@ export function Register() {
                   <div className="mt-1.5 text-xs text-gray-400">
                     {info.limits.maxUsers ? `${info.limits.maxUsers} utilisateur${info.limits.maxUsers > 1 ? 's' : ''} max` : 'Utilisateurs illimités'}
                     {info.limits.maxInvoicesPerMonth ? ` · ${info.limits.maxInvoicesPerMonth} factures/mois` : ''}
+                    {price.amount > 0 && <> · ou {price.yearlyFormatted}/an (2 mois offerts)</>}
                   </div>
                 </div>
                 {form.plan === info.plan && <span className="mt-0.5 text-forest-700">✓</span>}
               </button>
-            ))}
+              )
+            })}
           </div>
 
           <button onClick={nextStep} className="btn-primary w-full">Créer mon compte</button>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── Step 4 — Loading/submitting ───────────────────────────────────────── */}
       {step === 4 && (

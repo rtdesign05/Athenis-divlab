@@ -6,9 +6,10 @@ import { ChangePasswordModal } from '@/shared/components/ChangePasswordModal'
 // ── Nav items ─────────────────────────────────────────────────────────────────
 
 const NAV: Array<{ to: string; label: string; icon: string; end: boolean }> = [
-  { to: '/admin',        label: 'Tableau de bord', icon: '📊', end: true },
-  { to: '/admin/users',  label: 'Utilisateurs',    icon: '👥', end: false },
-  { to: '/admin/health', label: 'Santé système',   icon: '🔧', end: false },
+  { to: '/admin',                label: 'Tableau de bord',  icon: '📊', end: true  },
+  { to: '/admin/users/pending',  label: 'À valider',        icon: '⏳', end: false },
+  { to: '/admin/users',          label: 'Utilisateurs',     icon: '👥', end: false },
+  { to: '/admin/health',         label: 'Santé système',    icon: '🔧', end: false },
 ]
 
 // ── Layout ────────────────────────────────────────────────────────────────────

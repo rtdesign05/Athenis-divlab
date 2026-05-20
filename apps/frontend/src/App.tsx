@@ -292,9 +292,10 @@ const router = createBrowserRouter([
   {
     element: <AdminRoute />,
     children: [{ path: '/admin', lazy: lz(() => import('@/layouts/AdminLayout'), 'AdminLayout'), children: [
-      { index: true, lazy: lz(() => import('@/pages/app/admin/MetricsPage'), 'MetricsPage') },
-      { path: 'users',  lazy: lz(() => import('@/pages/app/admin/UsersPage'),  'UsersPage') },
-      { path: 'health', lazy: lz(() => import('@/pages/app/admin/HealthPage'), 'HealthPage') },
+      { index: true,                lazy: lz(() => import('@/pages/app/admin/MetricsPage'),       'MetricsPage') },
+      { path: 'users/pending',      lazy: lz(() => import('@/pages/app/admin/PendingUsersPage'),  'PendingUsersPage') },
+      { path: 'users',              lazy: lz(() => import('@/pages/app/admin/UsersPage'),         'UsersPage') },
+      { path: 'health',             lazy: lz(() => import('@/pages/app/admin/HealthPage'),        'HealthPage') },
     ]}],
   },
 

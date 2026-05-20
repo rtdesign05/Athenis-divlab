@@ -1,5 +1,5 @@
 /**
- * Routes d'administration — métriques SaaS
+ * Routes d'administration — métriques SaaS + validation des comptes
  * Accès réservé : platformRole === SUPER_ADMIN
  * (Le champ platformRole est distinct du champ role qui est un rôle d'entreprise.)
  */
@@ -8,6 +8,8 @@ import os from 'os'
 import { authenticate } from '../../middleware/authenticate.js'
 import { prisma } from '../../lib/prisma.js'
 import { env } from '../../config/env.js'
+import { logger } from '../../lib/logger.js'
+import { sendWelcomeEmail, sendRejectionEmail } from '../../lib/email.js'
 
 export const adminRouter = Router()
 
@@ -206,6 +208,138 @@ adminRouter.get('/users', async (req, res, next) => {
   } catch (err) {
     next(err)
   }
+})
+
+// ── GET /api/admin/users/pending ─────────────────────────────────────────────
+// Liste des comptes en attente de validation (email vérifié, approval=PENDING)
+adminRouter.get('/users/pending', async (_req, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: {
+        approvalStatus: 'PENDING_APPROVAL',
+        emailVerified:  true,
+      },
+      select: {
+        id:           true,
+        email:        true,
+        nom:          true,
+        prenom:       true,
+        accountType:  true,
+        atheisNumber: true,
+        createdAt:    true,
+        companyId:    true,
+        cabinetId:    true,
+        company:      { select: { nom: true, pays: true, plan: true, secteur: true, taille: true } },
+        cabinet:      { select: { nom: true, siret: true } },
+      },
+      orderBy: { createdAt: 'asc' }, // FIFO : les plus anciens en premier
+    })
+
+    res.json({ success: true, data: { items: users, total: users.length } })
+  } catch (err) { next(err) }
+})
+
+// ── GET /api/admin/users/pending/count ───────────────────────────────────────
+adminRouter.get('/users/pending/count', async (_req, res, next) => {
+  try {
+    const count = await prisma.user.count({
+      where: { approvalStatus: 'PENDING_APPROVAL', emailVerified: true },
+    })
+    res.json({ success: true, data: { count } })
+  } catch (err) { next(err) }
+})
+
+// ── POST /api/admin/users/:id/approve ────────────────────────────────────────
+adminRouter.post('/users/:id/approve', async (req, res, next) => {
+  try {
+    const userId = String(req.params['id'])
+    const approverId = req.user!.sub
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true, email: true, nom: true, accountType: true,
+        emailVerified: true, approvalStatus: true,
+        company: { select: { nom: true } },
+      },
+    })
+
+    if (!user)                              { res.status(404).json({ success: false, error: 'Utilisateur introuvable' }); return }
+    if (!user.emailVerified)                { res.status(400).json({ success: false, error: 'L\'email n\'est pas encore vérifié' }); return }
+    if (user.approvalStatus === 'APPROVED') { res.status(409).json({ success: false, error: 'Compte déjà approuvé' }); return }
+    if (user.approvalStatus === 'REJECTED') { res.status(409).json({ success: false, error: 'Compte refusé — utiliser /reset pour réinitialiser' }); return }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        approvalStatus: 'APPROVED',
+        approvedAt:     new Date(),
+        approvedById:   approverId,
+        isActive:       true,
+        rejectedAt:     null,
+        rejectionReason: null,
+      },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        action:    'USER_APPROVED',
+        resource:  'user',
+        userId:    approverId,
+        metadata:  { targetUserId: userId, targetEmail: user.email },
+      },
+    }).catch((e) => logger.error('audit USER_APPROVED failed', { error: e }))
+
+    void sendWelcomeEmail(user.email, {
+      firstName:   user.nom,
+      companyName: user.company?.nom ?? null,
+    }).catch((e) => logger.error('sendWelcomeEmail failed', { userId, error: e }))
+
+    res.json({ success: true, data: { id: userId, approvalStatus: 'APPROVED' } })
+  } catch (err) { next(err) }
+})
+
+// ── POST /api/admin/users/:id/reject ─────────────────────────────────────────
+adminRouter.post('/users/:id/reject', async (req, res, next) => {
+  try {
+    const userId = String(req.params['id'])
+    const approverId = req.user!.sub
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 500) : null
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, nom: true, approvalStatus: true },
+    })
+
+    if (!user)                              { res.status(404).json({ success: false, error: 'Utilisateur introuvable' }); return }
+    if (user.approvalStatus === 'REJECTED') { res.status(409).json({ success: false, error: 'Compte déjà refusé' }); return }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        approvalStatus:  'REJECTED',
+        rejectedAt:      new Date(),
+        rejectionReason: reason,
+        isActive:        false,
+        approvedAt:      null,
+        approvedById:    null,
+      },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        action:    'USER_REJECTED',
+        resource:  'user',
+        userId:    approverId,
+        metadata:  { targetUserId: userId, targetEmail: user.email, reason },
+      },
+    }).catch((e) => logger.error('audit USER_REJECTED failed', { error: e }))
+
+    void sendRejectionEmail(user.email, { firstName: user.nom, reason })
+      .catch((e) => logger.error('sendRejectionEmail failed', { userId, error: e }))
+
+    res.json({ success: true, data: { id: userId, approvalStatus: 'REJECTED' } })
+  } catch (err) { next(err) }
 })
 
 // ── GET /api/admin/stats/growth — inscriptions J-14 ──────────────────────────

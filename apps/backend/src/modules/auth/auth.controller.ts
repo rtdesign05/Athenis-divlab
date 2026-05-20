@@ -43,7 +43,8 @@ export async function verifyEmail(req: Request, res: Response, next: NextFunctio
       return
     }
     const { response, refreshToken } = await authService.verifyEmail(token, clientIp(req), userAgent(req))
-    authService.setRefreshCookie(res, refreshToken)
+    // Phase de test : verifyEmail ne renvoie pas de token (l'admin doit approuver d'abord)
+    if (refreshToken) authService.setRefreshCookie(res, refreshToken)
     res.json({ success: true, data: response })
   } catch (err) {
     next(err)

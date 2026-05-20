@@ -15,6 +15,9 @@ export type {
 export type { PlanLimits, PlanInfo } from './plans.js'
 export { PLAN_MODULES, PLAN_LIMITS, PLAN_INFO } from './plans.js'
 
+export type { PlanPricing } from './planPricing.js'
+export { getPlanPricing, getAllPlansPricing } from './planPricing.js'
+
 export type {
   JwtPayload,
   RegisterRequest,

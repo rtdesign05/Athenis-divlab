@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams, useNavigate, Link } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import { authApi } from '@/features/auth/authApi'
-import { useAuth } from '@/hooks/useAuth'
 
-type State = 'pending' | 'verifying' | 'success' | 'error'
+type State = 'pending' | 'verifying' | 'success' | 'awaiting_approval' | 'error'
 
 export function VerifyEmailPage() {
   const [searchParams] = useSearchParams()
-  const navigate       = useNavigate()
-  const { setToken }   = useAuth()
 
   const token   = searchParams.get('token')
   const pending = searchParams.get('pending') === '1'
@@ -26,12 +23,10 @@ export function VerifyEmailPage() {
     setState('verifying')
     authApi
       .verifyEmail(token)
-      .then((res) => {
-        const { accessToken } = res.data.data
-        if (accessToken) setToken(accessToken)
-        setState('success')
-        // Auto-redirect after 2 s
-        setTimeout(() => navigate('/', { replace: true }), 2000)
+      .then(() => {
+        // En phase de test : email vérifié = on attend la validation admin.
+        // Aucun token JWT n'est émis : on affiche un écran "compte en attente".
+        setState('awaiting_approval')
       })
       .catch((err: unknown) => {
         const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error
@@ -73,7 +68,7 @@ export function VerifyEmailPage() {
           </>
         )}
 
-        {/* Success */}
+        {/* Success — login direct (cas hérité, désactivé en phase de test) */}
         {state === 'success' && (
           <>
             <div className="mb-4 flex justify-center">
@@ -81,6 +76,33 @@ export function VerifyEmailPage() {
             </div>
             <h1 className="text-lg font-semibold text-gray-900">Adresse e-mail confirmée !</h1>
             <p className="mt-2 text-sm text-gray-500">Vous êtes connecté(e). Redirection en cours…</p>
+          </>
+        )}
+
+        {/* Awaiting admin approval — flow phase de test */}
+        {state === 'awaiting_approval' && (
+          <>
+            <div className="mb-4 flex justify-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-100 text-3xl">⏳</div>
+            </div>
+            <h1 className="text-lg font-semibold text-gray-900">E-mail confirmé ✅</h1>
+            <p className="mt-3 text-sm text-gray-500">
+              Merci d'avoir vérifié votre adresse e-mail. Votre compte est désormais en
+              <strong className="text-gray-700"> attente de validation</strong> par notre équipe.
+            </p>
+            <div className="mt-4 rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-left text-sm text-blue-900">
+              <p className="font-semibold mb-1">Prochaine étape</p>
+              <p className="text-blue-800">
+                Athenis est en phase de test fermée — chaque inscription est examinée manuellement.
+                Vous recevrez un <strong>e-mail dès l'activation</strong>, généralement sous 24-48 h.
+              </p>
+            </div>
+            <p className="mt-4 text-xs text-gray-400">
+              Pas besoin de revenir ici. On vous écrira directement.
+            </p>
+            <Link to="/auth/login" className="mt-6 block text-sm text-forest-700 hover:underline">
+              Retour à la connexion
+            </Link>
           </>
         )}
 
