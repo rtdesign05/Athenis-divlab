@@ -98,7 +98,18 @@ export function errorHandler(
     return
   }
 
-  // 6. Toute autre erreur — jamais d'objet vide dans les logs
+  // 6. CORS rejection — c'est un comportement attendu (sécurité), pas un bug.
+  //    On répond 403 + log en warn (pas error), pas de capture Sentry.
+  //    Évite que le téléphone sonne pour des origines bloquées légitimes
+  //    (proxies de dev, scripts, scrapers, etc.).
+  const errMsg = err instanceof Error ? err.message : String(err)
+  if (errMsg.startsWith('CORS:')) {
+    logger.warn('CORS rejection', { origin: req.headers.origin, path: req.path })
+    res.status(403).json({ success: false, error: 'Origine non autorisée', code: 'CORS_REJECTED' })
+    return
+  }
+
+  // 7. Toute autre erreur — jamais d'objet vide dans les logs
   const info = serializeError(err)
   logger.error('Unhandled error', { ...info, path: req.path, method: req.method })
   // Capture dans Sentry (no-op si DSN absent)
