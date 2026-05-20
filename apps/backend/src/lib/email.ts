@@ -1177,6 +1177,134 @@ export async function sendAccountLockedEmail(
   })
 }
 
+// ── 8b. Compte désactivé par un admin ────────────────────────────────────────
+
+export async function sendAccountDeactivatedEmail(
+  to: string,
+  opts: { firstName?: string | null; reason?: string | null },
+): Promise<void> {
+  const greeting = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+  const reason   = opts.reason?.trim()
+
+  await sendMail({
+    to,
+    subject: 'Votre compte Athenis a été désactivé',
+    text: [
+      `Bonjour,`,
+      ``,
+      `Votre compte Athenis a été désactivé par notre équipe.`,
+      reason ? `\nRaison : ${reason}\n` : '',
+      `Vous ne pouvez plus vous connecter pour le moment. Toutes vos sessions actives ont été fermées.`,
+      ``,
+      `Vos données restent conservées et seront restaurées si votre compte est réactivé.`,
+      ``,
+      `Pour toute question ou pour demander la réactivation, écrivez à contact@athenis360.com.`,
+      ``,
+      `L'équipe Athenis`,
+    ].filter(Boolean).join('\n'),
+    html: emailLayout({
+      preheader: 'Votre compte Athenis a été désactivé. Vos données restent conservées.',
+      headerColor: '#b45309',
+      headerSubtitle: '⚠️ Compte désactivé',
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
+        <h1 style="margin:0 0 14px;font-size:20px;color:#111827;line-height:1.3">
+          Votre compte a été désactivé
+        </h1>
+        <p style="margin:0 0 16px;color:#6b7280;line-height:1.6;font-size:14px">
+          Votre compte Athenis a été désactivé par notre équipe.
+          Vous ne pouvez plus vous connecter pour le moment et toutes vos sessions actives ont été fermées.
+        </p>
+        ${reason ? `
+        <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:16px 20px;margin:20px 0">
+          <p style="margin:0 0 6px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#92400e">Raison</p>
+          <p style="margin:0;font-size:14px;color:#78350f;line-height:1.6">${escapeHtml(reason)}</p>
+        </div>
+        ` : ''}
+        <div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:14px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#14532d;line-height:1.5">
+            ℹ️ <strong>Vos données restent conservées.</strong> Si votre compte est réactivé,
+            vous retrouverez votre espace exactement comme vous l'avez laissé.
+          </p>
+        </div>
+        <p style="margin:20px 0 0;color:#6b7280;font-size:14px;line-height:1.6">
+          Pour toute question ou demande de réactivation, écrivez-nous à
+          <a href="mailto:contact@athenis360.com" style="color:#1a3a2a">contact@athenis360.com</a>.
+        </p>
+        <p style="margin:20px 0 0;color:#9ca3af;font-size:13px">
+          L'équipe Athenis
+        </p>
+      `,
+    }),
+  })
+}
+
+// ── 8c. Compte supprimé définitivement ───────────────────────────────────────
+
+export async function sendAccountDeletedEmail(
+  to: string,
+  opts: { firstName?: string | null; reason?: string | null },
+): Promise<void> {
+  const greeting = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+  const reason   = opts.reason?.trim()
+
+  await sendMail({
+    to,
+    subject: 'Confirmation : votre compte Athenis a été supprimé',
+    text: [
+      `Bonjour,`,
+      ``,
+      `Votre compte Athenis a été définitivement supprimé.`,
+      reason ? `\nRaison : ${reason}\n` : '',
+      `Toutes vos données personnelles ont été effacées de nos systèmes.`,
+      `Conformément à nos obligations légales OHADA et françaises, les données comptables sont conservées 10 ans dans un format anonymisé.`,
+      ``,
+      `Nous sommes désolés de vous voir partir. Si vous avez un retour à nous faire pour améliorer Athenis, écrivez à contact@athenis360.com.`,
+      ``,
+      `L'équipe Athenis`,
+    ].filter(Boolean).join('\n'),
+    html: emailLayout({
+      preheader: 'Confirmation de la suppression de votre compte Athenis.',
+      headerColor: '#6b7280',
+      headerSubtitle: 'Suppression de compte',
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
+        <h1 style="margin:0 0 14px;font-size:20px;color:#111827;line-height:1.3">
+          Votre compte a été supprimé
+        </h1>
+        <p style="margin:0 0 16px;color:#6b7280;line-height:1.6;font-size:14px">
+          Conformément à votre demande ou à notre politique, votre compte Athenis a été
+          <strong>définitivement supprimé</strong> de nos systèmes.
+        </p>
+        ${reason ? `
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;margin:20px 0">
+          <p style="margin:0 0 6px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af">Raison</p>
+          <p style="margin:0;font-size:14px;color:#374151;line-height:1.6">${escapeHtml(reason)}</p>
+        </div>
+        ` : ''}
+        <div style="background:#eff6ff;border-left:3px solid #2563eb;padding:14px 18px;margin:20px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0 0 6px;font-size:13px;color:#1e3a8a;font-weight:600">📋 Conservation légale des données comptables</p>
+          <p style="margin:0;font-size:13px;color:#1e40af;line-height:1.5">
+            Conformément aux obligations légales OHADA (Acte uniforme révisé 2017) et françaises
+            (Code de commerce, art. L123-22), vos données comptables sont conservées
+            <strong>10 ans dans un format anonymisé</strong> et chiffré. Vos données personnelles
+            (e-mail, téléphone, etc.) ont été effacées immédiatement.
+          </p>
+        </div>
+        <p style="margin:20px 0 0;color:#6b7280;font-size:14px;line-height:1.6">
+          Nous sommes désolés de vous voir partir. Si vous avez un retour à nous faire pour améliorer
+          Athenis — réponse ou suggestion — écrivez-nous à
+          <a href="mailto:contact@athenis360.com" style="color:#1a3a2a">contact@athenis360.com</a>.
+        </p>
+        <p style="margin:20px 0 0;color:#9ca3af;font-size:13px">
+          Bonne continuation,<br>
+          L'équipe Athenis
+        </p>
+      `,
+    }),
+  })
+}
+
 // ── 9. Notification interne au SUPER_ADMIN ────────────────────────────────────
 
 export async function sendAdminNewSignupNotification(opts: {

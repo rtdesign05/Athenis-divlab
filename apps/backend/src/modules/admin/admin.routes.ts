@@ -9,7 +9,7 @@ import { authenticate } from '../../middleware/authenticate.js'
 import { prisma } from '../../lib/prisma.js'
 import { env } from '../../config/env.js'
 import { logger } from '../../lib/logger.js'
-import { sendWelcomeEmail, sendRejectionEmail } from '../../lib/email.js'
+import { sendWelcomeEmail, sendRejectionEmail, sendAccountDeactivatedEmail, sendAccountDeletedEmail } from '../../lib/email.js'
 
 export const adminRouter = Router()
 
@@ -341,6 +341,148 @@ adminRouter.post('/users/:id/reject', async (req, res, next) => {
       .catch((e) => logger.error('sendRejectionEmail failed', { userId, error: e }))
 
     res.json({ success: true, data: { id: userId, approvalStatus: 'REJECTED' } })
+  } catch (err) { next(err) }
+})
+
+// ── POST /api/admin/users/:id/deactivate ─────────────────────────────────────
+// Désactive un compte (soft) : is_active=false + révocation des tokens.
+// L'utilisateur ne peut plus se connecter. Toutes ses sessions actives sont fermées.
+adminRouter.post('/users/:id/deactivate', async (req, res, next) => {
+  try {
+    const userId = String(req.params['id'])
+    const adminId = req.user!.sub
+    const reason  = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 500) : null
+
+    if (userId === adminId) {
+      res.status(400).json({ success: false, error: 'Vous ne pouvez pas vous désactiver vous-même.', code: 'CANNOT_DEACTIVATE_SELF' })
+      return
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, nom: true, isActive: true, platformRole: true, companyId: true },
+    })
+    if (!user) { res.status(404).json({ success: false, error: 'Utilisateur introuvable' }); return }
+    if (!user.isActive) { res.status(409).json({ success: false, error: 'Compte déjà désactivé' }); return }
+
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: userId }, data: { isActive: false } }),
+      // Révoquer toutes les sessions actives → l'utilisateur est kické immédiatement
+      prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data:  { revokedAt: new Date() },
+      }),
+    ])
+
+    await prisma.auditLog.create({
+      data: {
+        action:   'USER_DEACTIVATED',
+        resource: 'user',
+        userId:   adminId,
+        companyId: user.companyId,
+        metadata: { targetUserId: userId, targetEmail: user.email, reason },
+      },
+    }).catch((e) => logger.error('audit USER_DEACTIVATED failed', { error: e }))
+
+    void sendAccountDeactivatedEmail(user.email, { firstName: user.nom, reason })
+      .catch((e) => logger.error('sendAccountDeactivatedEmail failed', { userId, error: e }))
+
+    res.json({ success: true, data: { id: userId, isActive: false } })
+  } catch (err) { next(err) }
+})
+
+// ── POST /api/admin/users/:id/reactivate ─────────────────────────────────────
+// Réactive un compte précédemment désactivé. L'utilisateur peut se reconnecter.
+adminRouter.post('/users/:id/reactivate', async (req, res, next) => {
+  try {
+    const userId  = String(req.params['id'])
+    const adminId = req.user!.sub
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, isActive: true, companyId: true },
+    })
+    if (!user) { res.status(404).json({ success: false, error: 'Utilisateur introuvable' }); return }
+    if (user.isActive) { res.status(409).json({ success: false, error: 'Compte déjà actif' }); return }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { isActive: true, failedAttempts: 0, lockedUntil: null },
+    })
+
+    await prisma.auditLog.create({
+      data: {
+        action:   'USER_REACTIVATED',
+        resource: 'user',
+        userId:   adminId,
+        companyId: user.companyId,
+        metadata: { targetUserId: userId, targetEmail: user.email },
+      },
+    }).catch((e) => logger.error('audit USER_REACTIVATED failed', { error: e }))
+
+    res.json({ success: true, data: { id: userId, isActive: true } })
+  } catch (err) { next(err) }
+})
+
+// ── DELETE /api/admin/users/:id ──────────────────────────────────────────────
+// Supprime définitivement un utilisateur. CASCADE :
+//   - Si COMPANY → supprime la company + toutes ses données (factures, employés, etc.)
+//   - Si CABINET → supprime le cabinet + ses invitations
+//   - Si PERSONAL → supprime ses revenus/dépenses/objectifs
+// IRRÉVERSIBLE. Pour les données comptables OHADA/PCG conservées 10 ans légalement,
+// utiliser plutôt deactivate.
+adminRouter.delete('/users/:id', async (req, res, next) => {
+  try {
+    const userId  = String(req.params['id'])
+    const adminId = req.user!.sub
+    const reason  = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 500) : null
+
+    if (userId === adminId) {
+      res.status(400).json({ success: false, error: 'Vous ne pouvez pas supprimer votre propre compte.', code: 'CANNOT_DELETE_SELF' })
+      return
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, nom: true, accountType: true, platformRole: true, companyId: true },
+    })
+    if (!user) { res.status(404).json({ success: false, error: 'Utilisateur introuvable' }); return }
+
+    // Garde-fou : ne pas supprimer le dernier SUPER_ADMIN de la plateforme
+    if (user.platformRole === 'SUPER_ADMIN') {
+      const otherSuperAdmins = await prisma.user.count({
+        where: { platformRole: 'SUPER_ADMIN', id: { not: userId }, isActive: true },
+      })
+      if (otherSuperAdmins === 0) {
+        res.status(400).json({ success: false, error: 'Impossible de supprimer le dernier super-administrateur actif de la plateforme.', code: 'LAST_SUPER_ADMIN' })
+        return
+      }
+    }
+
+    // Envoi du mail AVANT suppression (sinon on perd l'adresse)
+    void sendAccountDeletedEmail(user.email, { firstName: user.nom, reason })
+      .catch((e) => logger.error('sendAccountDeletedEmail failed', { userId, error: e }))
+
+    // Audit log avant suppression (préserver la trace) — on stocke un snapshot
+    await prisma.auditLog.create({
+      data: {
+        action:   'USER_DELETED',
+        resource: 'user',
+        userId:   adminId,
+        companyId: user.companyId,
+        metadata: {
+          targetUserId:    userId,
+          targetEmail:     user.email,
+          targetAccountType: user.accountType,
+          reason,
+        },
+      },
+    }).catch((e) => logger.error('audit USER_DELETED failed', { error: e }))
+
+    // Suppression effective (cascade via Prisma schema)
+    await prisma.user.delete({ where: { id: userId } })
+
+    res.json({ success: true, data: { id: userId, deleted: true } })
   } catch (err) { next(err) }
 })
 
