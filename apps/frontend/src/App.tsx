@@ -296,6 +296,7 @@ const router = createBrowserRouter([
       { path: 'users/pending',      lazy: lz(() => import('@/pages/app/admin/PendingUsersPage'),  'PendingUsersPage') },
       { path: 'users',              lazy: lz(() => import('@/pages/app/admin/UsersPage'),         'UsersPage') },
       { path: 'health',             lazy: lz(() => import('@/pages/app/admin/HealthPage'),        'HealthPage') },
+      { path: 'security',           lazy: lz(() => import('@/pages/app/admin/SecurityPage'),     'SecurityPage') },
     ]}],
   },
 
