@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Hook pre-commit Athenis : scanne les fichiers stagés pour des secrets
+# (clés API, mots de passe, tokens, etc.) avant chaque commit.
+#
+# Si secretlint détecte quelque chose qui ressemble à un secret, le commit
+# est annulé avec un message d'erreur. Bypass possible (à éviter) avec
+# --no-verify.
+#
+# Géré par lint-staged : seuls les fichiers ajoutés/modifiés sont scannés
+# (rapide même sur gros repo).
+
+npx lint-staged --concurrent false

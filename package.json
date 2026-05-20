@@ -13,10 +13,21 @@
     "lint": "npm run lint --workspaces --if-present",
     "prisma:generate": "npm run prisma:generate -w apps/backend",
     "prisma:migrate": "npm run prisma:migrate -w apps/backend",
-    "prisma:studio": "npm run prisma:studio -w apps/backend"
+    "prisma:studio": "npm run prisma:studio -w apps/backend",
+    "secretlint": "secretlint --secretlintrc .secretlintrc.json --secretlintignore .secretlintignore \"**/*\"",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*": [
+      "secretlint --secretlintrc .secretlintrc.json --secretlintignore .secretlintignore"
+    ]
   },
   "devDependencies": {
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
     "concurrently": "^8.2.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.5",
+    "secretlint": "^13.0.2",
     "typescript": "^5.4.5"
   },
   "engines": {
@@ -24,12 +35,12 @@
     "npm": ">=10.0.0"
   },
   "overrides": {
-    "@prisma/client":          "5.22.0",
-    "@prisma/engines":         "5.22.0",
+    "@prisma/client": "5.22.0",
+    "@prisma/engines": "5.22.0",
     "@prisma/engines-version": "5.22.0-44.605197351a3c8bdd595af2d2a9bc3025bca48ea2",
-    "@prisma/debug":           "5.22.0",
-    "@prisma/fetch-engine":    "5.22.0",
-    "@prisma/get-platform":    "5.22.0",
-    "prisma":                  "5.22.0"
+    "@prisma/debug": "5.22.0",
+    "@prisma/fetch-engine": "5.22.0",
+    "@prisma/get-platform": "5.22.0",
+    "prisma": "5.22.0"
   }
 }
