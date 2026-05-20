@@ -147,10 +147,19 @@ export function VerifyEmailPage() {
               {email ? <strong>{email}</strong> : 'votre adresse e-mail'}.
               {' '}Cliquez sur ce lien pour activer votre compte.
             </p>
-            <p className="mt-3 text-xs text-gray-400">
-              Pensez à vérifier vos spams si vous ne voyez rien dans les prochaines minutes.
-            </p>
-            <div className="mt-6 space-y-3">
+
+            {/* Box "pas reçu" plus visible */}
+            <div className="mt-5 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-left">
+              <p className="text-sm font-semibold text-amber-900 mb-2">📬 Pas reçu l'email ? Vérifiez ces points :</p>
+              <ul className="text-xs text-amber-800 space-y-1 list-disc list-inside">
+                <li>Regardez dans <strong>Spams</strong> ou <strong>Courrier indésirable</strong></li>
+                <li>L'e-mail vient de <code className="bg-amber-100 px-1 rounded">noreply@athenis360.com</code> — ajoutez-le aux contacts si possible</li>
+                <li>Délai habituel : moins d'une minute, parfois jusqu'à 5 min</li>
+                <li>L'adresse saisie est-elle correcte ? Tapez-la à la main si vous l'avez copiée-collée</li>
+              </ul>
+            </div>
+
+            <div className="mt-5 space-y-3">
               {email && (
                 resendSent ? (
                   <p className="text-sm text-green-700">✓ E-mail renvoyé à <strong>{email}</strong>.</p>
@@ -160,7 +169,7 @@ export function VerifyEmailPage() {
                     disabled={resendLoading}
                     className="btn-secondary w-full disabled:opacity-50"
                   >
-                    {resendLoading ? 'Envoi…' : 'Renvoyer l\'e-mail'}
+                    {resendLoading ? 'Envoi…' : '↻ Renvoyer l\'e-mail'}
                   </button>
                 )
               )}
@@ -168,6 +177,15 @@ export function VerifyEmailPage() {
                 Retour à la connexion
               </Link>
             </div>
+
+            {/* Lien support — accessible même si le bouton ne marche pas */}
+            <p className="mt-4 text-[11px] text-gray-400 leading-relaxed">
+              Toujours bloqué ? Écris à{' '}
+              <a href="mailto:contact@athenis360.com?subject=Probl%C3%A8me%20de%20cr%C3%A9ation%20de%20compte" className="text-forest-700 hover:underline">
+                contact@athenis360.com
+              </a>{' '}
+              avec ton adresse et l'erreur rencontrée. On répond sous 24h.
+            </p>
           </>
         )}
 

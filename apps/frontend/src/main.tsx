@@ -8,6 +8,7 @@ import { App } from './App'
 import { queryClient } from './lib/queryClient'
 import { initAnalytics } from './lib/analytics'
 import { initSentry } from './lib/sentry'
+import { UpdateBanner } from './components/UpdateBanner'
 import './lib/i18n'  // bootstrap i18next — doit être importé avant App
 import './index.css'
 
@@ -24,6 +25,7 @@ ReactDOM.createRoot(root).render(
       <AuthProvider>
         <App />
         <Toaster />
+        <UpdateBanner />
       </AuthProvider>
       {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>

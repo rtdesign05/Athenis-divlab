@@ -264,10 +264,44 @@ export function Register() {
         navigate(redirect)
       }
     } catch (e: unknown) {
-      const axiosErr = e as { response?: { status?: number; data?: { error?: string } } }
-      const status = axiosErr?.response?.status
-      const msg    = axiosErr?.response?.data?.error
-      setError(msg ?? 'Une erreur est survenue')
+      // Classification fine des erreurs pour donner un message actionnable.
+      // Avant : tout tombait sur le générique "Une erreur est survenue" qui ne
+      // donne aucun indice au user (et c'est souvent un offline / SW cassé /
+      // 500 transitoire — on veut différencier).
+      const axiosErr = e as { response?: { status?: number; data?: { error?: string; code?: string } }; message?: string; code?: string }
+      const status   = axiosErr?.response?.status
+      const apiMsg   = axiosErr?.response?.data?.error
+      const apiCode  = axiosErr?.response?.data?.code
+      const netCode  = axiosErr?.code  // axios codes: ECONNABORTED, ERR_NETWORK, etc.
+
+      let userMessage: string
+
+      if (!status && (netCode === 'ERR_NETWORK' || netCode === 'ECONNABORTED' || axiosErr?.message?.includes('Network'))) {
+        userMessage = 'Impossible de joindre Athenis. Vérifiez votre connexion internet et réessayez. Si le problème persiste, écrivez à contact@athenis360.com.'
+      } else if (status === 0 || !status) {
+        userMessage = 'Impossible de joindre le serveur. Si vous utilisez un bloqueur de pub ou un VPN, désactivez-le et réessayez. Sinon, contactez contact@athenis360.com.'
+      } else if (status === 409) {
+        userMessage = apiMsg ?? 'Cet email est déjà utilisé. Connectez-vous ou utilisez un autre email.'
+      } else if (status === 400) {
+        userMessage = apiMsg ?? 'Données invalides. Vérifiez le format de votre email et le mot de passe (8 caractères min, 1 majuscule, 1 chiffre).'
+      } else if (status === 429) {
+        userMessage = 'Trop de tentatives. Attendez quelques minutes avant de réessayer.'
+      } else if (status === 500 || status === 502 || status === 503) {
+        userMessage = 'Le service est temporairement indisponible. Réessayez dans quelques instants. Si le problème persiste, écrivez à contact@athenis360.com.'
+      } else {
+        userMessage = apiMsg ?? `Une erreur est survenue (code ${status ?? 'inconnu'}). Contactez contact@athenis360.com si le problème persiste.`
+      }
+
+      // Capture Sentry avec contexte pour debugger les cas vraiment cassés
+      try {
+        const { captureException } = await import('@sentry/react')
+        captureException(e, {
+          tags:   { feature: 'register', accountType: form.accountType ?? 'unknown', country: form.country, status: String(status ?? 'no-status') },
+          extra:  { apiCode, netCode, email: form.email.replace(/[a-zA-Z0-9]/g, 'x') /* email anonymisé */, userMessage },
+        })
+      } catch { /* sentry non chargé : ignore */ }
+
+      setError(userMessage)
       if (status === 409) {
         setStep(2)
       } else {

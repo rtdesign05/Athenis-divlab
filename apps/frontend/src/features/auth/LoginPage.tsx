@@ -168,14 +168,48 @@ export function LoginPage() {
         navigate(homeForType('COMPANY'), { replace: true })
       }
     } catch (err: unknown) {
-      const errData = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data
-      const code = errData?.code
+      const e = err as { response?: { status?: number; data?: { error?: string; code?: string } }; message?: string; code?: string }
+      const status  = e?.response?.status
+      const errData = e?.response?.data
+      const code    = errData?.code
+      const netCode = e?.code
+
       if (code === 'EMAIL_NOT_VERIFIED') {
         setEmailNotVerified(true)
         setError('Veuillez confirmer votre adresse e-mail avant de vous connecter.')
       } else {
         setEmailNotVerified(false)
-        setError(errData?.error ?? 'Identifiants incorrects')
+        // Messages clairs selon le type d'erreur
+        let msg: string
+        if (!status && (netCode === 'ERR_NETWORK' || netCode === 'ECONNABORTED' || e?.message?.includes('Network'))) {
+          msg = 'Impossible de joindre Athenis. Vérifiez votre connexion internet.'
+        } else if (!status || status === 0) {
+          msg = 'Impossible de joindre le serveur. Désactivez votre bloqueur de pub/VPN puis réessayez.'
+        } else if (code === 'ACCOUNT_PENDING_APPROVAL') {
+          msg = errData?.error ?? 'Votre compte est en attente de validation par notre équipe.'
+        } else if (code === 'ACCOUNT_REJECTED') {
+          msg = errData?.error ?? 'Votre demande d\'inscription n\'a pas été acceptée.'
+        } else if (code === 'ACCOUNT_LOCKED') {
+          msg = errData?.error ?? 'Compte verrouillé suite à plusieurs tentatives ratées. Réessayez dans 30 min.'
+        } else if (status === 429) {
+          msg = 'Trop de tentatives. Attendez quelques minutes.'
+        } else if (status === 500 || status === 502 || status === 503) {
+          msg = 'Service temporairement indisponible. Réessayez dans quelques instants.'
+        } else {
+          msg = errData?.error ?? 'Email ou mot de passe incorrect.'
+        }
+        setError(msg)
+
+        // Sentry capture sur erreurs serveur (pas pour les 401 normaux)
+        if (!status || status >= 500) {
+          try {
+            const { captureException } = await import('@sentry/react')
+            captureException(err, {
+              tags:  { feature: 'login', status: String(status ?? 'no-status') },
+              extra: { apiCode: code, netCode, email: email.replace(/[a-zA-Z0-9]/g, 'x') },
+            })
+          } catch { /* sentry off */ }
+        }
       }
       setShake(true)
     } finally {
