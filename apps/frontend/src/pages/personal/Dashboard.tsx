@@ -14,32 +14,68 @@ function catLabel(cat: string, type: 'REVENU' | 'DEPENSE') {
   return found ? `${found.emoji} ${found.label}` : cat
 }
 
+/** Initialise au mois en cours en format 'YYYY-MM' (input[type=month]) */
+function defaultPeriod(): string {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** Parse 'YYYY-MM' → { annee, mois } (mois 1-12) */
+function parsePeriod(s: string): { annee: number; mois: number } {
+  const [y, m] = s.split('-')
+  return {
+    annee: parseInt(y ?? '0', 10) || new Date().getFullYear(),
+    mois:  parseInt(m ?? '0', 10) || (new Date().getMonth() + 1),
+  }
+}
+
 export function PersonalDashboard() {
   const { user } = useAuth()
+  const [periode, setPeriode] = useState<string>(defaultPeriod)
   const [data, setData]       = useState<PersonalDashboard | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
 
   useEffect(() => {
-    personalApi.dashboard()
+    setLoading(true)
+    setError('')
+    const { annee, mois } = parsePeriod(periode)
+    personalApi.dashboard({ annee, mois })
       .then(setData)
       .catch(() => setError('Impossible de charger le tableau de bord'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [periode])
 
-  const now    = new Date()
-  const moisFr = now.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+  // Libellé "Mai 2026" pour le sous-titre
+  const { annee, mois } = parsePeriod(periode)
+  const periodeLabel = new Date(annee, mois - 1, 1)
+    .toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">
-          Bonjour{user?.email ? ` 👋` : ' 👋'}
-        </h2>
-        <p className="mt-1 text-sm text-gray-500">
-          Situation financière — <span className="capitalize">{moisFr}</span>
-        </p>
+      {/* Header avec sélecteur de période */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">
+            Bonjour{user?.email ? ` 👋` : ' 👋'}
+          </h2>
+          <p className="mt-1 text-sm text-gray-500">
+            Situation financière — <span className="capitalize">{periodeLabel}</span>
+          </p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="periode" className="text-xs font-medium uppercase tracking-wide text-gray-500">
+            Période
+          </label>
+          <input
+            id="periode"
+            type="month"
+            className="input w-full sm:w-44"
+            value={periode}
+            onChange={(e) => setPeriode(e.target.value || defaultPeriod())}
+            max={defaultPeriod()}
+          />
+        </div>
       </div>
 
       {loading && (
@@ -60,9 +96,13 @@ export function PersonalDashboard() {
           {/* KPI Cards */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="card">
-              <p className="text-sm font-medium text-gray-500">Solde total</p>
-              <p className="mt-2 text-2xl font-bold text-gray-900">{fmt(data.soldeTotalComptes)}</p>
-              <p className="mt-1 text-xs text-gray-400">{data.comptes.length} compte{data.comptes.length > 1 ? 's' : ''}</p>
+              <p className="text-sm font-medium text-gray-500">Solde de la période</p>
+              <p className={`mt-2 text-2xl font-bold ${data.soldeTotalComptes >= 0 ? 'text-forest-700' : 'text-red-500'}`}>
+                {fmt(data.soldeTotalComptes)}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                {data.soldeTotalComptes >= 0 ? 'Revenus > Dépenses' : 'Dépenses > Revenus'}
+              </p>
             </div>
             <div className="card">
               <p className="text-sm font-medium text-gray-500">Revenus du mois</p>
@@ -85,10 +125,10 @@ export function PersonalDashboard() {
             </div>
           </div>
 
-          {/* Transactions récentes */}
+          {/* Transactions récentes — DE LA PÉRIODE SÉLECTIONNÉE */}
           <div className="card">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Transactions récentes</h3>
+              <h3 className="font-semibold text-gray-900">Transactions de la période</h3>
               <div className="flex gap-3 text-xs">
                 <Link to="/personal/income" className="text-green-700 hover:underline">Revenus</Link>
                 <Link to="/personal/expenses" className="text-red-600 hover:underline">Dépenses</Link>
@@ -96,7 +136,7 @@ export function PersonalDashboard() {
             </div>
             {data.transactionsRecentes.length === 0 ? (
               <div className="rounded-lg bg-gray-50 py-10 text-center text-sm text-gray-400">
-                Aucune transaction enregistrée.<br />
+                Aucune transaction enregistrée sur cette période.<br />
                 <Link to="/personal/income" className="mt-2 inline-block text-forest-700 hover:underline">Ajouter un revenu</Link>
                 {' '}ou{' '}
                 <Link to="/personal/expenses" className="text-forest-700 hover:underline">une dépense</Link>
@@ -127,9 +167,8 @@ export function PersonalDashboard() {
             )}
           </div>
 
-          {/* Comptes & Objectifs */}
+          {/* Comptes & Objectifs (atemporels — état actuel) */}
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {/* Comptes */}
             <div className="card">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="font-semibold text-gray-900">Mes comptes</h3>
@@ -157,7 +196,6 @@ export function PersonalDashboard() {
               )}
             </div>
 
-            {/* Objectifs */}
             <div className="card">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="font-semibold text-gray-900">Objectifs d'épargne</h3>
@@ -196,18 +234,6 @@ export function PersonalDashboard() {
             </div>
           </div>
         </>
-      )}
-
-      {/* Empty state si aucune donnée */}
-      {!loading && !error && data && data.transactionsRecentes.length === 0 && data.comptes.length === 0 && (
-        <div className="rounded-xl border-2 border-dashed border-gray-200 p-8 text-center">
-          <p className="text-lg font-semibold text-gray-700">Bienvenue dans votre espace personnel 🎉</p>
-          <p className="mt-2 text-sm text-gray-500">Commencez par enregistrer vos revenus et dépenses pour suivre votre budget.</p>
-          <div className="mt-4 flex justify-center gap-3">
-            <Link to="/personal/income" className="btn-primary text-sm">+ Ajouter un revenu</Link>
-            <Link to="/personal/expenses" className="btn-secondary text-sm">+ Ajouter une dépense</Link>
-          </div>
-        </div>
       )}
     </div>
   )

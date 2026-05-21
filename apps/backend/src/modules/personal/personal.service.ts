@@ -10,33 +10,57 @@ function toNum(d: Prisma.Decimal | null | undefined): number {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
-export async function getDashboard(userId: string) {
-  const now          = new Date()
-  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+/**
+ * Renvoie l'agrégat du dashboard personnel pour une période donnée.
+ *
+ * @param userId   user authentifié
+ * @param period   { annee, mois } 1-12 ; par défaut : mois en cours
+ *
+ * Sémantique des champs renvoyés :
+ *   - revenusMois / depensesMois : sommes des opérations DATÉES dans le mois
+ *   - soldeTotalComptes : solde NET de la période = revenusMois - depensesMois
+ *     (le user a explicitement demandé que le solde reflète la période, pas
+ *     le cumul des comptes bancaires)
+ *   - tauxEpargne : (revenus - dépenses) / revenus en %
+ *   - transactionsRecentes : 5 dernières opérations DATÉES dans le mois
+ *   - comptes / objectifs : atemporels (état actuel)
+ */
+export async function getDashboard(
+  userId: string,
+  period?: { annee?: number; mois?: number },
+) {
+  const now    = new Date()
+  const annee  = period?.annee && Number.isFinite(period.annee)
+    ? Math.trunc(period.annee)
+    : now.getFullYear()
+  const moisIn = period?.mois  && Number.isFinite(period.mois)
+    ? Math.trunc(period.mois)
+    : (now.getMonth() + 1) // human-1-based
+  const mois   = Math.min(12, Math.max(1, moisIn))
+
+  const periodStart = new Date(annee, mois - 1, 1)
+  const periodEnd   = new Date(annee, mois,     1) // exclusif
 
   // Ensure the personal profile exists (no-op for returning users)
   await prisma.personalProfile.upsert({ where: { userId }, create: { userId }, update: {} }).catch(() => null)
 
+  const dateInPeriod = { date: { gte: periodStart, lt: periodEnd } }
+
   const [
-    revenusMoisAgg,
-    depensesMoisAgg,
-    comptesAgg,
+    revenusPeriodeAgg,
+    depensesPeriodeAgg,
     comptesList,
     objectifsList,
     recentRevenus,
     recentDepenses,
   ] = await Promise.all([
     prisma.personalRevenue.aggregate({
-      where: { userId, date: { gte: firstOfMonth } },
+      where: { userId, ...dateInPeriod },
       _sum:  { amount: true },
     }),
     prisma.personalExpense.aggregate({
-      where: { userId, date: { gte: firstOfMonth } },
+      where: { userId, ...dateInPeriod },
       _sum:  { amount: true },
-    }),
-    prisma.personalCompte.aggregate({
-      where: { userId },
-      _sum:  { balance: true },
     }),
     prisma.personalCompte.findMany({
       where:   { userId },
@@ -47,25 +71,25 @@ export async function getDashboard(userId: string) {
       orderBy: [{ achieved: 'asc' }, { deadline: 'asc' }],
     }),
     prisma.personalRevenue.findMany({
-      where:   { userId },
+      where:   { userId, ...dateInPeriod },
       orderBy: { date: 'desc' },
       take:    5,
     }),
     prisma.personalExpense.findMany({
-      where:   { userId },
+      where:   { userId, ...dateInPeriod },
       orderBy: { date: 'desc' },
       take:    5,
     }),
   ])
 
-  const revenusMois  = toNum(revenusMoisAgg._sum?.amount)
-  const depensesMois = toNum(depensesMoisAgg._sum?.amount)
-  const soldeTotal   = toNum(comptesAgg._sum?.balance)
+  const revenusMois  = toNum(revenusPeriodeAgg._sum?.amount)
+  const depensesMois = toNum(depensesPeriodeAgg._sum?.amount)
+  const soldePeriode = revenusMois - depensesMois
 
   const tauxEpargne =
     revenusMois > 0 ? Math.round(((revenusMois - depensesMois) / revenusMois) * 100) : 0
 
-  // Merge and sort the 5 most recent transactions across revenus + dépenses
+  // 5 dernières opérations de la période (revenus + dépenses confondus)
   const transactionsRecentes = [
     ...recentRevenus.map((r) => ({
       id:         r.id,
@@ -92,9 +116,11 @@ export async function getDashboard(userId: string) {
     .slice(0, 5)
 
   return {
+    annee,
+    mois,
     revenusMois,
     depensesMois,
-    soldeTotalComptes: soldeTotal,
+    soldeTotalComptes: soldePeriode,   // ← solde NET de la période
     tauxEpargne,
     comptes: comptesList.map((c) => ({
       id:        c.id,

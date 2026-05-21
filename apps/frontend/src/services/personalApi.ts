@@ -48,12 +48,15 @@ export interface PersonalTransaction extends PersonalRevenu {
 }
 
 export interface PersonalDashboard {
-  revenusMois: number
+  annee:        number
+  mois:         number
+  revenusMois:  number
   depensesMois: number
+  /** Solde NET de la période (revenus - dépenses), pas le solde des comptes */
   soldeTotalComptes: number
-  tauxEpargne: number
-  comptes: PersonalCompte[]
-  objectifs: PersonalObjectif[]
+  tauxEpargne:  number
+  comptes:      PersonalCompte[]
+  objectifs:    PersonalObjectif[]
   transactionsRecentes: PersonalTransaction[]
 }
 
@@ -145,8 +148,9 @@ type CreateDepenseFR = Omit<PersonalDepense, 'id' | 'createdAt'>
 
 export const personalApi = {
   // Dashboard (backend renvoie déjà en français — voir personal.service.getDashboard)
-  dashboard: () =>
-    api.get<{ data: PersonalDashboard }>('/personal/dashboard').then(d),
+  // params optionnels { annee, mois } → mois en cours par défaut
+  dashboard: (params?: { annee?: number; mois?: number }) =>
+    api.get<{ data: PersonalDashboard }>('/personal/dashboard', { params }).then(d),
 
   // Revenus ───────────────────────────────────────────────────────────────────
   revenus: {

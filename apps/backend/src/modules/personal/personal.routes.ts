@@ -23,7 +23,14 @@ personalRouter.use(authenticate, (req, res, next) => {
 
 personalRouter.get('/dashboard', async (req, res, next) => {
   try {
-    const data = await svc.getDashboard(req.user!.sub)
+    const anneeRaw = req.query['annee']
+    const moisRaw  = req.query['mois']
+    const annee = typeof anneeRaw === 'string' && anneeRaw.length > 0 ? parseInt(anneeRaw, 10) : undefined
+    const mois  = typeof moisRaw  === 'string' && moisRaw.length  > 0 ? parseInt(moisRaw,  10) : undefined
+    const data  = await svc.getDashboard(req.user!.sub, {
+      ...(annee !== undefined ? { annee } : {}),
+      ...(mois  !== undefined ? { mois  } : {}),
+    })
     res.json({ success: true, data })
   } catch (e) { next(e) }
 })
