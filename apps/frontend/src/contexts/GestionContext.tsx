@@ -1229,7 +1229,7 @@ const GestionContext = createContext<GestionContextValue | null>(null)
 export function GestionProvider({ children }: { children: ReactNode }) {
   // QueryClient pour invalider les caches comptabilité/dashboard après mutations
   const qc = useQueryClient()
-  const [commandes,      setCommandes]      = useState<Commande[]>(INIT_COMMANDES)
+  const [commandes,      setCommandes]      = useState<Commande[]>([])
   // achats chargés depuis l'API ; INIT_ACHATS sert de fallback si la requête échoue
   const [achats,         setAchats]         = useState<Achat[]>([])
   // Map interne reference → UUID (pour les mutations API sans changer l'interface)
@@ -1253,9 +1253,9 @@ export function GestionProvider({ children }: { children: ReactNode }) {
         achatDbIds.current = idMap
         setAchats(list)
       })
-      .catch(() => {
-        // Fallback sur les données démo si l'API est inaccessible
-        setAchats(INIT_ACHATS)
+      .catch((err) => {
+        console.error('[achats] purchasesApi.listOrders ORDER error', err)
+        setAchats([])
       })
   }, [])
 
@@ -1272,9 +1272,9 @@ export function GestionProvider({ children }: { children: ReactNode }) {
         factureAchatDbIds.current = idMap
         setFacturesAchats(list)
       })
-      .catch(() => {
-        // Fallback démo
-        setFacturesAchats(INIT_FACTURES_ACHATS)
+      .catch((err) => {
+        console.error('[factures-achats] purchasesApi.listOrders INVOICE error', err)
+        setFacturesAchats([])
       })
   }, [])
 
@@ -1304,8 +1304,8 @@ export function GestionProvider({ children }: { children: ReactNode }) {
         setArticles(list)  // toujours définir, même si liste vide (DB sans articles)
       })
       .catch(err => {
-        console.error('[articles] listArticles API error — fallback INIT_ARTICLES', err)
-        setArticles(INIT_ARTICLES)
+        console.error('[articles] listArticles API error', err)
+        setArticles([])
       })
   }, [])
 
@@ -1332,10 +1332,10 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       .catch(() => setFacturesVentes([]))
   }, [])
 
-  // Clients & fournisseurs : comptes comptables persistés en localStorage
-  // Utiliser la forme fonctionnelle de useState pour ne lire localStorage qu'une seule fois
-  const [clients,        setClients]        = useState<Client[]>(() => applyComptes(INIT_CLIENTS, loadComptesFromLS()))
-  const [fournisseurs,   setFournisseurs]   = useState<Fournisseur[]>(() => applyComptes(INIT_FOURNISSEURS, loadComptesFromLS()))
+  // Clients & fournisseurs : initialisés vides — peuplés via les mutations utilisateur
+  // (l'API clientsApi est utilisée pour le lookup nom→UUID dans le useEffect plus haut)
+  const [clients,        setClients]        = useState<Client[]>([])
+  const [fournisseurs,   setFournisseurs]   = useState<Fournisseur[]>([])
   // Articles initialisés à vide — peuplés par l'API au mount (cf. useEffect plus bas).
   // INIT_ARTICLES sert UNIQUEMENT de fallback si la connexion API échoue,
   // pour éviter que l'autocomplete propose des articles inexistants en DB
@@ -1344,27 +1344,12 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   // Factures ventes : chargées depuis l'API (fallback sur données démo)
   const [facturesVentes, setFacturesVentes] = useState<FactureVente[]>([])
 
-  const [ventesRecurrentes, setVentesRecurrentes] = useState<VenteRecurrente[]>(() => {
-    const todayStr = new Date().toISOString().slice(0, 10)
-    return INIT_VENTES_RECURRENTES.map(vr => {
-      if (vr.statut !== 'Actif') return vr
-      let echeance = vr.prochaineEcheance
-      let count    = 0
-      while (echeance <= todayStr) {
-        if (vr.dateFin && echeance > vr.dateFin) break
-        echeance = addMonthsISO(echeance, FREQ_MOIS_INIT[vr.frequence] ?? 1)
-        count++
-      }
-      return count > 0
-        ? { ...vr, prochaineEcheance: echeance, facturesGenerees: vr.facturesGenerees + count }
-        : vr
-    })
-  })
-  const [bonsLivraison,  setBonsLivraison]  = useState<BonLivraison[]>(INIT_BONS_LIVRAISON)
-  const [retoursClients, setRetoursClients] = useState<RetourClient[]>(INIT_RETOURS_CLIENTS)
-  const [facturesAchats, setFacturesAchats] = useState<FactureAchat[]>(INIT_FACTURES_ACHATS)
-  const [bonsReception,       setBonsReception]       = useState<BonReception[]>(INIT_BONS_RECEPTION)
-  const [mouvementsStock,     setMouvementsStock]     = useState<MouvementStock[]>(INIT_MOUVEMENTS_STOCK)
+  const [ventesRecurrentes, setVentesRecurrentes] = useState<VenteRecurrente[]>([])
+  const [bonsLivraison,  setBonsLivraison]  = useState<BonLivraison[]>([])
+  const [retoursClients, setRetoursClients] = useState<RetourClient[]>([])
+  const [facturesAchats, setFacturesAchats] = useState<FactureAchat[]>([])
+  const [bonsReception,       setBonsReception]       = useState<BonReception[]>([])
+  const [mouvementsStock,     setMouvementsStock]     = useState<MouvementStock[]>([])
   const [categoriesArticles,  setCategoriesArticles]  = useState<string[]>(DEFAULT_CATEGORIES)
 
   function addCategorieArticle(nom: string) {
