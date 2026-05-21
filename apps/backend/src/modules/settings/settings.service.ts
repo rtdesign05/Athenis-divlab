@@ -1,5 +1,7 @@
 import { prisma } from '../../lib/prisma.js'
 import { AppError } from '../../middleware/errorHandler.js'
+import { sendUserInvitationEmail } from '../../lib/email.js'
+import { logger } from '../../lib/logger.js'
 import crypto from 'crypto'
 
 // ── Company Settings ──────────────────────────────────────────────────────────
@@ -296,18 +298,53 @@ export async function inviteUser(
     }
   }
 
-  return prisma.invitation.create({
+  const token     = crypto.randomBytes(32).toString('hex')
+  const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000)
+
+  const invitation = await prisma.invitation.create({
     data: {
       companyId,
       email:        data.email,
       roleId:       data.role,
-      token:        crypto.randomBytes(32).toString('hex'),
-      expiresAt:    new Date(Date.now() + 48 * 60 * 60 * 1000),
+      token,
+      expiresAt,
       createdBy:    invitedBy,
       agenceIds:    data.agenceIds,
       isRestricted: data.isRestricted && data.agenceIds.length > 0,
     },
   })
+
+  // ── Envoi du mail d'invitation (non-bloquant) ─────────────────────────────
+  // Si l'envoi échoue (SMTP down, etc.), l'invitation est quand même créée :
+  // l'admin pourra retrouver le lien dans la liste des invitations en attente
+  // et le renvoyer manuellement. On log l'erreur côté serveur.
+  const [companyData, roleData, agences] = await Promise.all([
+    prisma.company.findUnique({ where: { id: companyId }, select: { nom: true } }),
+    prisma.companyRole.findUnique({ where: { id: data.role }, select: { name: true } }).catch(() => null),
+    data.agenceIds.length > 0
+      ? prisma.agence.findMany({ where: { id: { in: data.agenceIds } }, select: { nom: true } })
+      : Promise.resolve([] as { nom: string }[]),
+  ])
+  const inviter = await prisma.user.findUnique({
+    where: { id: invitedBy },
+    select: { prenom: true, nom: true, email: true },
+  }).catch(() => null)
+  const inviterName = inviter
+    ? [inviter.prenom, inviter.nom].filter(Boolean).join(' ').trim() || inviter.email
+    : undefined
+
+  void sendUserInvitationEmail(data.email, {
+    token,
+    companyName: companyData?.nom ?? 'votre entreprise',
+    ...(inviterName       ? { inviterName }              : {}),
+    ...(roleData?.name    ? { roleName: roleData.name }  : {}),
+    ...(agences.length > 0 ? { agenceNames: agences.map(a => a.nom) } : {}),
+    expiresAt,
+  }).catch((err) => {
+    logger.error('sendUserInvitationEmail failed', { invitationId: invitation.id, email: data.email, error: err })
+  })
+
+  return invitation
 }
 
 /**

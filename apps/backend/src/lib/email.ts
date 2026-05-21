@@ -132,6 +132,93 @@ export async function sendCabinetInvitationEmail(
   })
 }
 
+// ── Invitation user (chef d'agence, comptable interne, etc.) ─────────────────
+
+export async function sendUserInvitationEmail(
+  to: string,
+  opts: {
+    token:        string
+    companyName:  string
+    inviterName?: string
+    roleName?:    string
+    agenceNames?: string[]
+    expiresAt:    Date
+  },
+): Promise<void> {
+  const url    = `${env.frontendUrl}/invitation/user?token=${opts.token}`
+  const expire = opts.expiresAt.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  const safeCompany   = escapeHtml(opts.companyName)
+  const safeUrl       = escapeHtml(url)
+  const safeExpire    = escapeHtml(expire)
+  const safeInviter   = opts.inviterName ? escapeHtml(opts.inviterName) : null
+  const safeRole      = opts.roleName    ? escapeHtml(opts.roleName)    : null
+  const agenceText    = opts.agenceNames && opts.agenceNames.length > 0
+    ? opts.agenceNames.map(escapeHtml).join(', ')
+    : null
+
+  const roleLine = safeRole
+    ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-bottom:12px"><p style="margin:0 0 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af">Rôle</p><p style="margin:0;font-size:14px;font-weight:600;color:#111827">${safeRole}</p></div>`
+    : ''
+  const agenceLine = agenceText
+    ? `<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-bottom:24px"><p style="margin:0 0 4px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af">Agence(s) attribuée(s)</p><p style="margin:0;font-size:14px;font-weight:600;color:#111827">${agenceText}</p></div>`
+    : ''
+
+  const inviterIntro = safeInviter
+    ? `${safeInviter} vous invite à rejoindre`
+    : 'Vous avez été invité(e) à rejoindre'
+
+  await sendMail({
+    to,
+    subject: `Vous êtes invité(e) à rejoindre ${opts.companyName} sur Athenis`,
+    text: `Bonjour,\n\n${opts.inviterName ?? "Un administrateur"} vous invite à rejoindre l'entreprise ${opts.companyName} sur Athenis.\n${opts.roleName ? `Rôle : ${opts.roleName}\n` : ''}${opts.agenceNames && opts.agenceNames.length > 0 ? `Agence(s) : ${opts.agenceNames.join(', ')}\n` : ''}\nCliquez sur le lien suivant pour créer votre mot de passe et accéder à l'application (valable jusqu'au ${expire}) :\n${url}\n\nSi vous n'attendiez pas cette invitation, vous pouvez ignorer cet e-mail.`,
+    html: `
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb;padding:40px 0">
+    <tr><td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+        <tr><td style="background:#1a3a2a;padding:32px 40px;text-align:center">
+          <span style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-.5px">Athenis</span>
+        </td></tr>
+        <tr><td style="padding:40px">
+          <h1 style="margin:0 0 8px;font-size:20px;color:#111827">Invitation à rejoindre une entreprise</h1>
+          <p style="margin:0 0 24px;color:#6b7280;line-height:1.6">
+            ${inviterIntro} <strong style="color:#111827">${safeCompany}</strong> sur Athenis.
+          </p>
+
+          ${roleLine}
+          ${agenceLine}
+
+          <p style="margin:0 0 20px;color:#6b7280;font-size:14px;line-height:1.6">
+            Cliquez sur le bouton ci-dessous pour créer votre mot de passe et accéder à l'application.
+            Ce lien est valable jusqu'au <strong>${safeExpire}</strong>.
+          </p>
+
+          <div style="text-align:center;margin:32px 0">
+            <a href="${safeUrl}" style="display:inline-block;background:#1a3a2a;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600;font-size:15px">
+              Activer mon compte
+            </a>
+          </div>
+
+          <p style="margin:16px 0 0;color:#9ca3af;font-size:12px">
+            Si vous n'attendiez pas cette invitation, vous pouvez ignorer cet e-mail en toute sécurité.<br>
+            Lien : <a href="${safeUrl}" style="color:#1a3a2a">${safeUrl}</a>
+          </p>
+        </td></tr>
+        <tr><td style="background:#f9fafb;padding:20px 40px;text-align:center;border-top:1px solid #e5e7eb">
+          <p style="margin:0;color:#9ca3af;font-size:12px">© ${new Date().getFullYear()} Athenis. Tous droits réservés.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`,
+  })
+}
+
 // ── Signature électronique ────────────────────────────────────────────────────
 
 export async function sendSignatureRequestEmail(

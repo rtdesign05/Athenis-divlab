@@ -48,6 +48,7 @@ const router = createBrowserRouter([
   { path: '/auth/register/form', lazy: lz(() => import('@/pages/auth/Register'),           'Register') },
   { path: '/auth/verify-email',  lazy: lz(() => import('@/pages/auth/VerifyEmailPage'),    'VerifyEmailPage') },
   { path: '/invitation/cabinet', lazy: lz(() => import('@/pages/invitation/CabinetInvitationPage'), 'CabinetInvitationPage') },
+  { path: '/invitation/user',    lazy: lz(() => import('@/pages/invitation/UserInvitationPage'),    'UserInvitationPage') },
   { path: '/pay/:token',         lazy: lz(() => import('@/pages/pay/PaymentPage'),                  'PaymentPage') },
   // ── Signature électronique (public — aucun compte requis) ───────────────────
   { path: '/sign/:token',        lazy: lz(() => import('@/pages/sign/SignPage'),                    'SignPage') },
