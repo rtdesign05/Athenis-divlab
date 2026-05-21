@@ -30,61 +30,6 @@ interface Caisse {
 
 // ── Données initiales ─────────────────────────────────────────────────────────
 
-const INITIAL: Caisse[] = [
-  {
-    id: 'c-siege-principale',
-    nom: 'Caisse principale',
-    agence: 'Siège',
-    responsable: 'Marie Nguema',
-    solde: 1_250_000,
-    operations: [
-      { id: 'op1', date: '2026-04-25', libelle: 'Achat fournitures de bureau',       montant:    -45_000 },
-      { id: 'op2', date: '2026-04-25', libelle: 'Versement espèces client Diop',      montant:   380_000 },
-      { id: 'op3', date: '2026-04-24', libelle: 'Frais de déplacement commercial',    montant:    -85_000 },
-      { id: 'op4', date: '2026-04-24', libelle: 'Alimentation caisse (virement)',     montant:   500_000 },
-      { id: 'op5', date: '2026-04-23', libelle: 'Paiement prestataire nettoyage',     montant:    -75_000 },
-      { id: 'op6', date: '2026-04-23', libelle: 'Encaissement vente comptoir',         montant:   210_000 },
-    ],
-  },
-  {
-    id: 'c-siege-petite',
-    nom: 'Petite caisse',
-    agence: 'Siège',
-    responsable: 'Assistante de direction',
-    solde: 85_000,
-    operations: [
-      { id: 'op7', date: '2026-04-25', libelle: 'Café et collations réunion',          montant:    -15_000 },
-      { id: 'op8', date: '2026-04-24', libelle: 'Alimentation petite caisse',          montant:   100_000 },
-      { id: 'op9', date: '2026-04-23', libelle: 'Timbres et envoi courrier',            montant:     -8_500 },
-    ],
-  },
-  {
-    id: 'c-douala-bassa',
-    nom: 'Caisse Agence',
-    agence: 'Agence Douala — Akwa',
-    responsable: 'Jean-Pierre Ekambi',
-    solde: 420_000,
-    operations: [
-      { id: 'op10', date: '2026-04-25', libelle: 'Vente marchandise client Bakary',    montant:   165_000 },
-      { id: 'op11', date: '2026-04-25', libelle: 'Remboursement frais taxi livraison', montant:    -12_000 },
-      { id: 'op12', date: '2026-04-24', libelle: 'Encaissement commande CMD-0039',     montant:   280_000 },
-      { id: 'op13', date: '2026-04-24', libelle: 'Achat petit matériel',               montant:    -38_000 },
-    ],
-  },
-  {
-    id: 'c-yaounde',
-    nom: 'Caisse Succursale',
-    agence: 'Succursale Yaoundé — Centre',
-    responsable: 'Marie-Claire Atangana',
-    solde: 310_000,
-    operations: [
-      { id: 'op14', date: '2026-04-25', libelle: 'Encaissement client Mvondo',         montant:   150_000 },
-      { id: 'op15', date: '2026-04-24', libelle: 'Frais de port livraison locale',     montant:    -22_000 },
-      { id: 'op16', date: '2026-04-23', libelle: 'Vente comptoir — réf. ART-088',      montant:   182_000 },
-    ],
-  },
-]
-
 const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Bureau Bafoussam']
 
 // ── Modal nouvelle caisse ─────────────────────────────────────────────────────
@@ -291,7 +236,7 @@ export function CaissesPage() {
   const agenceNom = user?.agenceNom ?? null
   const { addTransaction } = useTresorerie()
 
-  const [caisses, setCaisses]       = useState<Caisse[]>(INITIAL)
+  const [caisses, setCaisses]       = useState<Caisse[]>([])
   const [showAddCaisse, setShowAddCaisse] = useState(false)
   const [showAddOp, setShowAddOp]         = useState(false)
   const [editingOp, setEditingOp]         = useState<Operation | null>(null)

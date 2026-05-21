@@ -406,41 +406,9 @@ export function generateTemplate(
   }
 }
 
-// ── Initial data (pre-seeded for demo) ───────────────────────────────────────
-const SEED_EMP_1 = { firstName: 'Hervé',     lastName: 'Ekambi', poste: 'Directeur Général',                 departement: 'Direction',       startDate: '2019-01-15', endDate: null,         grossSalary: 2500000 }
-const SEED_EMP_2 = { firstName: 'Sandrine',  lastName: 'Biya',   poste: 'Directrice Commerciale',            departement: 'Commercial',      startDate: '2022-03-01', endDate: null,         grossSalary: 1200000 }
-const SEED_EMP_5 = { firstName: 'Alain',     lastName: 'Mbock',  poste: 'Développeur Web',                   departement: 'Informatique',    startDate: '2024-01-01', endDate: '2026-12-31', grossSalary: 680000  }
-
-const INIT_CONTRACTS: EmploymentContract[] = [
-  {
-    id: 'ec-1', employeeId: 'hr-1', employeeName: 'Hervé Ekambi', employeeEmail: 'h.ekambi@nexoria.cm',
-    contractType: 'FULL_TIME', status: 'SIGNED',
-    startDate: '2019-01-15', endDate: null, grossSalary: 2500000,
-    poste: 'Directeur Général', departement: 'Direction', lieuTravail: 'Yaoundé',
-    content: generateCDI(SEED_EMP_1),
-    createdAt: '2019-01-10', signedAt: '2019-01-14',
-  },
-  {
-    id: 'ec-2', employeeId: 'hr-2', employeeName: 'Sandrine Biya', employeeEmail: 's.biya@nexoria.cm',
-    contractType: 'FULL_TIME', status: 'SIGNED',
-    startDate: '2022-03-01', endDate: null, grossSalary: 1200000,
-    poste: 'Directrice Commerciale', departement: 'Commercial', lieuTravail: 'Yaoundé',
-    content: generateCDI(SEED_EMP_2),
-    createdAt: '2022-02-25', signedAt: '2022-02-28',
-  },
-  {
-    id: 'ec-5', employeeId: 'hr-5', employeeName: 'Alain Mbock', employeeEmail: 'a.mbock@nexoria.cm',
-    contractType: 'CONTRACT', status: 'SIGNED',
-    startDate: '2024-01-01', endDate: '2026-12-31', grossSalary: 680000,
-    poste: 'Développeur Web', departement: 'Informatique', lieuTravail: 'Yaoundé',
-    content: generateCDD(SEED_EMP_5),
-    createdAt: '2023-12-20', signedAt: '2023-12-28',
-  },
-]
-
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function ContractsProvider({ children }: { children: React.ReactNode }) {
-  const [contracts, setContracts] = useState<EmploymentContract[]>(INIT_CONTRACTS)
+  const [contracts, setContracts] = useState<EmploymentContract[]>([])
 
   function addContract(c: Omit<EmploymentContract, 'id' | 'createdAt'>) {
     setContracts(prev => [...prev, { ...c, id: `ec-${Date.now()}`, createdAt: new Date().toISOString().slice(0, 10) }])

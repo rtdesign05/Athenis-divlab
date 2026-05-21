@@ -67,30 +67,6 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-const INITIAL: RgpdRequest[] = [
-  {
-    id: 'r1', person: 'Marie Dupont', email: 'marie.dupont@example.com',
-    type: 'ACCESS', status: 'COMPLETED',
-    receivedAt: '2026-03-10', dueAt: '2026-04-09', completedAt: '2026-03-28',
-    description: 'Demande de copie de toutes les données personnelles détenues.',
-    response: 'Données transmises par email sécurisé le 28/03/2026.',
-  },
-  {
-    id: 'r2', person: 'Jean Mballa', email: 'j.mballa@acme.cm',
-    type: 'RECTIFICATION', status: 'IN_PROGRESS',
-    receivedAt: '2026-04-20', dueAt: '2026-05-20', completedAt: null,
-    description: 'Correction de l\'adresse email enregistrée dans le CRM.',
-    response: '',
-  },
-  {
-    id: 'r3', person: 'Fatima Ngo', email: 'fatima.ngo@mail.com',
-    type: 'ERASURE', status: 'PENDING',
-    receivedAt: '2026-05-01', dueAt: '2026-05-31', completedAt: null,
-    description: 'Demande de suppression de toutes les données personnelles.',
-    response: '',
-  },
-]
-
 // ── Edit Modal ────────────────────────────────────────────────────────────────
 
 function EditModal({ req, onSave, onClose }: {
@@ -250,7 +226,7 @@ function AddModal({ onAdd, onClose }: { onAdd: (r: RgpdRequest) => void; onClose
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function RgpdDemandesPage() {
-  const [requests, setRequests] = useState<RgpdRequest[]>(INITIAL)
+  const [requests, setRequests] = useState<RgpdRequest[]>([])
   const [showAdd,  setShowAdd]  = useState(false)
   const [editing,  setEditing]  = useState<RgpdRequest | null>(null)
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'ALL'>('ALL')

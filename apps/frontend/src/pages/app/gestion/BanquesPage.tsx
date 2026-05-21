@@ -33,53 +33,6 @@ interface Compte {
 
 // ── Données initiales ─────────────────────────────────────────────────────────
 
-const INITIAL: Compte[] = [
-  {
-    id: 'bicec',
-    banque: 'BICEC',
-    intitule: 'Compte courant entreprise',
-    numero: 'CM 021 10023 00412876001 45',
-    solde: 28_450_000,
-    devise: 'XAF',
-    agence: 'Siège',
-    operations: [
-      { id: 'o1', date: '2026-04-24', libelle: 'Virement reçu — ACME Corp (FAC-0041)',   montant:  8_400_000 },
-      { id: 'o2', date: '2026-04-22', libelle: 'Prélèvement loyer bureaux avril',         montant: -3_200_000 },
-      { id: 'o3', date: '2026-04-20', libelle: 'Virement reçu — TechX Sarl (FAC-0038)',  montant:  6_100_000 },
-      { id: 'o4', date: '2026-04-18', libelle: 'Charges sociales CNPS mars',              montant: -2_850_000 },
-      { id: 'o5', date: '2026-04-15', libelle: 'Frais bancaires avril',                   montant:    -25_000 },
-    ],
-  },
-  {
-    id: 'uba',
-    banque: 'UBA Cameroun',
-    intitule: 'Compte épargne',
-    numero: 'CM 021 30015 00089234002 72',
-    solde: 14_200_000,
-    devise: 'XAF',
-    agence: 'Siège',
-    operations: [
-      { id: 'o6', date: '2026-04-01', libelle: 'Intérêts trimestriels Q1 2026',           montant:    142_000 },
-      { id: 'o7', date: '2026-03-15', libelle: 'Virement depuis compte BICEC',             montant:  5_000_000 },
-      { id: 'o8', date: '2026-01-01', libelle: 'Intérêts trimestriels Q4 2025',            montant:    138_500 },
-    ],
-  },
-  {
-    id: 'ecobank',
-    banque: 'Ecobank',
-    intitule: 'Compte devises (EUR)',
-    numero: 'CM 021 50007 00031188003 29',
-    solde: 5_600_000,
-    devise: 'XAF',
-    agence: 'Siège',
-    operations: [
-      { id: 'o9',  date: '2026-04-19', libelle: 'Encaissement export — Groupe Delta',     montant:  3_200_000 },
-      { id: 'o10', date: '2026-04-10', libelle: 'Règlement fournisseur Import Express',   montant: -1_950_000 },
-      { id: 'o11', date: '2026-04-05', libelle: 'Commission change EUR/XAF',               montant:    -18_000 },
-    ],
-  },
-]
-
 // ── Modal import relevé bancaire ──────────────────────────────────────────────
 
 type ImportStep = 'pick' | 'loading' | 'preview' | 'error'
@@ -549,8 +502,8 @@ export function BanquesPage() {
   const agenceNom = user?.agenceNom ?? null
   const { addTransaction } = useTresorerie()
 
-  const [comptes, setComptes] = useState<Compte[]>(INITIAL)
-  const [selectedId, setSelectedId] = useState<string>(INITIAL[0]!.id)
+  const [comptes, setComptes] = useState<Compte[]>([])
+  const [selectedId, setSelectedId] = useState<string>('')
   const [showAddCompte, setShowAddCompte] = useState(false)
   const [showAddOp, setShowAddOp] = useState(false)
   const [editingOp, setEditingOp] = useState<Operation | null>(null)

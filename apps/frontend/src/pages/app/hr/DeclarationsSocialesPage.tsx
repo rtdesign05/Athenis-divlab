@@ -95,14 +95,6 @@ function periodMultiplier(type: PeriodType): number {
   return type === 'TRIMESTRE' ? 3 : 1
 }
 
-// ── Initial data ──────────────────────────────────────────────────────────────
-const INIT_DECL: Declaration[] = [
-  { id: 'd-1', periodType: 'TRIMESTRE', periodKey: '2026-Q2', periodLabel: makePeriodLabel('TRIMESTRE', '2026-Q2'), echeance: '15/07/2026', statut: 'A_DEPOSER', reference: '',             overrides: {} },
-  { id: 'd-2', periodType: 'TRIMESTRE', periodKey: '2026-Q1', periodLabel: makePeriodLabel('TRIMESTRE', '2026-Q1'), echeance: '15/04/2026', statut: 'DEPOSEE',   reference: 'CNPS-2026-T1', overrides: {} },
-  { id: 'd-3', periodType: 'TRIMESTRE', periodKey: '2025-Q4', periodLabel: makePeriodLabel('TRIMESTRE', '2025-Q4'), echeance: '15/01/2026', statut: 'DEPOSEE',   reference: 'CNPS-2025-T4', overrides: {} },
-  { id: 'd-4', periodType: 'TRIMESTRE', periodKey: '2025-Q3', periodLabel: makePeriodLabel('TRIMESTRE', '2025-Q3'), echeance: '15/10/2025', statut: 'DEPOSEE',   reference: 'CNPS-2025-T3', overrides: {} },
-]
-
 // ── Status config ─────────────────────────────────────────────────────────────
 const STATUT_LABEL: Record<Statut, string> = {
   BROUILLON: 'Brouillon', A_DEPOSER: 'À déposer', DEPOSEE: 'Déposée',
@@ -536,7 +528,7 @@ function EditModal({ declaration, employees, onSave, onClose }: EditModalProps) 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export function DeclarationsSocialesPage() {
   const { employees } = useHR()
-  const [declarations, setDeclarations] = useState<Declaration[]>(INIT_DECL)
+  const [declarations, setDeclarations] = useState<Declaration[]>([])
   const [editingId,    setEditingId]    = useState<string | null>(null)
   const [showNew,      setShowNew]      = useState(false)
 

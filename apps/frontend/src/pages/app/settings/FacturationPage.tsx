@@ -37,14 +37,8 @@ const MODULE_LABELS: Record<Module, string> = {
   fiscalite:    '🏛️ Fiscalité',
 }
 
-// Demo data
-const DEMO_USER_COUNT = 3
-
-// Demo invoice dates — montants calculés dynamiquement avec la devise locale
-const DEMO_INVOICE_DATES = ['01/04/2026', '01/03/2026', '01/02/2026']
-
-// Renewal date: first day of next month
-const RENEWAL_DATE = '01/05/2026'
+// Renewal date fallback (réelle date issue de sub?.currentPeriodEnd si dispo)
+const RENEWAL_DATE_FALLBACK = '—'
 
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
@@ -146,22 +140,22 @@ export function FacturationPage() {
             </div>
             {plan !== 'FREE' && (
               <span className="text-xs text-gray-400">
-                Renouvellement {RENEWAL_DATE}
+                Renouvellement {sub?.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString('fr-FR') : RENEWAL_DATE_FALLBACK}
               </span>
             )}
           </div>
 
-          {/* User count progress */}
+          {/* User count progress — 1 par défaut (vous-même) si pas encore d'autres membres */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Utilisateurs
               </span>
               <span className="text-xs text-gray-400">
-                {DEMO_USER_COUNT} sur {maxUsers} inclus
+                1 sur {maxUsers} inclus
               </span>
             </div>
-            <ProgressBar value={DEMO_USER_COUNT} max={maxUsers} />
+            <ProgressBar value={1} max={maxUsers} />
           </div>
 
           {/* Status badges */}
@@ -410,59 +404,18 @@ export function FacturationPage() {
         )}
       </section>
 
-      {/* Payment history */}
+      {/* Payment history — pas de paiements pour les nouveaux comptes */}
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-gray-800">Historique de paiements</h2>
 
-        <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-100">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Date
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Montant
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Statut
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                  Télécharger
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {DEMO_INVOICE_DATES.map((date, i) => (
-                <tr key={i} className="hover:bg-gray-50/60 transition-colors">
-                  <td className="px-4 py-3 text-sm text-gray-700">{date}</td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                    {currentPrice.formatted}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">
-                      Payé
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      disabled
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-500 opacity-60 cursor-not-allowed"
-                      title="Fonctionnalité à venir"
-                    >
-                      <span aria-hidden="true">📄</span>
-                      Télécharger
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-6 py-8 text-center">
+          <p className="text-sm text-gray-500">
+            Aucun paiement pour l'instant.
+          </p>
+          <p className="mt-1 text-xs text-gray-400">
+            Vos prochaines factures apparaîtront ici après votre premier renouvellement.
+          </p>
         </div>
-
-        <p className="text-xs text-gray-400">
-          Fonctionnalité de facturation complète à venir.
-        </p>
       </section>
     </div>
   )

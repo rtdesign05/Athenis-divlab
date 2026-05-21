@@ -44,58 +44,6 @@ const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Ce
 
 // ── Données initiales ─────────────────────────────────────────────────────────
 
-const INITIAL: Portefeuille[] = [
-  {
-    id: 'mtn-siege',
-    operateur: 'MTN Mobile Money',
-    couleur: 'bg-yellow-400',
-    textColor: 'text-yellow-900',
-    numero: '+237 6 70 12 34 56',
-    responsable: 'Marie Nguema',
-    agence: 'Siège',
-    solde: 3_850_000,
-    operations: [
-      { id: 'op1', date: '2026-04-25', libelle: 'Paiement reçu — Fournisseur Ebobolo',  montant:  1_200_000 },
-      { id: 'op2', date: '2026-04-25', libelle: 'Retrait agence MTN Akwa',               montant:   -500_000 },
-      { id: 'op3', date: '2026-04-24', libelle: 'Paiement reçu — Client Ayissi P.',      montant:    380_000 },
-      { id: 'op4', date: '2026-04-24', libelle: 'Transfert vers compte BICEC',            montant: -1_000_000 },
-      { id: 'op5', date: '2026-04-23', libelle: 'Paiement reçu — Marché Sandaga',         montant:    215_000 },
-      { id: 'op6', date: '2026-04-23', libelle: 'Frais de transaction',                   montant:    -12_500 },
-    ],
-  },
-  {
-    id: 'orange-siege',
-    operateur: 'Orange Money',
-    couleur: 'bg-orange-500',
-    textColor: 'text-white',
-    numero: '+237 6 90 56 78 90',
-    responsable: 'Assistante de direction',
-    agence: 'Siège',
-    solde: 1_620_000,
-    operations: [
-      { id: 'op7',  date: '2026-04-25', libelle: 'Paiement reçu — Grossiste Ndokotti',   montant:    650_000 },
-      { id: 'op8',  date: '2026-04-24', libelle: 'Paiement facture eau CAMWATER',          montant:    -95_000 },
-      { id: 'op9',  date: '2026-04-24', libelle: 'Paiement reçu — Client Mbo',            montant:    420_000 },
-      { id: 'op10', date: '2026-04-23', libelle: 'Retrait Orange Money Bépanda',           montant:   -300_000 },
-      { id: 'op11', date: '2026-04-22', libelle: 'Paiement facture ENEO',                  montant:   -180_000 },
-    ],
-  },
-  {
-    id: 'mtn-douala',
-    operateur: 'MTN Mobile Money',
-    couleur: 'bg-yellow-400',
-    textColor: 'text-yellow-900',
-    numero: '+237 6 75 98 11 22',
-    responsable: 'Jean-Pierre Ekambi',
-    agence: 'Agence Douala — Akwa',
-    solde: 920_000,
-    operations: [
-      { id: 'op12', date: '2026-04-25', libelle: 'Encaissement vente client Bakary',      montant:    165_000 },
-      { id: 'op13', date: '2026-04-24', libelle: 'Transfert siège',                        montant:   -200_000 },
-    ],
-  },
-]
-
 // ── Modal nouveau portefeuille ────────────────────────────────────────────────
 
 function ModalPortefeuille({ onSave, onClose, defaultAgence }: {
@@ -314,7 +262,7 @@ export function MobileMoneyPage() {
   const agenceNom = user?.agenceNom ?? null
   const { addTransaction } = useTresorerie()
 
-  const [portefeuilles, setPortefeuilles] = useState<Portefeuille[]>(INITIAL)
+  const [portefeuilles, setPortefeuilles] = useState<Portefeuille[]>([])
   const [showAddPorte, setShowAddPorte]   = useState(false)
   const [showAddOp, setShowAddOp]         = useState(false)
   const [editingOp, setEditingOp]         = useState<Operation | null>(null)

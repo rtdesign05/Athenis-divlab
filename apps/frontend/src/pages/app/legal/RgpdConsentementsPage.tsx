@@ -50,15 +50,6 @@ const STATUS_COLOR: Record<ConsentStatus, string> = {
   PENDING: 'bg-yellow-100 text-yellow-700',
 }
 
-const INITIAL: Consent[] = [
-  { id: 'c1', person: 'Marie Dupont',    email: 'marie.dupont@example.com',    type: 'MARKETING',  status: 'GRANTED', date: '2026-03-15', source: 'Formulaire web' },
-  { id: 'c2', person: 'Jean Mballa',     email: 'j.mballa@acme.cm',            type: 'NEWSLETTER', status: 'GRANTED', date: '2026-04-01', source: 'Email opt-in' },
-  { id: 'c3', person: 'Fatima Ngo',      email: 'fatima.ngo@mail.com',         type: 'ANALYTICS',  status: 'REFUSED', date: '2026-04-10', source: 'Bannière cookies' },
-  { id: 'c4', person: 'Paul Eyenga',     email: 'paul.eyenga@example.org',     type: 'COOKIES',    status: 'GRANTED', date: '2026-04-12', source: 'Bannière cookies' },
-  { id: 'c5', person: 'Claire Atangana', email: 'c.atangana@entreprise.cm',    type: 'MARKETING',  status: 'REVOKED', date: '2026-01-20', source: 'Formulaire web', notes: 'Révocation demandée par email le 25/04/2026' },
-  { id: 'c6', person: 'Thomas Kamga',    email: 'thomas.kamga@gmail.com',      type: 'SMS',        status: 'PENDING', date: '2026-05-01', source: 'CRM import' },
-]
-
 // ── Add Form ──────────────────────────────────────────────────────────────────
 
 function AddModal({ onAdd, onClose }: { onAdd: (c: Omit<Consent, 'id'>) => void; onClose: () => void }) {
@@ -141,7 +132,7 @@ function AddModal({ onAdd, onClose }: { onAdd: (c: Omit<Consent, 'id'>) => void;
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function RgpdConsentementsPage() {
-  const [consents, setConsents] = useState<Consent[]>(INITIAL)
+  const [consents, setConsents] = useState<Consent[]>([])
   const [showAdd, setShowAdd]   = useState(false)
   const [typeFilter, setTypeFilter] = useState<ConsentType | 'ALL'>('ALL')
   const [statusFilter, setStatusFilter] = useState<ConsentStatus | 'ALL'>('ALL')
