@@ -8,6 +8,7 @@ import {
   type PermissionLevel,
   type InviteRole,
   type Agence,
+  type CompanyRole,
 } from '@/services/settingsApi'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -16,15 +17,10 @@ const USER_LIMITS: Record<string, number> = {
   FREE: 1, STARTER: 3, PRO: 5, PREMIUM: 99,
 }
 
-const ROLES: { id: InviteRole; label: string; description: string }[] = [
-  { id: 'ADMIN',      label: 'Administrateur',  description: 'Accès complet à toutes les fonctionnalités' },
-  { id: 'MANAGER',    label: 'Gestionnaire',    description: 'Gestion des opérations courantes' },
-  { id: 'ACCOUNTANT', label: 'Comptable',       description: 'Accès aux modules comptables' },
-  { id: 'HR',         label: 'RH',              description: 'Gestion des ressources humaines' },
-  { id: 'SALES',      label: 'Commercial',      description: 'Gestion des ventes et clients' },
-  { id: 'READONLY',   label: 'Lecture seule',   description: 'Consultation uniquement' },
-  { id: 'CUSTOM',     label: 'Personnalisé',    description: 'Permissions configurées manuellement' },
-]
+// NOTE : la liste ROLES/DEFAULT_PERMISSIONS hardcodée a été retirée — les rôles
+// sont maintenant chargés via settingsApi.listRoles() (cohérent avec RolesPage).
+// Seul DEFAULT_PERMISSIONS.READONLY est conservé comme état initial du mode
+// "Personnalisé" si l'admin choisit de partir d'un canevas vide.
 
 const MODULES: { key: keyof RolePermissions; label: string }[] = [
   { key: 'gestion',      label: 'Gestion' },
@@ -132,7 +128,14 @@ function InviteModal({ onClose, onSuccess }: InviteModalProps) {
   const [telephone, setTelephone] = useState('')
 
   // Step 2 — Role & Permissions
-  const [role, setRole]               = useState<InviteRole>('READONLY')
+  //   roleSource = 'existing'  → on choisit un CompanyRole déjà créé via RolesPage
+  //   roleSource = 'custom'    → on définit des permissions ad-hoc (un nouveau
+  //                              CompanyRole sera créé côté backend pour ce user)
+  const [roleSource, setRoleSource]       = useState<'existing' | 'custom'>('existing')
+  const [companyRoles, setCompanyRoles]   = useState<CompanyRole[]>([])
+  const [rolesLoading, setRolesLoading]   = useState(false)
+  const [selectedRoleId, setSelectedRoleId] = useState<string>('')
+  const [customRoleName, setCustomRoleName] = useState('')
   const [permissions, setPermissions] = useState<RolePermissions>({ ...DEFAULT_PERMISSIONS.READONLY })
 
   // Step 3 — Agences
@@ -140,6 +143,24 @@ function InviteModal({ onClose, onSuccess }: InviteModalProps) {
   const [agencesLoading, setAgencesLoading] = useState(false)
   const [selectedAgences, setSelectedAgences] = useState<Set<string>>(new Set())
   const [isRestricted, setIsRestricted]       = useState(false)
+
+  // Load CompanyRoles when reaching step 2 (single source of truth — partagé avec RolesPage)
+  useEffect(() => {
+    if (step !== 2 || companyRoles.length > 0) return
+    setRolesLoading(true)
+    settingsApi.listRoles()
+      .then((data) => {
+        setCompanyRoles(data)
+        // Auto-sélectionne le premier rôle (généralement Administrateur ou ADMIN)
+        const first = data[0]
+        if (first && !selectedRoleId) {
+          setSelectedRoleId(first.id)
+          setPermissions({ ...first.permissions })
+        }
+      })
+      .catch(() => { /* fallback : roleSource reste sur custom */ })
+      .finally(() => setRolesLoading(false))
+  }, [step, companyRoles.length, selectedRoleId])
 
   // Load agences when reaching step 3
   useEffect(() => {
@@ -152,9 +173,10 @@ function InviteModal({ onClose, onSuccess }: InviteModalProps) {
     }
   }, [step, agences.length])
 
-  function handleRoleChange(r: InviteRole) {
-    setRole(r)
-    setPermissions({ ...DEFAULT_PERMISSIONS[r] })
+  function handleExistingRoleChange(roleId: string) {
+    const found = companyRoles.find(r => r.id === roleId)
+    setSelectedRoleId(roleId)
+    if (found) setPermissions({ ...found.permissions })
   }
 
   function handlePermissionChange(mod: keyof RolePermissions, level: PermissionLevel) {
@@ -189,12 +211,25 @@ function InviteModal({ onClose, onSuccess }: InviteModalProps) {
     setLoading(true)
     setError(null)
     try {
+      // Calcule le payload "role" envoyé au backend.
+      //   - existing : on envoie l'id CUID du CompanyRole déjà créé
+      //   - custom   : on envoie le nom saisi ; le backend va créer un nouveau
+      //                CompanyRole avec ce nom et les permissions modifiées
+      let roleField: string
+      if (roleSource === 'existing') {
+        if (!selectedRoleId) { setError('Sélectionnez un rôle'); setLoading(false); return }
+        roleField = selectedRoleId
+      } else {
+        const name = customRoleName.trim()
+        if (!name) { setError('Nommez le rôle personnalisé'); setLoading(false); return }
+        roleField = name
+      }
       await settingsApi.inviteUser({
         prenom:       prenom.trim(),
         nom:          nom.trim(),
         email:        email.trim(),
         ...(telephone.trim() ? { telephone: telephone.trim() } : {}),
-        role,
+        role:         roleField as InviteRole,
         permissions,
         agenceIds:    [...selectedAgences],
         isRestricted: isRestricted && selectedAgences.size > 0,
@@ -314,70 +349,167 @@ function InviteModal({ onClose, onSuccess }: InviteModalProps) {
           {/* ── STEP 2: Rôle + Permissions ── */}
           {step === 2 && (
             <div className="space-y-5">
-              <p className="text-sm text-gray-500">Choisissez le rôle et configurez les accès par module.</p>
+              <p className="text-sm text-gray-500">
+                Choisissez un rôle existant (définis dans <strong>Paramètres → Rôles & accès</strong>)
+                ou créez un rôle personnalisé.
+              </p>
 
-              {/* Role selector */}
-              <div className="grid grid-cols-2 gap-2">
-                {ROLES.map((r) => (
-                  <label
-                    key={r.id}
-                    className={`flex flex-col gap-0.5 rounded-lg border p-3 cursor-pointer transition-all ${
-                      role === r.id
-                        ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="role"
-                        value={r.id}
-                        checked={role === r.id}
-                        onChange={() => handleRoleChange(r.id)}
-                        className="accent-gray-900"
-                      />
-                      <span className="text-xs font-semibold text-gray-900">{r.label}</span>
-                    </div>
-                    <p className="text-[10px] text-gray-400 leading-tight pl-5">{r.description}</p>
-                  </label>
-                ))}
+              {/* Source du rôle */}
+              <div className="flex gap-2 rounded-lg bg-gray-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => setRoleSource('existing')}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    roleSource === 'existing' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Rôle existant
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoleSource('custom')}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    roleSource === 'custom' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Personnalisé
+                </button>
               </div>
 
-              {/* Permissions grid */}
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Permissions par module
-                </p>
-                <div className="rounded-xl border border-gray-100 overflow-hidden">
-                  {MODULES.map(({ key, label }, i) => (
-                    <div
-                      key={key}
-                      className={`flex items-center justify-between px-4 py-2.5 ${i > 0 ? 'border-t border-gray-100' : ''}`}
-                    >
-                      <span className="text-sm text-gray-700 w-36">{label}</span>
-                      <div className="flex gap-1">
-                        {PERMISSION_LEVELS.map(({ value, label: lvlLabel }) => (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => handlePermissionChange(key, value)}
-                            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                              permissions[key] === value
-                                ? value === 'none'  ? 'bg-gray-200 text-gray-700'
-                                  : value === 'read'  ? 'bg-green-100 text-green-700'
-                                  : value === 'write' ? 'bg-blue-100 text-blue-700'
-                                  : 'bg-purple-100 text-purple-700'
-                                : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
-                            }`}
+              {/* Existing role selector */}
+              {roleSource === 'existing' && (
+                <>
+                  {rolesLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+                    </div>
+                  ) : companyRoles.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-200 py-6 text-center">
+                      <p className="text-sm text-gray-500">Aucun rôle défini pour cette entreprise.</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Créez-en dans <strong>Paramètres → Rôles & accès</strong> ou basculez sur "Personnalisé".
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto">
+                      {companyRoles.map((r) => (
+                        <label
+                          key={r.id}
+                          className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-all ${
+                            selectedRoleId === r.id
+                              ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="companyRole"
+                            checked={selectedRoleId === r.id}
+                            onChange={() => handleExistingRoleChange(r.id)}
+                            className="mt-0.5 accent-gray-900"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold text-gray-900">{r.name}</span>
+                              {r.isSystem && (
+                                <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                                  Système
+                                </span>
+                              )}
+                              <span className="text-xs text-gray-400">· {r.userCount} membre{r.userCount > 1 ? 's' : ''}</span>
+                            </div>
+                            {r.description && (
+                              <p className="text-xs text-gray-500 mt-0.5">{r.description}</p>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Aperçu permissions du rôle sélectionné (read-only) */}
+                  {selectedRoleId && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        Permissions héritées du rôle
+                      </p>
+                      <div className="rounded-xl border border-gray-100 overflow-hidden">
+                        {MODULES.map(({ key, label }, i) => (
+                          <div
+                            key={key}
+                            className={`flex items-center justify-between px-4 py-2 ${i > 0 ? 'border-t border-gray-100' : ''}`}
                           >
-                            {lvlLabel}
-                          </button>
+                            <span className="text-sm text-gray-700">{label}</span>
+                            <span className={`rounded-md px-2.5 py-0.5 text-xs font-medium ${
+                              permissions[key] === 'none'  ? 'bg-gray-200 text-gray-700'
+                              : permissions[key] === 'read'  ? 'bg-green-100 text-green-700'
+                              : permissions[key] === 'write' ? 'bg-blue-100 text-blue-700'
+                              : 'bg-purple-100 text-purple-700'
+                            }`}>
+                              {PERMISSION_LEVELS.find(p => p.value === permissions[key])?.label ?? '—'}
+                            </span>
+                          </div>
                         ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  )}
+                </>
+              )}
+
+              {/* Custom role : nom + permissions éditables */}
+              {roleSource === 'custom' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Nom du rôle personnalisé <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={customRoleName}
+                      onChange={(e) => setCustomRoleName(e.target.value)}
+                      placeholder="Ex: Chef d'agence Douala"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+                    />
+                    <p className="mt-1 text-xs text-gray-400">
+                      Un nouveau rôle sera créé avec les permissions ci-dessous et apparaîtra dans Rôles & accès.
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                      Permissions par module
+                    </p>
+                    <div className="rounded-xl border border-gray-100 overflow-hidden">
+                      {MODULES.map(({ key, label }, i) => (
+                        <div
+                          key={key}
+                          className={`flex items-center justify-between px-4 py-2.5 ${i > 0 ? 'border-t border-gray-100' : ''}`}
+                        >
+                          <span className="text-sm text-gray-700 w-36">{label}</span>
+                          <div className="flex gap-1">
+                            {PERMISSION_LEVELS.map(({ value, label: lvlLabel }) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => handlePermissionChange(key, value)}
+                                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                                  permissions[key] === value
+                                    ? value === 'none'  ? 'bg-gray-200 text-gray-700'
+                                      : value === 'read'  ? 'bg-green-100 text-green-700'
+                                      : value === 'write' ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-purple-100 text-purple-700'
+                                    : 'bg-gray-50 text-gray-400 hover:bg-gray-100'
+                                }`}
+                              >
+                                {lvlLabel}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -468,7 +600,9 @@ function InviteModal({ onClose, onSuccess }: InviteModalProps) {
                   <div className="flex justify-between px-4 py-2.5 text-sm">
                     <span className="text-gray-500">Rôle</span>
                     <span className="font-medium text-gray-900">
-                      {ROLES.find((r) => r.id === role)?.label ?? role}
+                      {roleSource === 'existing'
+                        ? (companyRoles.find((r) => r.id === selectedRoleId)?.name ?? '—')
+                        : (customRoleName || '— Personnalisé')}
                     </span>
                   </div>
                   <div className="flex justify-between px-4 py-2.5 text-sm">
