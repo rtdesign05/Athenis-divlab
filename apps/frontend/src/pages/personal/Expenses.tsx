@@ -154,9 +154,9 @@ export function PersonalExpenses() {
       </div>
 
       {/* Filtres */}
-      <div className="flex flex-wrap gap-3">
-        <input type="month" className="input w-44" value={filterMois} onChange={(e) => setFilterMois(e.target.value)} />
-        <select className="input w-52" value={filterCat} onChange={(e) => setFilterCat(e.target.value)}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+        <input type="month" className="input w-full sm:w-44" value={filterMois} onChange={(e) => setFilterMois(e.target.value)} />
+        <select className="input w-full sm:w-52" value={filterCat} onChange={(e) => setFilterCat(e.target.value)}>
           <option value="">Toutes les catégories</option>
           {CATEGORIES_DEPENSES.map((c) => <option key={c.value} value={c.value}>{c.emoji} {c.label}</option>)}
         </select>
@@ -214,7 +214,7 @@ export function PersonalExpenses() {
           <button onClick={() => { setEditing(null); setModal('add') }} className="btn-primary mt-4 text-sm">+ Ajouter</button>
         </div>
       ) : (
-        <div className="card overflow-hidden p-0">
+        <div className="card overflow-x-auto p-0">
           <table className="min-w-full divide-y divide-gray-100">
             <thead className="bg-gray-50">
               <tr>
