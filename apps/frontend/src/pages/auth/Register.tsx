@@ -292,14 +292,21 @@ export function Register() {
         userMessage = apiMsg ?? `Une erreur est survenue (code ${status ?? 'inconnu'}). Contactez contact@athenis360.com si le problème persiste.`
       }
 
-      // Capture Sentry avec contexte pour debugger les cas vraiment cassés
-      try {
-        const { captureException } = await import('@sentry/react')
-        captureException(e, {
-          tags:   { feature: 'register', accountType: form.accountType ?? 'unknown', country: form.country, status: String(status ?? 'no-status') },
-          extra:  { apiCode, netCode, email: form.email.replace(/[a-zA-Z0-9]/g, 'x') /* email anonymisé */, userMessage },
-        })
-      } catch { /* sentry non chargé : ignore */ }
+      // Capture Sentry SEULEMENT pour les vrais bugs serveur ou réseau.
+      // Les 4xx (409 email déjà utilisé, 400 validation, 429 rate limit) sont
+      // des erreurs UTILISATEUR attendues, pas des bugs — pas la peine de
+      // déclencher une alerte Sentry à chaque fois qu'un user fait une faute.
+      // On capture uniquement : pas de status (= network) OU 5xx.
+      const isRealError = !status || status >= 500
+      if (isRealError) {
+        try {
+          const { captureException } = await import('@sentry/react')
+          captureException(e, {
+            tags:   { feature: 'register', accountType: form.accountType ?? 'unknown', country: form.country, status: String(status ?? 'no-status') },
+            extra:  { apiCode, netCode, email: form.email.replace(/[a-zA-Z0-9]/g, 'x') /* email anonymisé */, userMessage },
+          })
+        } catch { /* sentry non chargé : ignore */ }
+      }
 
       setError(userMessage)
       if (status === 409) {
