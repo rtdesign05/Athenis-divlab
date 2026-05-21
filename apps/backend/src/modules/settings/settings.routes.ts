@@ -285,6 +285,19 @@ settingsRouter.delete('/users/:id', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
+// ── Invitations ───────────────────────────────────────────────────────────────
+// Annulation d'une invitation en attente (pas encore acceptée). Sécurité :
+// l'admin de la company ne peut annuler QUE les invitations de sa propre
+// company (filtre par companyId dans le delete).
+settingsRouter.delete('/invitations/:id', async (req, res, next) => {
+  try {
+    requireAdmin(req)
+    const invitationId = String(req.params['id'])
+    await svc.cancelInvitation(getCompanyId(req), invitationId)
+    res.json({ success: true })
+  } catch (e) { next(e) }
+})
+
 // ── Roles ─────────────────────────────────────────────────────────────────────
 
 settingsRouter.get('/roles', async (req, res, next) => {

@@ -941,9 +941,10 @@ export function UtilisateursPage() {
     setUsers((prev) => prev.filter((u) => u.id !== userId))
   }, [])
 
-  const handleCancelInvite = useCallback(async (userId: string) => {
-    await settingsApi.deleteUser(userId)
-    setUsers((prev) => prev.filter((u) => u.id !== userId))
+  const handleCancelInvite = useCallback(async (invitationId: string) => {
+    // L'id passé est l'id de la row Invitation (pour les lignes user.isInvitation=true)
+    await settingsApi.cancelInvitation(invitationId)
+    setUsers((prev) => prev.filter((u) => u.id !== invitationId))
   }, [])
 
   const handleAgencesUpdated = useCallback((userId: string, agenceIds: string[], isRestricted: boolean) => {

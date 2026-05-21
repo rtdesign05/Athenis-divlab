@@ -488,9 +488,36 @@ export async function deleteUser(
   }
 
   const member = await prisma.companyMember.findFirst({ where: { companyId, userId } })
-  if (!member) throw new AppError('Utilisateur non trouvé dans cette entreprise', 404, 'NOT_FOUND')
+  if (!member) {
+    // Fallback : ancien frontend qui passait un id d'invitation au lieu d'un userId.
+    // Si l'id correspond à une invitation pendante de cette company, on l'annule.
+    const inv = await prisma.invitation.findFirst({
+      where: { id: userId, companyId, acceptedAt: null },
+    })
+    if (inv) {
+      await prisma.invitation.delete({ where: { id: inv.id } })
+      return
+    }
+    throw new AppError('Utilisateur non trouvé dans cette entreprise', 404, 'NOT_FOUND')
+  }
 
   await prisma.companyMember.delete({ where: { id: member.id } })
+}
+
+/**
+ * Annule une invitation en attente (suppression de la row Invitation).
+ * Sécurité : filtre par companyId pour empêcher un admin d'annuler les
+ * invitations d'une autre entreprise. Une invitation déjà acceptée
+ * (acceptedAt non-null) n'est PAS supprimable via cette route — il faut
+ * passer par deleteUser sur le user créé.
+ */
+export async function cancelInvitation(companyId: string, invitationId: string) {
+  const inv = await prisma.invitation.findFirst({
+    where: { id: invitationId, companyId },
+  })
+  if (!inv) throw new AppError('Invitation introuvable', 404, 'NOT_FOUND')
+  if (inv.acceptedAt) throw new AppError("Cette invitation a déjà été acceptée — utiliser plutôt la suppression d'utilisateur", 409, 'ALREADY_ACCEPTED')
+  await prisma.invitation.delete({ where: { id: inv.id } })
 }
 
 // ── Agences ───────────────────────────────────────────────────────────────────

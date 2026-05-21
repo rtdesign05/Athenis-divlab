@@ -190,6 +190,10 @@ export const settingsApi = {
   deleteUser:       (id: string) =>
     api.delete(`/settings/users/${id}`),
 
+  /** Annule une invitation en attente (id = id de la row Invitation). */
+  cancelInvitation: (id: string) =>
+    api.delete(`/settings/invitations/${id}`),
+
   listRoles:        () =>
     api.get<{ data: CompanyRole[] }>('/settings/roles').then(d),
 

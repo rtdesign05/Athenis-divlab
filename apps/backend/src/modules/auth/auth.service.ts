@@ -456,9 +456,34 @@ export async function register(
           timezone: countryCfg.timezone,
         },
       })
+      // Crée le CompanyRole 'ADMIN' par défaut + lie le owner via CompanyMember.
+      // Sinon : l'owner n'a pas de CompanyMember (multi-tenant cassé), et les
+      // invitations qui stockent inv.roleId = 'ADMIN' (alias legacy) font une
+      // erreur FK quand l'invité accepte.
+      const adminRole = await tx.companyRole.create({
+        data: {
+          companyId:   company.id,
+          name:        'ADMIN',
+          description: 'Administrateur — accès complet',
+          isSystem:    true,
+          permissions: {
+            gestion: 'admin', comptabilite: 'admin', rh: 'admin',
+            juridique: 'admin', esg: 'admin', fiscalite: 'admin', settings: 'admin',
+          },
+        },
+      })
       const user = await tx.user.create({
         data: { ...baseUserData, accountType: 'COMPANY', companyId: company.id },
         select: USER_SELECT,
+      })
+      await tx.companyMember.create({
+        data: {
+          userId:    user.id,
+          companyId: company.id,
+          roleId:    adminRole.id,
+          status:    'ACTIVE',
+          joinedAt:  new Date(),
+        },
       })
       return user as unknown as DbUser
     })
