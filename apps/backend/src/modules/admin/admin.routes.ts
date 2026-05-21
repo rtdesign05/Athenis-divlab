@@ -444,7 +444,7 @@ adminRouter.delete('/users/:id', async (req, res, next) => {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, nom: true, accountType: true, platformRole: true, companyId: true },
+      select: { id: true, email: true, nom: true, accountType: true, platformRole: true, companyId: true, cabinetId: true },
     })
     if (!user) { res.status(404).json({ success: false, error: 'Utilisateur introuvable' }); return }
 
@@ -479,8 +479,29 @@ adminRouter.delete('/users/:id', async (req, res, next) => {
       },
     }).catch((e) => logger.error('audit USER_DELETED failed', { error: e }))
 
-    // Suppression effective (cascade via Prisma schema)
+    // Suppression effective (cascade Prisma vers les données du user)
     await prisma.user.delete({ where: { id: userId } })
+
+    // ── Cleanup organisations orphelines ─────────────────────────────────────
+    // Si le user était attaché à une COMPANY/CABINET et que c'était le DERNIER
+    // user de cette organisation, supprimer aussi l'organisation pour éviter
+    // les orphelines dans la liste admin. Si d'autres users restent, on laisse.
+    if (user.companyId) {
+      const remaining = await prisma.user.count({ where: { companyId: user.companyId } })
+      if (remaining === 0) {
+        await prisma.company.delete({ where: { id: user.companyId } })
+          .catch((e) => logger.error('orphan company cleanup failed', { companyId: user.companyId, error: e }))
+        logger.info('orphan company auto-deleted', { companyId: user.companyId, after: 'last user deletion' })
+      }
+    }
+    if (user.cabinetId) {
+      const remaining = await prisma.user.count({ where: { cabinetId: user.cabinetId } })
+      if (remaining === 0) {
+        await prisma.cabinet.delete({ where: { id: user.cabinetId } })
+          .catch((e) => logger.error('orphan cabinet cleanup failed', { cabinetId: user.cabinetId, error: e }))
+        logger.info('orphan cabinet auto-deleted', { cabinetId: user.cabinetId, after: 'last user deletion' })
+      }
+    }
 
     res.json({ success: true, data: { id: userId, deleted: true } })
   } catch (err) { next(err) }
