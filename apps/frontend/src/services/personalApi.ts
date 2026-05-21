@@ -47,12 +47,29 @@ export interface PersonalTransaction extends PersonalRevenu {
   type: 'REVENU' | 'DEPENSE'
 }
 
+export interface PersonalAnnualMonth {
+  mois:       number      // 1-12
+  revenus:    number
+  depenses:   number
+  soldeNet:   number      // revenus - dépenses du mois
+  soldeCumul: number      // cumul depuis début de l'historique
+}
+
+export interface PersonalAnnualOverview {
+  annee:          number
+  openingBalance: number  // solde au 01/01 (= cumul des années précédentes)
+  closingBalance: number  // solde au 31/12 (= cumul fin d'année)
+  mois:           PersonalAnnualMonth[]
+}
+
 export interface PersonalDashboard {
   annee:        number
   mois:         number
   revenusMois:  number
   depensesMois: number
-  /** Solde NET de la période (revenus - dépenses), pas le solde des comptes */
+  /** Flux net du mois (revenus − dépenses) */
+  soldeNetPeriode: number
+  /** Solde CUMULÉ : reporté de mois en mois depuis le début de l'historique */
   soldeTotalComptes: number
   tauxEpargne:  number
   comptes:      PersonalCompte[]
@@ -148,9 +165,13 @@ type CreateDepenseFR = Omit<PersonalDepense, 'id' | 'createdAt'>
 
 export const personalApi = {
   // Dashboard (backend renvoie déjà en français — voir personal.service.getDashboard)
-  // params optionnels { annee, mois } → mois en cours par défaut
+  // params optionnels { annee, mois } → mois en cours par défaut. Mois futurs OK.
   dashboard: (params?: { annee?: number; mois?: number }) =>
     api.get<{ data: PersonalDashboard }>('/personal/dashboard', { params }).then(d),
+
+  // Vue annuelle : 12 mois avec solde cumulé pour prévisionnel
+  annual: (params?: { annee?: number }) =>
+    api.get<{ data: PersonalAnnualOverview }>('/personal/annual', { params }).then(d),
 
   // Revenus ───────────────────────────────────────────────────────────────────
   revenus: {

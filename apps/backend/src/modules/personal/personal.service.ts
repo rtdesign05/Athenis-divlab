@@ -14,15 +14,18 @@ function toNum(d: Prisma.Decimal | null | undefined): number {
  * Renvoie l'agrégat du dashboard personnel pour une période donnée.
  *
  * @param userId   user authentifié
- * @param period   { annee, mois } 1-12 ; par défaut : mois en cours
+ * @param period   { annee, mois } 1-12 ; par défaut : mois en cours.
+ *                 Les mois futurs sont autorisés pour du prévisionnel.
  *
  * Sémantique des champs renvoyés :
- *   - revenusMois / depensesMois : sommes des opérations DATÉES dans le mois
- *   - soldeTotalComptes : solde NET de la période = revenusMois - depensesMois
- *     (le user a explicitement demandé que le solde reflète la période, pas
- *     le cumul des comptes bancaires)
- *   - tauxEpargne : (revenus - dépenses) / revenus en %
- *   - transactionsRecentes : 5 dernières opérations DATÉES dans le mois
+ *   - revenusMois / depensesMois : opérations DATÉES dans le mois (in-period)
+ *   - soldeNetPeriode = revenusMois - depensesMois (flux net du mois)
+ *   - soldeTotalComptes = soldeCumul = somme de (revenus - dépenses) depuis
+ *     le début de l'historique jusqu'à la fin de la période sélectionnée.
+ *     Permet le report mois-en-mois : si mai = 550€, et +1000€ en juin,
+ *     juin = 1550€.
+ *   - tauxEpargne : (revenus - dépenses) / revenus du mois en %
+ *   - transactionsRecentes : 5 dernières opérations DE la période
  *   - comptes / objectifs : atemporels (état actuel)
  */
 export async function getDashboard(
@@ -44,11 +47,14 @@ export async function getDashboard(
   // Ensure the personal profile exists (no-op for returning users)
   await prisma.personalProfile.upsert({ where: { userId }, create: { userId }, update: {} }).catch(() => null)
 
-  const dateInPeriod = { date: { gte: periodStart, lt: periodEnd } }
+  const dateInPeriod  = { date: { gte: periodStart, lt: periodEnd } }
+  const dateUpToEnd   = { date: { lt: periodEnd } }                  // pour le cumul
 
   const [
     revenusPeriodeAgg,
     depensesPeriodeAgg,
+    revenusCumulAgg,
+    depensesCumulAgg,
     comptesList,
     objectifsList,
     recentRevenus,
@@ -60,6 +66,14 @@ export async function getDashboard(
     }),
     prisma.personalExpense.aggregate({
       where: { userId, ...dateInPeriod },
+      _sum:  { amount: true },
+    }),
+    prisma.personalRevenue.aggregate({
+      where: { userId, ...dateUpToEnd },
+      _sum:  { amount: true },
+    }),
+    prisma.personalExpense.aggregate({
+      where: { userId, ...dateUpToEnd },
       _sum:  { amount: true },
     }),
     prisma.personalCompte.findMany({
@@ -82,9 +96,10 @@ export async function getDashboard(
     }),
   ])
 
-  const revenusMois  = toNum(revenusPeriodeAgg._sum?.amount)
-  const depensesMois = toNum(depensesPeriodeAgg._sum?.amount)
-  const soldePeriode = revenusMois - depensesMois
+  const revenusMois     = toNum(revenusPeriodeAgg._sum?.amount)
+  const depensesMois    = toNum(depensesPeriodeAgg._sum?.amount)
+  const soldeNetPeriode = revenusMois - depensesMois
+  const soldeCumul      = toNum(revenusCumulAgg._sum?.amount) - toNum(depensesCumulAgg._sum?.amount)
 
   const tauxEpargne =
     revenusMois > 0 ? Math.round(((revenusMois - depensesMois) / revenusMois) * 100) : 0
@@ -120,7 +135,8 @@ export async function getDashboard(
     mois,
     revenusMois,
     depensesMois,
-    soldeTotalComptes: soldePeriode,   // ← solde NET de la période
+    soldeNetPeriode,                   // ← flux net du mois (revenus − dépenses)
+    soldeTotalComptes: soldeCumul,     // ← solde cumulé : reporté de mois en mois
     tauxEpargne,
     comptes: comptesList.map((c) => ({
       id:        c.id,
@@ -138,6 +154,58 @@ export async function getDashboard(
       createdAt:     o.createdAt.toISOString(),
     })),
     transactionsRecentes,
+  }
+}
+
+/**
+ * Vue annuelle : retourne pour chaque mois de l'année son revenus, dépenses,
+ * solde net et solde cumulé. Permet le prévisionnel sur 12 mois — y compris
+ * les mois futurs.
+ */
+export async function getAnnualOverview(userId: string, anneeIn?: number) {
+  const now   = new Date()
+  const annee = anneeIn && Number.isFinite(anneeIn) ? Math.trunc(anneeIn) : now.getFullYear()
+
+  const yearStart = new Date(annee,     0, 1)
+  const yearEnd   = new Date(annee + 1, 0, 1)
+
+  // Solde cumulé d'ouverture : tout ce qui est avant le 01/01 de l'année
+  const [openRevAgg, openDepAgg, yearRevenus, yearDepenses] = await Promise.all([
+    prisma.personalRevenue.aggregate({ where: { userId, date: { lt: yearStart } }, _sum: { amount: true } }),
+    prisma.personalExpense.aggregate({ where: { userId, date: { lt: yearStart } }, _sum: { amount: true } }),
+    prisma.personalRevenue.findMany({
+      where:  { userId, date: { gte: yearStart, lt: yearEnd } },
+      select: { amount: true, date: true },
+    }),
+    prisma.personalExpense.findMany({
+      where:  { userId, date: { gte: yearStart, lt: yearEnd } },
+      select: { amount: true, date: true },
+    }),
+  ])
+
+  const openingBalance = toNum(openRevAgg._sum?.amount) - toNum(openDepAgg._sum?.amount)
+
+  // Agrégation par mois (0-11) — push direct, plus rapide que 24 queries Prisma
+  const revByMonth   = new Array(12).fill(0) as number[]
+  const depByMonth   = new Array(12).fill(0) as number[]
+  for (const r of yearRevenus)   { revByMonth[r.date.getMonth()]! += toNum(r.amount) }
+  for (const d of yearDepenses) { depByMonth[d.date.getMonth()]! += toNum(d.amount) }
+
+  const mois: { mois: number; revenus: number; depenses: number; soldeNet: number; soldeCumul: number }[] = []
+  let running = openingBalance
+  for (let m = 0; m < 12; m++) {
+    const rev = revByMonth[m]!
+    const dep = depByMonth[m]!
+    const net = rev - dep
+    running += net
+    mois.push({ mois: m + 1, revenus: rev, depenses: dep, soldeNet: net, soldeCumul: running })
+  }
+
+  return {
+    annee,
+    openingBalance,
+    closingBalance: running,
+    mois,
   }
 }
 

@@ -35,6 +35,16 @@ personalRouter.get('/dashboard', async (req, res, next) => {
   } catch (e) { next(e) }
 })
 
+// Vue annuelle pour le prévisionnel : 12 mois avec solde cumulé
+personalRouter.get('/annual', async (req, res, next) => {
+  try {
+    const anneeRaw = req.query['annee']
+    const annee = typeof anneeRaw === 'string' && anneeRaw.length > 0 ? parseInt(anneeRaw, 10) : undefined
+    const data  = await svc.getAnnualOverview(req.user!.sub, annee)
+    res.json({ success: true, data })
+  } catch (e) { next(e) }
+})
+
 // ── Revenus ───────────────────────────────────────────────────────────────────
 
 personalRouter.get('/revenus', async (req, res, next) => {
