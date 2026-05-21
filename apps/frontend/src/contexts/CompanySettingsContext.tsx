@@ -25,60 +25,8 @@ import { useAuth } from '@/features/auth/useAuth'
 // Ces noms correspondent exactement aux agences dans GestionContext
 // pour que le filtrage fonctionne en mode démo.
 
-export const DEMO_AGENCES: Agence[] = [
-  {
-    id: 'agence-siege',
-    code: 'SIE',
-    nom: 'Siège',
-    adresse: '12 Rue Bonanjo',
-    ville: 'Douala',
-    telephone: '+237 699 000 001',
-    email: 'siege@entreprise.cm',
-    isActive: true,
-    isSiege: true,
-    createdAt: '2024-01-01T00:00:00Z',
-    _count: { members: 8 },
-  },
-  {
-    id: 'agence-douala',
-    code: 'DLA',
-    nom: 'Agence Douala — Akwa',
-    adresse: '45 Boulevard de la Liberté',
-    ville: 'Douala',
-    telephone: '+237 699 000 002',
-    email: 'douala@entreprise.cm',
-    isActive: true,
-    isSiege: false,
-    createdAt: '2024-02-15T00:00:00Z',
-    _count: { members: 5 },
-  },
-  {
-    id: 'agence-yaounde',
-    code: 'YDE',
-    nom: 'Succursale Yaoundé — Centre',
-    adresse: '8 Avenue Kennedy',
-    ville: 'Yaoundé',
-    telephone: '+237 699 000 003',
-    email: 'yaounde@entreprise.cm',
-    isActive: true,
-    isSiege: false,
-    createdAt: '2024-03-01T00:00:00Z',
-    _count: { members: 4 },
-  },
-  {
-    id: 'agence-bafoussam',
-    code: 'BAF',
-    nom: 'Agence Bafoussam',
-    adresse: '22 Rue du Commerce',
-    ville: 'Bafoussam',
-    telephone: '+237 699 000 004',
-    email: 'bafoussam@entreprise.cm',
-    isActive: true,
-    isSiege: false,
-    createdAt: '2024-06-01T00:00:00Z',
-    _count: { members: 3 },
-  },
-]
+// Liste vide par défaut — les agences réelles arrivent de l'API.
+export const DEMO_AGENCES: Agence[] = []
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

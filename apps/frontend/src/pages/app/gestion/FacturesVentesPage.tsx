@@ -1329,8 +1329,8 @@ function parseCSV(text: string, defaultVat: number): ParsedRow[] {
 function downloadTemplate(vatRate: number) {
   const header = CSV_COLUMNS.join(';')
   const vat    = String(vatRate)
-  const row1   = `ACME Corp;CMD-0051;2026-05-01;2026-05-31;1000000;${vat};Brouillon;standard;;Paiement à 30 jours`
-  const row2   = `Groupe Delta;CMD-0049;2026-05-02;;2500000;${vat};Envoyée;proforma;Pro forma chariot;;`
+  const row1   = `Nom Client SARL;CMD-0001;2026-01-15;2026-02-15;100000;${vat};Brouillon;standard;;Paiement à 30 jours`
+  const row2   = `Autre Client;CMD-0002;2026-01-20;;250000;${vat};Envoyée;proforma;Pro forma;;`
   const blob   = new Blob([`${header}\n${row1}\n${row2}`], { type: 'text/csv;charset=utf-8;' })
   const url    = URL.createObjectURL(blob)
   const a      = document.createElement('a')

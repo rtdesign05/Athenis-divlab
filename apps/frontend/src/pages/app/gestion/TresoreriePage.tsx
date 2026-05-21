@@ -24,22 +24,10 @@ export function TresoreriePage() {
 
   const solde = agenceNom ? soldeAgence : totalSolde
 
-  // Prévisions à 30/60/90 jours (flux nets projetés s'ajoutent au solde réel)
-  const forecast = [
-    { label: 'Aujourd\'hui', balance: solde },
-    { label: '+30 jours',    balance: Math.round(solde * 1.079) },
-    { label: '+60 jours',    balance: Math.round(solde * 0.928) },
-    { label: '+90 jours',    balance: Math.round(solde * 1.272) },
-  ]
-
-  const upcoming = [
-    { date: '28 avr.', label: 'Loyer bureaux',          amount:  -3_200_000, type: 'out' },
-    { date: '30 avr.', label: 'Facture CLI-0042',        amount:   8_400_000, type: 'in'  },
-    { date: '05 mai',  label: 'Charges sociales avril',  amount:  -6_750_000, type: 'out' },
-    { date: '10 mai',  label: 'Facture CLI-0039',        amount:   4_200_000, type: 'in'  },
-    { date: '15 mai',  label: 'Abonnements SaaS',        amount:    -890_000, type: 'out' },
-    { date: '20 mai',  label: 'Facture CLI-0044',        amount:  12_000_000, type: 'in'  },
-  ]
+  // Prévisions et échéances à venir — vides par défaut, à venir avec les vraies
+  // données de l'API de prévisionnel et des factures à échéance.
+  const forecast: { label: string; balance: number }[] = []
+  const upcoming: { date: string; label: string; amount: number; type: string }[] = []
 
   const TYPE_ICON: Record<string, string> = {
     banque:         '🏦',

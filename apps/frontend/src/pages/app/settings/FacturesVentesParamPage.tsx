@@ -131,7 +131,7 @@ function TemplatePreview({ id, primary, logoUrl }: { id: TemplateId; primary: st
         <div className="p-2 space-y-1">
           <div className="rounded border border-gray-200 p-1">
             <div className="text-[3px] text-gray-400">Client</div>
-            <div className="text-[4px] font-bold text-gray-800">ACME Corp</div>
+            <div className="text-[4px] font-bold text-gray-800">Aperçu client</div>
           </div>
           <div className="rounded p-1" style={{ backgroundColor: '#f3f4f6' }}>
             <div className="flex justify-between text-[3px] text-gray-700"><span>Prestation</span><span>100K</span></div>

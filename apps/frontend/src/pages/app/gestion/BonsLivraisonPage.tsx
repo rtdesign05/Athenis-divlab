@@ -18,7 +18,7 @@ const STATUT_STYLE: Record<BLStatut, string> = {
 
 const STATUTS: BLStatut[] = ['En préparation', 'Expédié', 'Livré', 'Retourné']
 
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES = ['Siège']
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—'

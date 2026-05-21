@@ -21,7 +21,7 @@ const STATUT_STYLE: Record<AchatStatut, string> = {
   'Annulée':    'bg-red-100 text-red-600',
 }
 
-const AGENCES_DEFAULT = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES_DEFAULT = ['Siège']
 
 let _ligneCounter = 1
 function newLigneId() { return `new-${_ligneCounter++}` }

@@ -15,7 +15,7 @@ const STATUT_STYLE: Record<string, string> = {
   'Annulée':    'bg-red-100 text-red-600',
 }
 
-const AGENCES_DEFAULT = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES_DEFAULT = ['Siège']
 
 // ── Modal nouvelle commande ───────────────────────────────────────────────────
 

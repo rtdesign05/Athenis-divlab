@@ -22,7 +22,7 @@ const STATUT_STYLE: Record<BRStatut, string> = {
 }
 
 const STATUTS: BRStatut[] = ['Attendu', 'Reçu partiel', 'Reçu', 'Litige']
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES = ['Siège']
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'

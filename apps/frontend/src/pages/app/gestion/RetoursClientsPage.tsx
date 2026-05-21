@@ -23,7 +23,7 @@ const MOTIFS_COURANTS = [
   'Autre',
 ]
 
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES = ['Siège']
 
 // ── Modal nouveau retour ──────────────────────────────────────────────────────
 

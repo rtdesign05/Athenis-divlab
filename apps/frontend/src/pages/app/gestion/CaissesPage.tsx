@@ -30,7 +30,7 @@ interface Caisse {
 
 // ── Données initiales ─────────────────────────────────────────────────────────
 
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Bureau Bafoussam']
+const AGENCES = ['Siège']
 
 // ── Modal nouvelle caisse ─────────────────────────────────────────────────────
 

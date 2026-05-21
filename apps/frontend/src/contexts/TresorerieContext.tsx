@@ -89,22 +89,10 @@ export interface AccountBalance {
   solde:     number
 }
 
-/** Soldes initiaux synchronisés avec les INITIAL des pages sources */
-const INITIAL_BALANCES: AccountBalance[] = [
-  { name: 'BICEC — Compte courant entreprise', label: 'BICEC — Compte courant',       type: 'banque',       agence: 'Siège',                       solde: 28_450_000 },
-  { name: 'UBA Cameroun — Compte épargne',     label: 'UBA — Épargne',                type: 'banque',       agence: 'Siège',                       solde: 14_200_000 },
-  { name: 'Ecobank — Compte devises (EUR)',     label: 'Ecobank — Devises (EUR)',       type: 'banque',       agence: 'Siège',                       solde:  5_600_000 },
-  { name: 'Caisse principale',                 label: 'Caisse principale',             type: 'caisse',       agence: 'Siège',                       solde:  1_250_000 },
-  { name: 'Petite caisse',                     label: 'Petite caisse',                 type: 'caisse',       agence: 'Siège',                       solde:     85_000 },
-  { name: 'Caisse Agence',                     label: 'Caisse Agence Douala',          type: 'caisse',       agence: 'Agence Douala — Akwa',        solde:    420_000 },
-  { name: 'Caisse Succursale',                 label: 'Caisse Succursale Yaoundé',     type: 'caisse',       agence: 'Succursale Yaoundé — Centre', solde:    310_000 },
-  { name: 'MTN Mobile Money',                  label: 'MTN Mobile Money',              type: 'mobile-money', agence: 'Siège',                       solde:  3_850_000 },
-  { name: 'Orange Money',                      label: 'Orange Money',                  type: 'mobile-money', agence: 'Siège',                       solde:  1_620_000 },
-]
-
 // ── Adaptateurs API → types locaux ────────────────────────────────────────────
 
-const INITIAL_BALANCE_BY_NAME = new Map(INITIAL_BALANCES.map(b => [b.name, b]))
+// Lookup vide par défaut — les soldes proviennent uniquement de l'API.
+const INITIAL_BALANCE_BY_NAME = new Map<string, AccountBalance>()
 
 /** 'mobile_money' (backend) → 'mobile-money' (frontend) */
 function apiSourceType(t: string): SourceType {

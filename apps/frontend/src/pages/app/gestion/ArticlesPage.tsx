@@ -8,7 +8,7 @@ import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilt
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const UNITES: ArticleUnite[] = ['pièce', 'kg', 'litre', 'm²', 'heure', 'forfait']
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES = ['Siège']
 
 // Palette de couleurs pour les catégories (statiques pour Tailwind JIT)
 const CATEGORY_PALETTE = [

@@ -22,7 +22,7 @@ const STATUT_STYLE: Record<FactureAchatStatut, string> = {
 }
 
 const STATUTS: FactureAchatStatut[] = ['À valider', 'Validée', 'Payée', 'En retard', 'Annulée']
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES = ['Siège']
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -33,8 +33,7 @@ function fmtDate(iso: string | null | undefined): string {
 
 const CSV_TEMPLATE = [
   'fournisseur;commande;date;echeance;montantHT;tva;agence;statut',
-  'Import Express;ACH-0034;2026-04-25;2026-05-25;4696652;19.25;Siège;À valider',
-  'Tech Matériaux;ACH-0035;2026-04-26;2026-05-26;1000000;19.25;Agence Douala — Akwa;Validée',
+  'Nom Fournisseur SARL;ACH-0001;2026-01-15;2026-02-15;100000;19.25;Siège;À valider',
 ].join('\n')
 
 type ImportRow = Omit<FactureAchat, 'id'> & { _error?: string }

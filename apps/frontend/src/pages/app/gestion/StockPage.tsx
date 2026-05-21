@@ -11,7 +11,7 @@ import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilt
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES = ['Siège']
 
 const MVT_STYLE: Record<MouvementType, string> = {
   'Entrée':     'bg-green-50  text-green-700  ring-green-200',

@@ -40,7 +40,7 @@ const OPERATEURS: { label: string; couleur: string; textColor: string }[] = [
   { label: 'Wave',             couleur: 'bg-sky-400',     textColor: 'text-white'      },
 ]
 
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Bureau Bafoussam']
+const AGENCES = ['Siège']
 
 // ── Données initiales ─────────────────────────────────────────────────────────
 

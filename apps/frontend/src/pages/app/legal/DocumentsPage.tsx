@@ -1,15 +1,9 @@
 import { useState } from 'react'
 
-const DOCS = [
-  { nom: 'Statuts constitutifs',         cat: 'Société',        date: '12/03/2019', taille: '245 Ko' },
-  { nom: 'PV AG ordinaire 2024',          cat: 'Société',        date: '28/06/2024', taille: '89 Ko'  },
-  { nom: 'PV AG ordinaire 2025',          cat: 'Société',        date: '30/06/2025', taille: '92 Ko'  },
-  { nom: 'CGV B2B v2.1',                  cat: 'Contrats',       date: '15/01/2026', taille: '124 Ko' },
-  { nom: 'Politique de confidentialité',  cat: 'RGPD',           date: '01/05/2025', taille: '78 Ko'  },
-  { nom: 'Registre des traitements',      cat: 'RGPD',           date: '10/04/2026', taille: '156 Ko' },
-  { nom: 'DUERP 2024',                    cat: 'Droit du travail', date: '20/11/2024', taille: '210 Ko' },
-  { nom: 'Accord télétravail',            cat: 'Droit du travail', date: '01/09/2024', taille: '67 Ko'  },
-]
+// Documents archivés — vide pour un nouveau compte. Le user ajoute ses propres
+// documents via le bouton "+ Ajouter". Les catégories disponibles sont gérées
+// via CAT_COLOR ci-dessous.
+const DOCS: { nom: string; cat: string; date: string; taille: string }[] = []
 
 const CAT_COLOR: Record<string, string> = {
   'Société': 'bg-forest-100 text-forest-700',

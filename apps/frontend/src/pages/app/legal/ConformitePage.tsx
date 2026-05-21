@@ -1,16 +1,19 @@
+// Checklist standard de conformité — tous les items démarrent en "pending" pour
+// les nouveaux utilisateurs (à eux de cocher au fur et à mesure de leur mise en
+// conformité). Les statuts seront persistés via l'API quand elle sera prête.
 const ITEMS = [
-  { cat: 'Droit du travail',    label: 'Affichage obligatoire employeur',        statut: 'ok' },
-  { cat: 'Droit du travail',    label: 'Registre unique du personnel à jour',    statut: 'ok' },
-  { cat: 'Droit du travail',    label: 'Accords d\'entreprise déposés',          statut: 'ok' },
-  { cat: 'Droit du travail',    label: 'DUERP mis à jour (< 12 mois)',           statut: 'late' },
-  { cat: 'Fiscal',              label: 'Déclarations TVA déposées',              statut: 'ok' },
-  { cat: 'Fiscal',              label: 'Liasse fiscale N-1 déposée',             statut: 'ok' },
+  { cat: 'Droit du travail',    label: 'Affichage obligatoire employeur',        statut: 'pending' },
+  { cat: 'Droit du travail',    label: 'Registre unique du personnel à jour',    statut: 'pending' },
+  { cat: 'Droit du travail',    label: 'Accords d\'entreprise déposés',          statut: 'pending' },
+  { cat: 'Droit du travail',    label: 'DUERP mis à jour (< 12 mois)',           statut: 'pending' },
+  { cat: 'Fiscal',              label: 'Déclarations TVA déposées',              statut: 'pending' },
+  { cat: 'Fiscal',              label: 'Liasse fiscale N-1 déposée',             statut: 'pending' },
   { cat: 'Fiscal',              label: 'Acomptes IS payés',                      statut: 'pending' },
-  { cat: 'RGPD',                label: 'Registre des traitements tenu',          statut: 'ok' },
-  { cat: 'RGPD',                label: 'DPO désigné et notifié à la CNIL',      statut: 'ok' },
+  { cat: 'RGPD',                label: 'Registre des traitements tenu',          statut: 'pending' },
+  { cat: 'RGPD',                label: 'DPO désigné et notifié à la CNIL',       statut: 'pending' },
   { cat: 'RGPD',                label: 'Politique de confidentialité publiée',   statut: 'pending' },
-  { cat: 'Société',             label: 'PV d\'AG annuelle rédigé',              statut: 'ok' },
-  { cat: 'Société',             label: 'Comptes annuels déposés au greffe',      statut: 'ok' },
+  { cat: 'Société',             label: 'PV d\'AG annuelle rédigé',               statut: 'pending' },
+  { cat: 'Société',             label: 'Comptes annuels déposés au greffe',      statut: 'pending' },
 ]
 
 const STATUT: Record<string, { label: string; cls: string; icon: string }> = {

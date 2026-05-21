@@ -9,7 +9,7 @@ const TYPE_STYLE: Record<ClientType, string> = {
   particulier: 'bg-pink-50 text-pink-700 ring-pink-200',
 }
 
-const AGENCES = ['Siège', 'Agence Douala — Akwa', 'Succursale Yaoundé — Centre', 'Agence Bafoussam']
+const AGENCES = ['Siège']
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 

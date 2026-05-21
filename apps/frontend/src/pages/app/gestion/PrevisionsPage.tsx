@@ -84,55 +84,57 @@ const GROWTH_ORDER: Growth[] = ['revenue', 'variable', 'fixed', 'personnel', 'fi
 
 const MONTHS_FR_FULL = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
 
-// Fallback tréso initiale
-const FALLBACK_BALANCE = 55_785_000
+// Fallback tréso initiale (utilisé seulement si le contexte trésorerie est vide)
+const FALLBACK_BALANCE = 0
 
 // ── Définition des lignes ─────────────────────────────────────────────────────
+// Structure du prévisionnel. baseMonthly = 0 par défaut — chaque utilisateur
+// renseigne lui-même ses hypothèses via les inputs de la page.
 
 const ROWS: RowDef[] = [
   { id: 'h_enc',       label: 'ENCAISSEMENTS',                              type: 'header'   },
   { id: 'h_rec_exp',   label: "Recettes d'exploitation",                    type: 'subheader', indent: 1 },
-  { id: 'r_ventes',    label: 'Ventes de marchandises',                     type: 'data',      indent: 2, baseMonthly:  15_000_000, growth: 'revenue'    },
-  { id: 'r_presta',    label: 'Prestations de services',                    type: 'data',      indent: 2, baseMonthly:  10_500_000, growth: 'revenue'    },
-  { id: 'r_avoirs',    label: 'Remises & avoirs accordés',                  type: 'data',      indent: 2, baseMonthly:    -800_000, growth: 'revenue'    },
+  { id: 'r_ventes',    label: 'Ventes de marchandises',                     type: 'data',      indent: 2, baseMonthly: 0, growth: 'revenue'    },
+  { id: 'r_presta',    label: 'Prestations de services',                    type: 'data',      indent: 2, baseMonthly: 0, growth: 'revenue'    },
+  { id: 'r_avoirs',    label: 'Remises & avoirs accordés',                  type: 'data',      indent: 2, baseMonthly: 0, growth: 'revenue'    },
   { id: 'st_rec',      label: "Sous-total recettes exploitation",           type: 'subtotal',  indent: 1, deps: ['r_ventes','r_presta','r_avoirs'] },
   { id: 'h_enc_aut',   label: 'Autres encaissements',                       type: 'subheader', indent: 1 },
-  { id: 'r_subv',      label: 'Subventions & aides reçues',                 type: 'data',      indent: 2, baseMonthly:          0, growth: 'fixed'      },
-  { id: 'r_fin',       label: 'Produits financiers',                        type: 'data',      indent: 2, baseMonthly:     142_000, growth: 'fixed'      },
-  { id: 'r_aut',       label: 'Autres entrées exceptionnelles',             type: 'data',      indent: 2, baseMonthly:          0, growth: 'fixed'      },
+  { id: 'r_subv',      label: 'Subventions & aides reçues',                 type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'r_fin',       label: 'Produits financiers',                        type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'r_aut',       label: 'Autres entrées exceptionnelles',             type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
   { id: 'st_enc_aut',  label: 'Sous-total autres enc.',                     type: 'subtotal',  indent: 1, deps: ['r_subv','r_fin','r_aut'] },
   { id: 'tot_enc',     label: 'TOTAL ENCAISSEMENTS',                        type: 'total',               deps: ['st_rec','st_enc_aut'] },
 
   { id: 'h_dec',       label: 'DÉCAISSEMENTS',                              type: 'header'   },
   { id: 'h_ach',       label: 'Achats & charges externes',                  type: 'subheader', indent: 1 },
-  { id: 'd_achat',     label: 'Achats marchandises / matières',             type: 'data',      indent: 2, baseMonthly:  -8_500_000, growth: 'variable'   },
-  { id: 'd_loyer',     label: 'Loyers & charges locatives',                 type: 'data',      indent: 2, baseMonthly:  -3_200_000, growth: 'fixed'      },
-  { id: 'd_util',      label: 'Eau, électricité, télécom',                  type: 'data',      indent: 2, baseMonthly:    -580_000, growth: 'fixed'      },
-  { id: 'd_assur',     label: 'Assurances',                                 type: 'data',      indent: 2, baseMonthly:    -320_000, growth: 'fixed'      },
-  { id: 'd_saas',      label: 'Abonnements & outils SaaS',                  type: 'data',      indent: 2, baseMonthly:    -890_000, growth: 'fixed'      },
-  { id: 'd_depla',     label: 'Frais de déplacement & missions',            type: 'data',      indent: 2, baseMonthly:    -450_000, growth: 'variable'   },
-  { id: 'd_pub',       label: 'Publicité & communication',                  type: 'data',      indent: 2, baseMonthly:    -600_000, growth: 'variable'   },
-  { id: 'd_divers',    label: 'Frais divers & imprévus',                    type: 'data',      indent: 2, baseMonthly:    -380_000, growth: 'variable'   },
+  { id: 'd_achat',     label: 'Achats marchandises / matières',             type: 'data',      indent: 2, baseMonthly: 0, growth: 'variable'   },
+  { id: 'd_loyer',     label: 'Loyers & charges locatives',                 type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'd_util',      label: 'Eau, électricité, télécom',                  type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'd_assur',     label: 'Assurances',                                 type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'd_saas',      label: 'Abonnements & outils SaaS',                  type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'd_depla',     label: 'Frais de déplacement & missions',            type: 'data',      indent: 2, baseMonthly: 0, growth: 'variable'   },
+  { id: 'd_pub',       label: 'Publicité & communication',                  type: 'data',      indent: 2, baseMonthly: 0, growth: 'variable'   },
+  { id: 'd_divers',    label: 'Frais divers & imprévus',                    type: 'data',      indent: 2, baseMonthly: 0, growth: 'variable'   },
   { id: 'st_ach',      label: 'Sous-total achats & charges',                type: 'subtotal',  indent: 1, deps: ['d_achat','d_loyer','d_util','d_assur','d_saas','d_depla','d_pub','d_divers'] },
 
   { id: 'h_rh',        label: 'Charges de personnel',                       type: 'subheader', indent: 1 },
-  { id: 'd_salai',     label: 'Salaires nets versés',                        type: 'data',      indent: 2, baseMonthly:  -9_400_000, growth: 'personnel'  },
-  { id: 'd_cnps',      label: 'Cotisations sociales (CNPS / CRTV)',         type: 'data',      indent: 2, baseMonthly:  -2_850_000, growth: 'personnel'  },
-  { id: 'd_primes',    label: 'Primes, gratifications, avantages',          type: 'data',      indent: 2, baseMonthly:    -500_000, growth: 'personnel'  },
+  { id: 'd_salai',     label: 'Salaires nets versés',                       type: 'data',      indent: 2, baseMonthly: 0, growth: 'personnel'  },
+  { id: 'd_cnps',      label: 'Cotisations sociales (CNPS / CRTV)',         type: 'data',      indent: 2, baseMonthly: 0, growth: 'personnel'  },
+  { id: 'd_primes',    label: 'Primes, gratifications, avantages',          type: 'data',      indent: 2, baseMonthly: 0, growth: 'personnel'  },
   { id: 'st_rh',       label: 'Sous-total personnel',                       type: 'subtotal',  indent: 1, deps: ['d_salai','d_cnps','d_primes'] },
 
   { id: 'h_fisc',      label: 'Charges fiscales',                           type: 'subheader', indent: 1 },
-  { id: 'd_tva',       label: 'TVA décaissée (nette de collecte)',          type: 'data',      indent: 2, baseMonthly:  -1_200_000, growth: 'fiscal_var' },
-  { id: 'd_is',        label: 'IS/IGS sur résultat (base brute)',           type: 'data',      indent: 2, baseMonthly:    -560_000, growth: 'fiscal_var' },
-  { id: 'd_amort',     label: "Dotations aux amortissements (non déc.)",    type: 'memo',      indent: 2, baseMonthly:   1_200_000, growth: 'fixed'      },
-  { id: 'd_is_shield', label: "↳ Réduction d'IS (amortissements × IS%)",   type: 'shield',    indent: 2 },
-  { id: 'd_paten',     label: 'Patente, centimes additionnels',             type: 'data',      indent: 2, baseMonthly:    -100_000, growth: 'fiscal_fix' },
+  { id: 'd_tva',       label: 'TVA décaissée (nette de collecte)',          type: 'data',      indent: 2, baseMonthly: 0, growth: 'fiscal_var' },
+  { id: 'd_is',        label: 'IS/IGS sur résultat (base brute)',           type: 'data',      indent: 2, baseMonthly: 0, growth: 'fiscal_var' },
+  { id: 'd_amort',     label: "Dotations aux amortissements (non déc.)",    type: 'memo',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'd_is_shield', label: "↳ Réduction d'IS (amortissements × IS%)",    type: 'shield',    indent: 2 },
+  { id: 'd_paten',     label: 'Patente, centimes additionnels',             type: 'data',      indent: 2, baseMonthly: 0, growth: 'fiscal_fix' },
   { id: 'st_fisc',     label: 'Sous-total fiscal',                          type: 'subtotal',  indent: 1, deps: ['d_tva','d_is','d_is_shield','d_paten'] },
 
   { id: 'h_inv',       label: 'Investissements & financements',             type: 'subheader', indent: 1 },
-  { id: 'd_capex',     label: "Acquisitions d'immobilisations",             type: 'data',      indent: 2, baseMonthly:          0, growth: 'fixed'      },
-  { id: 'd_remb',      label: "Remboursements d'emprunts",                  type: 'data',      indent: 2, baseMonthly:  -1_500_000, growth: 'fixed'      },
-  { id: 'd_interet',   label: 'Intérêts financiers',                        type: 'data',      indent: 2, baseMonthly:    -200_000, growth: 'fixed'      },
+  { id: 'd_capex',     label: "Acquisitions d'immobilisations",             type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'd_remb',      label: "Remboursements d'emprunts",                  type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
+  { id: 'd_interet',   label: 'Intérêts financiers',                        type: 'data',      indent: 2, baseMonthly: 0, growth: 'fixed'      },
   { id: 'st_inv',      label: 'Sous-total invest. & fin.',                  type: 'subtotal',  indent: 1, deps: ['d_capex','d_remb','d_interet'] },
 
   { id: 'tot_dec',     label: 'TOTAL DÉCAISSEMENTS',                        type: 'total',               deps: ['st_ach','st_rh','st_fisc','st_inv'] },
