@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
-import type { Module } from '@athenis/shared-types'
+import type { Module, PermissionLevel } from '@athenis/shared-types'
 import { MODULE_ROLE_ACCESS, type Action } from '../lib/plans.js'
 import { prisma } from '../lib/prisma.js'
 import { logger } from '../lib/logger.js'
@@ -10,6 +10,15 @@ declare global {
       clientCompanyId?: string
     }
   }
+}
+
+/** Vérifie qu'un niveau de permission individuel autorise une action donnée. */
+function permissionAllows(level: PermissionLevel | undefined, action: Action): boolean {
+  if (!level || level === 'none') return false
+  if (level === 'read')  return action === 'read'
+  if (level === 'write') return action === 'read' || action === 'write'
+  if (level === 'admin') return true
+  return false
 }
 
 /**
@@ -47,15 +56,30 @@ export function checkModule(module: Module, action: Action = 'read') {
       return
     }
 
-    // 3. Role must allow the action
-    const allowedActions = MODULE_ROLE_ACCESS[user.role]?.[module] ?? []
-    if (!allowedActions.includes(action)) {
-      res.status(403).json({
-        success: false,
-        error: `Insufficient permissions for '${action}' on '${module}'`,
-        code: 'FORBIDDEN',
-      })
-      return
+    // 3. Permission check : on PRIORISE les permissions individuelles
+    // (CompanyMember.role.permissions, stockées dans le JWT en .permissions).
+    // Si non présentes (legacy users sans CompanyMember), fallback sur la
+    // matrice par rôle MODULE_ROLE_ACCESS[user.role].
+    const individualLevel = user.permissions?.[module as keyof NonNullable<typeof user.permissions>]
+    if (individualLevel !== undefined && individualLevel !== null) {
+      if (!permissionAllows(individualLevel as PermissionLevel, action)) {
+        res.status(403).json({
+          success: false,
+          error: `Insufficient permissions for '${action}' on '${module}' (granted: ${individualLevel})`,
+          code: 'FORBIDDEN',
+        })
+        return
+      }
+    } else {
+      const allowedActions = MODULE_ROLE_ACCESS[user.role]?.[module] ?? []
+      if (!allowedActions.includes(action)) {
+        res.status(403).json({
+          success: false,
+          error: `Insufficient permissions for '${action}' on '${module}'`,
+          code: 'FORBIDDEN',
+        })
+        return
+      }
     }
 
     // 4. Cabinet mode: check X-Client-Company header + active mandat

@@ -20,6 +20,8 @@ export { getPlanPricing, getAllPlansPricing } from './planPricing.js'
 
 export type {
   JwtPayload,
+  PermissionLevel,
+  RolePermissions,
   RegisterRequest,
   RegisterPersonalRequest,
   RegisterCompanyRequest,

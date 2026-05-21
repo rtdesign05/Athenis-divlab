@@ -1,5 +1,17 @@
 import type { AccountType, UserRole, Plan, Module, UserProfile } from './user.js'
 
+export type PermissionLevel = 'none' | 'read' | 'write' | 'admin'
+
+export interface RolePermissions {
+  gestion:      PermissionLevel
+  comptabilite: PermissionLevel
+  rh:           PermissionLevel
+  juridique:    PermissionLevel
+  esg:          PermissionLevel
+  fiscalite?:   PermissionLevel
+  settings:     PermissionLevel
+}
+
 export interface JwtPayload {
   sub: string
   email: string
@@ -11,6 +23,9 @@ export interface JwtPayload {
   cabinetId: string | null
   plan: Plan | null
   modules: Module[]
+  /** Permissions individuelles par module (depuis CompanyMember.role.permissions).
+   *  Surcharge MODULE_ROLE_ACCESS[role] dans checkModule middleware. */
+  permissions?: Partial<RolePermissions> | null
   country?: string | null
   currencySymbol?: string | null
   atheisNumber?: string | null

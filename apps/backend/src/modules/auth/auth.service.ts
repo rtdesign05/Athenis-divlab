@@ -146,6 +146,7 @@ export async function createImpersonationToken(
   const modules   = await getEffectiveModules(target.accountType as AccountType, companyId)
   const { country, currencySymbol } = await resolveLocale(target.accountType, companyId, cabinetId, target.id)
   const { agenceId, agenceNom, agenceIds, isRestricted } = await getUserAgence(target.id, companyId)
+  const permissions = await getUserPermissions(target.id, companyId)
   const role = dbRoleToUserRole(target.role)
 
   // Token court : 30 min (vs 15 min normal — un peu plus long pour faciliter le debug
@@ -158,6 +159,7 @@ export async function createImpersonationToken(
       role,
       platformRole: 'USER' as const, // ← important : le token cible n'a PAS les droits SUPER_ADMIN
       companyId, cabinetId, plan, modules,
+      permissions,
       country, currencySymbol,
       atheisNumber: target.atheisNumber ?? null,
       agenceId, agenceNom, agenceIds, isRestricted,
@@ -202,6 +204,31 @@ function verifyTotpPendingToken(token: string): string {
  * Returns the primary agenceId/nom, all agenceIds, and isRestricted.
  * isRestricted = true if the user has at least one AgenceMember entry with isRestricted=true.
  */
+/**
+ * Charge les permissions par module pour ce user dans sa company.
+ * Retourne null si pas de CompanyMember (legacy users sans member row, ou
+ * users non-COMPANY) → les middlewares retombent sur MODULE_ROLE_ACCESS[role].
+ */
+async function getUserPermissions(
+  userId: string,
+  companyId: string | null,
+): Promise<Partial<import('@athenis/shared-types').RolePermissions> | null> {
+  if (!companyId) return null
+  try {
+    const member = await prisma.companyMember.findUnique({
+      where: { companyId_userId: { companyId, userId } },
+      include: { role: { select: { permissions: true } } },
+    })
+    if (!member?.role?.permissions) return null
+    const perms = member.role.permissions as unknown
+    if (typeof perms !== 'object' || perms === null) return null
+    return perms as Partial<import('@athenis/shared-types').RolePermissions>
+  } catch (e) {
+    logger.warn('getUserPermissions failed', { userId, companyId, error: e })
+    return null
+  }
+}
+
 async function getUserAgence(
   userId: string,
   companyId: string | null,
@@ -667,6 +694,7 @@ export async function login(
   const modules = await getEffectiveModules(user.accountType as AccountType, companyId)
   const { country: loginCountry, currencySymbol: loginCurrencySymbol } = await resolveLocale(user.accountType, companyId, cabinetId, user.id)
   const { agenceId, agenceNom, agenceIds, isRestricted } = await getUserAgence(user.id, companyId)
+  const permissions = await getUserPermissions(user.id, companyId)
 
   const role = dbRoleToUserRole(user.role)
 
@@ -680,6 +708,7 @@ export async function login(
     cabinetId,
     plan,
     modules,
+    permissions,
     country: loginCountry,
     currencySymbol: loginCurrencySymbol,
     atheisNumber: user.atheisNumber ?? null,
@@ -788,6 +817,7 @@ export async function loginVerifyTotp(
   const modules = await getEffectiveModules(user.accountType as AccountType, companyId)
   const { country: totpCountry, currencySymbol: totpCurrencySymbol } = await resolveLocale(user.accountType, companyId, cabinetId, user.id)
   const { agenceId, agenceNom, agenceIds: totpAgenceIds, isRestricted: totpIsRestricted } = await getUserAgence(user.id, companyId)
+  const totpPermissions = await getUserPermissions(user.id, companyId)
 
   const role = dbRoleToUserRole(user.role)
 
@@ -801,6 +831,7 @@ export async function loginVerifyTotp(
     cabinetId,
     plan,
     modules,
+    permissions: totpPermissions,
     country: totpCountry,
     currencySymbol: totpCurrencySymbol,
     atheisNumber: user.atheisNumber ?? null,
@@ -872,6 +903,7 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
   const modules = await getEffectiveModules(u.accountType as AccountType, companyId)
   const { country: refreshCountry, currencySymbol: refreshCurrencySymbol } = await resolveLocale(u.accountType, companyId, cabinetId, u.id)
   const { agenceId, agenceNom, agenceIds: refreshAgenceIds, isRestricted: refreshIsRestricted } = await getUserAgence(u.id, companyId)
+  const refreshPermissions = await getUserPermissions(u.id, companyId)
 
   const role = dbRoleToUserRole(u.role)
 
@@ -886,6 +918,7 @@ export async function refreshAccessToken(rawToken: string): Promise<RefreshToken
       cabinetId,
       plan,
       modules,
+      permissions: refreshPermissions,
       country: refreshCountry,
       currencySymbol: refreshCurrencySymbol,
       atheisNumber: u.atheisNumber ?? null,

@@ -176,6 +176,7 @@ invitationRouter.post('/user/accept', validateRequest({ body: AcceptUserInvitati
           data: inv.agenceIds.map(agenceId => ({
             agenceId,
             companyMemberId: member.id,
+            isRestricted:    inv.isRestricted,
           })),
           skipDuplicates: true,
         })
