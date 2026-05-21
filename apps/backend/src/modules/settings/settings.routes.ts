@@ -64,7 +64,10 @@ const InviteUserSchema = z.object({
   nom:          z.string().min(1, 'Le nom est requis').max(100),
   email:        z.string().email('Email invalide'),
   telephone:    z.string().optional(),
-  role:         z.enum(['ADMIN', 'MANAGER', 'ACCOUNTANT', 'HR', 'SALES', 'READONLY', 'CUSTOM']),
+  // Accepte un CompanyRole.id (CUID) OU un alias parmi les enums historiques.
+  // La résolution se fait dans inviteUser() : alias → CompanyRole existant ou
+  // création d'un CompanyRole avec les permissions fournies.
+  role:         z.string().min(1, 'Le rôle est requis').max(100),
   permissions:  z.object({
     gestion:      PermissionLevelSchema,
     comptabilite: PermissionLevelSchema,

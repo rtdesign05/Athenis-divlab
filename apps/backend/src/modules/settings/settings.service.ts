@@ -301,11 +301,45 @@ export async function inviteUser(
   const token     = crypto.randomBytes(32).toString('hex')
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000)
 
+  // ── Résolution du roleId ─────────────────────────────────────────────────
+  // Le frontend envoie soit un CompanyRole id (CUID), soit un alias enum
+  // legacy ('ADMIN', 'MANAGER', 'ACCOUNTANT', 'HR', 'SALES', 'READONLY',
+  // 'CUSTOM'). On essaie l'id, puis le nom (case-insensitive), sinon on
+  // crée un CompanyRole avec les permissions fournies. Ainsi la FK
+  // Invitation.roleId → CompanyRole.id reste valide quoi qu'il arrive.
+  let resolvedRoleId: string
+  const byId = await prisma.companyRole.findFirst({
+    where: { id: data.role, companyId },
+    select: { id: true },
+  })
+  if (byId) {
+    resolvedRoleId = byId.id
+  } else {
+    const byName = await prisma.companyRole.findFirst({
+      where: { companyId, name: { equals: data.role, mode: 'insensitive' } },
+      select: { id: true },
+    })
+    if (byName) {
+      resolvedRoleId = byName.id
+    } else {
+      const created = await prisma.companyRole.create({
+        data: {
+          companyId,
+          name:        data.role,
+          permissions: data.permissions,
+          isSystem:    false,
+        },
+        select: { id: true },
+      })
+      resolvedRoleId = created.id
+    }
+  }
+
   const invitation = await prisma.invitation.create({
     data: {
       companyId,
       email:        data.email,
-      roleId:       data.role,
+      roleId:       resolvedRoleId,
       token,
       expiresAt,
       createdBy:    invitedBy,
