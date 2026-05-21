@@ -1,14 +1,23 @@
 name: Deploy to Production
 
-# Auto-deploy sur le VPS athenis360.com après chaque push sur main.
-# Précondition : CI verte (typecheck, lint, tests, build) — sinon ce workflow
-# ne tourne pas (concurrency + condition success de CI ci-dessous).
+# Deploy au VPS athenis360.com :
+#   • Automatique : après chaque push sur main (CI verte).
+#   • Manuel    : via "Run workflow" depuis l'onglet Actions, en choisissant
+#     la branche à déployer (dev, main, ou n'importe quelle autre). Utile
+#     pour pousser un fix urgent depuis dev sans passer par main.
 
 on:
   workflow_run:
     workflows: ['CI']
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branche à déployer (ex: dev, main)'
+        required: true
+        default: 'main'
+        type: string
 
 # Empêche 2 deploys en parallèle (race condition migrate, container restart, etc.).
 # cancel-in-progress=false → si un deploy est en cours, on attend la fin avant de lancer le suivant.
@@ -21,15 +30,25 @@ jobs:
     name: Deploy to VPS
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Seulement si la CI a réussi
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Auto-deploy : seulement si la CI a réussi. Manual : toujours autorisé.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     steps:
+      - name: Resolve target branch
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BRANCH="${{ github.event.inputs.branch }}"
+          else
+            BRANCH="main"
+          fi
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "▶ Branche cible : $BRANCH"
+
       - name: Checkout (informatif — la prod pull depuis git)
         uses: actions/checkout@v4
         with:
-          # On checkout juste pour afficher le SHA dans les logs, le vrai pull se fait sur le VPS
-          ref: main
+          ref: ${{ steps.target.outputs.branch }}
 
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -46,14 +65,17 @@ jobs:
         env:
           VPS_USER: ${{ secrets.VPS_USER }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
+          BRANCH:   ${{ steps.target.outputs.branch }}
         run: |
-          ssh "$VPS_USER@$VPS_HOST" "bash -euo pipefail << 'REMOTE_EOF'
+          ssh "$VPS_USER@$VPS_HOST" "BRANCH='$BRANCH' bash -euo pipefail << 'REMOTE_EOF'
             cd /home/ubuntu/athenis
 
             echo '═══════════════════════════════════════════════════════'
-            echo '▶ Pull du code depuis main'
+            echo \"▶ Pull du code depuis \$BRANCH\"
             echo '═══════════════════════════════════════════════════════'
-            git pull --ff-only origin main
+            git fetch origin \"\$BRANCH\"
+            git checkout \"\$BRANCH\"
+            git reset --hard \"origin/\$BRANCH\"
 
             COMMIT_SHA=\$(git rev-parse --short HEAD)
             COMMIT_MSG=\$(git log -1 --pretty=%s)
