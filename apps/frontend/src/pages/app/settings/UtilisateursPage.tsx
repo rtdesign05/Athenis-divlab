@@ -1064,21 +1064,49 @@ export function UtilisateursPage() {
 
   useEffect(() => { void loadData() }, [loadData])
 
+  /** Extrait un message d'erreur exploitable d'une erreur axios/JS. */
+  function extractApiError(e: unknown, fallback: string): string {
+    const err = e as { response?: { data?: { error?: string } }; message?: string }
+    return err?.response?.data?.error ?? err?.message ?? fallback
+  }
+
   const handleStatusToggled = useCallback(async (userId: string, current: UserStatus) => {
     const next: UserStatus = current === 'SUSPENDED' ? 'ACTIVE' : 'SUSPENDED'
-    await settingsApi.updateUserStatus(userId, next)
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, status: next } : u)))
+    try {
+      await settingsApi.updateUserStatus(userId, next)
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, status: next } : u)))
+    } catch (e) {
+      setToast(extractApiError(e, 'Impossible de changer le statut'))
+    }
   }, [])
 
   const handleDeleted = useCallback(async (userId: string) => {
-    await settingsApi.deleteUser(userId)
-    setUsers((prev) => prev.filter((u) => u.id !== userId))
+    try {
+      await settingsApi.deleteUser(userId)
+      setUsers((prev) => prev.filter((u) => u.id !== userId))
+      setToast('Utilisateur supprimé')
+    } catch (e) {
+      setToast(extractApiError(e, 'Impossible de supprimer l\'utilisateur'))
+    }
   }, [])
 
   const handleCancelInvite = useCallback(async (invitationId: string) => {
     // L'id passé est l'id de la row Invitation (pour les lignes user.isInvitation=true)
-    await settingsApi.cancelInvitation(invitationId)
-    setUsers((prev) => prev.filter((u) => u.id !== invitationId))
+    try {
+      await settingsApi.cancelInvitation(invitationId)
+      setUsers((prev) => prev.filter((u) => u.id !== invitationId))
+      setToast('Invitation annulée')
+    } catch (e) {
+      // 404 = invitation déjà annulée ou acceptée par quelqu'un d'autre — on retire
+      // quand même la ligne de la liste pour rafraîchir l'UI
+      const status = (e as { response?: { status?: number } })?.response?.status
+      if (status === 404 || status === 410) {
+        setUsers((prev) => prev.filter((u) => u.id !== invitationId))
+        setToast('Invitation déjà annulée ou expirée')
+        return
+      }
+      setToast(extractApiError(e, 'Impossible d\'annuler l\'invitation'))
+    }
   }, [])
 
   const handleAgencesUpdated = useCallback((userId: string, agenceIds: string[], isRestricted: boolean) => {

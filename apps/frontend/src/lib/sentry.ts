@@ -33,6 +33,20 @@ export function initSentry() {
       /^Network Error/,
       /ChunkLoadError/,
     ],
+    // Filtre les AxiosError 4xx (attendus : 401 token expiré, 403 perms,
+    // 404 ressource déjà supprimée, 409 conflit, 422 validation, 429 rate-limit).
+    // On ne capture QUE les 5xx (vraies pannes serveur) + les erreurs réseau.
+    beforeSend(event, hint) {
+      const err = hint?.originalException as { isAxiosError?: boolean; response?: { status?: number } } | undefined
+      if (err?.isAxiosError) {
+        const status = err.response?.status
+        if (typeof status === 'number' && status >= 400 && status < 500) {
+          return null  // drop : 4xx = problème utilisateur, pas un bug
+        }
+        if (!status) return null  // erreur sans status = network/timeout (déjà filtré par ignoreErrors)
+      }
+      return event
+    },
   })
 }
 
