@@ -860,6 +860,133 @@ function ConfirmDialog({ message, onConfirm, onCancel, loading }: ConfirmDialogP
   )
 }
 
+// ── Edit Role Modal ──────────────────────────────────────────────────────────
+// Permet à l'admin de promouvoir / rétrograder un user en lui assignant un
+// CompanyRole différent. Charge les rôles existants via settingsApi.listRoles().
+
+interface EditRoleModalProps {
+  user:      SettingsUser
+  onClose:   () => void
+  onSuccess: (newRoleId: string, newRoleName: string) => void
+}
+
+function EditRoleModal({ user, onClose, onSuccess }: EditRoleModalProps) {
+  const [roles, setRoles]               = useState<CompanyRole[]>([])
+  const [loading, setLoading]           = useState(true)
+  const [selectedRoleId, setSelectedRoleId] = useState<string>(user.companyRoleId ?? '')
+  const [saving, setSaving]             = useState(false)
+  const [error, setError]               = useState<string | null>(null)
+
+  useEffect(() => {
+    settingsApi.listRoles()
+      .then((data) => {
+        setRoles(data)
+        if (!selectedRoleId && data.length > 0) {
+          // Si le user n'avait pas de roleId valide, on pré-sélectionne le rôle courant par nom
+          const match = data.find(r => r.name === user.companyRoleName)
+          setSelectedRoleId(match?.id ?? data[0]!.id)
+        }
+      })
+      .catch(() => setError('Impossible de charger les rôles'))
+      .finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleSave() {
+    if (!selectedRoleId) { setError('Sélectionnez un rôle'); return }
+    setSaving(true)
+    setError(null)
+    try {
+      await settingsApi.updateUserRole(user.id, selectedRoleId)
+      const newRole = roles.find(r => r.id === selectedRoleId)
+      onSuccess(selectedRoleId, newRole?.name ?? '')
+      onClose()
+    } catch (e) {
+      const err = e as { response?: { data?: { error?: string } }; message?: string }
+      setError(err?.response?.data?.error ?? err?.message ?? 'Impossible de mettre à jour le rôle')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-xl flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4 shrink-0">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Modifier le rôle</h3>
+            <p className="mt-0.5 text-xs text-gray-500">{getDisplayName(user)} — {user.email}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          <div className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Rôle actuel</p>
+            <p className="mt-0.5 text-sm font-semibold text-gray-900">{user.companyRoleName ?? '—'}</p>
+          </div>
+
+          <p className="text-xs font-medium uppercase tracking-wide text-gray-400 pt-2">Nouveau rôle</p>
+          {loading ? (
+            <div className="flex items-center justify-center py-6">
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+            </div>
+          ) : (
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {roles.map((r) => (
+                <label
+                  key={r.id}
+                  className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-all ${
+                    selectedRoleId === r.id
+                      ? 'border-gray-900 bg-gray-50 ring-1 ring-gray-900'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="newRole"
+                    checked={selectedRoleId === r.id}
+                    onChange={() => setSelectedRoleId(r.id)}
+                    className="mt-0.5 accent-gray-900"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900">{r.name}</span>
+                      {r.isSystem && (
+                        <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">
+                          Système
+                        </span>
+                      )}
+                    </div>
+                    {r.description && <p className="mt-0.5 text-xs text-gray-500">{r.description}</p>}
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-3 shrink-0">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => { void handleSave() }}
+            disabled={saving || loading || !selectedRoleId || selectedRoleId === user.companyRoleId}
+            className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-medium text-white hover:bg-forest-800 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? 'Sauvegarde…' : 'Modifier le rôle'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── User Row ──────────────────────────────────────────────────────────────────
 
 interface UserRowProps {
@@ -870,15 +997,17 @@ interface UserRowProps {
   onDeleted: (userId: string) => Promise<void>
   onCancelInvite: (userId: string) => Promise<void>
   onAgencesUpdated: (userId: string, agenceIds: string[], isRestricted: boolean) => void
+  onRoleUpdated: (userId: string, newRoleId: string, newRoleName: string) => void
 }
 
 function UserRow({
   user, isSelf, agenceMap,
-  onStatusToggled, onDeleted, onCancelInvite, onAgencesUpdated,
+  onStatusToggled, onDeleted, onCancelInvite, onAgencesUpdated, onRoleUpdated,
 }: UserRowProps) {
   const [actionLoading, setActionLoading] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showEditAgences, setShowEditAgences] = useState(false)
+  const [showEditRole, setShowEditRole] = useState(false)
 
   const displayRole = user.companyRoleName ?? user.globalRole
 
@@ -935,6 +1064,16 @@ function UserRow({
           onConfirm={handleDelete}
           onCancel={() => setConfirmDelete(false)}
           loading={actionLoading}
+        />
+      )}
+      {showEditRole && (
+        <EditRoleModal
+          user={user}
+          onClose={() => setShowEditRole(false)}
+          onSuccess={(newRoleId, newRoleName) => {
+            onRoleUpdated(user.id, newRoleId, newRoleName)
+            setShowEditRole(false)
+          }}
         />
       )}
       {showEditAgences && (
@@ -997,6 +1136,12 @@ function UserRow({
             </button>
           ) : (
             <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => setShowEditRole(true)}
+                className="text-sm text-violet-600 hover:text-violet-800 transition-colors"
+              >
+                Rôle
+              </button>
               <button
                 onClick={() => setShowEditAgences(true)}
                 className="text-sm text-indigo-600 hover:text-indigo-800 transition-colors"
@@ -1115,6 +1260,15 @@ export function UtilisateursPage() {
     setToast('Agences mises à jour')
   }, [])
 
+  const handleRoleUpdated = useCallback((userId: string, newRoleId: string, newRoleName: string) => {
+    setUsers((prev) => prev.map((u) =>
+      u.id === userId
+        ? { ...u, companyRoleId: newRoleId, companyRoleName: newRoleName }
+        : u,
+    ))
+    setToast('Rôle mis à jour — les permissions seront appliquées à la prochaine connexion')
+  }, [])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -1221,6 +1375,7 @@ export function UtilisateursPage() {
                       onDeleted={handleDeleted}
                       onCancelInvite={handleCancelInvite}
                       onAgencesUpdated={handleAgencesUpdated}
+                      onRoleUpdated={handleRoleUpdated}
                     />
                   ))
                 )}

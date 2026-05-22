@@ -158,6 +158,7 @@ export async function listUsers(companyId: string) {
             role: true,
           },
         },
+        role: { select: { id: true, name: true } },
         agenceMembers: {
           include: { agence: { select: { id: true, nom: true } } },
         },
@@ -180,6 +181,17 @@ export async function listUsers(companyId: string) {
     }),
   ])
 
+  // Lookup table pour résoudre roleId → name côté invitations (qui n'ont pas de
+  // relation directe, juste roleId stocké en colonne)
+  const invitationRoleIds = invitations.map(inv => inv.roleId)
+  const invitationRoles = invitationRoleIds.length > 0
+    ? await prisma.companyRole.findMany({
+        where: { id: { in: invitationRoleIds }, companyId },
+        select: { id: true, name: true },
+      })
+    : []
+  const roleNameById = new Map(invitationRoles.map(r => [r.id, r.name]))
+
   const userEntries = members.map(member => {
     const user         = member.user
     const agenceIds    = member.agenceMembers.map(am => am.agence.id)
@@ -190,8 +202,8 @@ export async function listUsers(companyId: string) {
       firstName:       user.prenom ?? null,
       lastName:        user.nom,
       globalRole:      user.role,
-      companyRoleId:   member.roleId,
-      companyRoleName: member.roleId,
+      companyRoleId:   member.role?.id   ?? member.roleId,
+      companyRoleName: member.role?.name ?? null,
       status:          member.status,
       totpEnabled:     user.twoFAEnabled,
       lastLoginAt:     user.lastLoginAt?.toISOString() ?? null,
@@ -209,7 +221,7 @@ export async function listUsers(companyId: string) {
     lastName:        null as null,
     globalRole:      inv.roleId,
     companyRoleId:   inv.roleId,
-    companyRoleName: inv.roleId,
+    companyRoleName: roleNameById.get(inv.roleId) ?? inv.roleId,
     status:          'INVITED' as const,
     totpEnabled:     false as const,
     lastLoginAt:     null as null,
