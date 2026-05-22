@@ -11,6 +11,7 @@ interface FormState {
   accountType: AccountType | null
   email: string
   password: string
+  confirmPassword: string
   firstName: string
   lastName: string
   country: string
@@ -157,7 +158,7 @@ export function Register() {
 
   const [form, setForm] = useState<FormState>({
     accountType: presetType,
-    email: '', password: '',
+    email: '', password: '', confirmPassword: '',
     firstName: '', lastName: '',
     country: 'CM',
     companyName: '', siren: '', niu: '', secteur: '', taille: 'PME', plan: 'FREE',
@@ -195,6 +196,14 @@ export function Register() {
     setError('')
     if (step === 2) {
       if (!form.email || !form.password) { setError('Email et mot de passe requis'); return }
+      if (form.password !== form.confirmPassword) {
+        setError('Les deux mots de passe ne correspondent pas.')
+        return
+      }
+      if (form.password.length < 8) {
+        setError('Mot de passe trop court (8 caractères minimum).')
+        return
+      }
       if (form.accountType === 'COMPANY') { setStep(3); return }
       setStep(4)
     } else if (step === 3) {
@@ -384,7 +393,22 @@ export function Register() {
           </div>
           <div>
             <label className="label">Mot de passe *</label>
-            <input type="password" required className="input mt-1" placeholder="Min. 8 car., 1 majuscule, 1 chiffre" value={form.password} onChange={(e) => set('password', e.target.value)} />
+            <input type="password" required className="input mt-1" placeholder="Min. 8 car., 1 majuscule, 1 chiffre" value={form.password} onChange={(e) => set('password', e.target.value)} autoComplete="new-password" />
+          </div>
+          <div>
+            <label className="label">Confirmer le mot de passe *</label>
+            <input
+              type="password"
+              required
+              className={`input mt-1 ${form.confirmPassword && form.confirmPassword !== form.password ? 'border-red-300 focus:ring-red-500/30' : ''}`}
+              placeholder="Retapez le même mot de passe"
+              value={form.confirmPassword}
+              onChange={(e) => set('confirmPassword', e.target.value)}
+              autoComplete="new-password"
+            />
+            {form.confirmPassword && form.confirmPassword !== form.password && (
+              <p className="mt-1 text-xs text-red-600">Les deux mots de passe ne correspondent pas.</p>
+            )}
           </div>
 
           {/* Company-specific fields */}

@@ -410,9 +410,9 @@ export function LoginPage() {
                     <label htmlFor={passwordId} className="text-sm font-medium text-gray-600">
                       {t('auth.passwordLabel')}
                     </label>
-                    <button type="button" className="text-xs text-green-700 hover:underline">
+                    <Link to="/auth/forgot-password" className="text-xs text-green-700 hover:underline">
                       {t('auth.forgotPassword')}
-                    </button>
+                    </Link>
                   </div>
                   <div className="relative">
                     <input

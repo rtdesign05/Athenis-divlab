@@ -78,6 +78,17 @@ export const ChangePasswordDto = z
     path: ['newPassword'],
   })
 
+// ── Password reset (mot de passe oublié) ──────────────────────────────────────
+
+export const ForgotPasswordDto = z.object({
+  email: emailSchema,
+})
+
+export const ResetPasswordDto = z.object({
+  token:    z.string().min(32).max(128),
+  password: passwordSchema,
+})
+
 export type RegisterDto = z.infer<typeof RegisterDto>
 export type RegisterPersonalDto = z.infer<typeof RegisterPersonalDto>
 export type RegisterCompanyDto = z.infer<typeof RegisterCompanyDto>
@@ -87,3 +98,5 @@ export type TotpVerifyDto = z.infer<typeof TotpVerifyDto>
 export type TotpEnableDto = z.infer<typeof TotpEnableDto>
 export type TotpDisableDto = z.infer<typeof TotpDisableDto>
 export type ChangePasswordDto = z.infer<typeof ChangePasswordDto>
+export type ForgotPasswordDto = z.infer<typeof ForgotPasswordDto>
+export type ResetPasswordDto  = z.infer<typeof ResetPasswordDto>

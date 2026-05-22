@@ -162,6 +162,28 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
   }
 }
 
+// ── Mot de passe oublié / réinitialisation ──────────────────────────────────
+
+export async function forgotPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await authService.requestPasswordReset(req.body)
+    // Toujours 200 (anti-énumération) — n'indique pas si l'email existe
+    res.json({ success: true, data: null })
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function resetPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    await authService.resetPassword(req.body, clientIp(req), userAgent(req))
+    res.clearCookie('refreshToken', { path: '/api/auth' })
+    res.json({ success: true, data: null })
+  } catch (err) {
+    next(err)
+  }
+}
+
 // ── MFA multi-méthode (EMAIL / SMS) ──────────────────────────────────────────
 
 export async function mfaStatus(req: Request, res: Response, next: NextFunction): Promise<void> {

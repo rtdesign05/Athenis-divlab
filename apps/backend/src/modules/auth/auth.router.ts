@@ -9,6 +9,8 @@ import {
   TotpEnableDto,
   TotpDisableDto,
   ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
 } from './auth.dto.js'
 import * as ctrl from './auth.controller.js'
 
@@ -23,6 +25,19 @@ router.post('/login/mfa/verify', authLimiter, ctrl.loginVerifyMfaCode)
 router.post('/refresh', ctrl.refresh)
 router.get('/verify-email', authLimiter, ctrl.verifyEmail)
 router.post('/resend-verification', authLimiter, ctrl.resendVerification)
+
+// Mot de passe oublié → envoi d'un email avec lien de reset
+router.post('/forgot-password',
+  sensitiveLimiter,
+  validateRequest({ body: ForgotPasswordDto }),
+  ctrl.forgotPassword,
+)
+// Réinitialisation via le token reçu par email
+router.post('/reset-password',
+  sensitiveLimiter,
+  validateRequest({ body: ResetPasswordDto }),
+  ctrl.resetPassword,
+)
 
 // Protected routes
 router.post('/logout', authenticate, ctrl.logout)

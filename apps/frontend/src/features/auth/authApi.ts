@@ -55,4 +55,12 @@ export const authApi = {
 
   resendVerification: (email: string) =>
     api.post<ApiWrap<null>>('/auth/resend-verification', { email }),
+
+  /** Demande un email de réinitialisation. Toujours 200, ne révèle pas si l'email existe. */
+  forgotPassword: (email: string) =>
+    api.post<ApiWrap<null>>('/auth/forgot-password', { email }),
+
+  /** Effectue la réinitialisation avec le token reçu par email. */
+  resetPassword: (token: string, password: string) =>
+    api.post<ApiWrap<null>>('/auth/reset-password', { token, password }),
 }

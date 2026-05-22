@@ -16,6 +16,7 @@ import {
   sendAdminNewSignupNotification,
   sendFirstLoginEmail,
   sendPasswordChangedEmail,
+  sendPasswordResetEmail,
   sendTwoFactorEnabledEmail,
   sendAccountLockedEmail,
   sendMfaCodeEmail,
@@ -52,6 +53,8 @@ import type {
   TotpEnableDto,
   TotpDisableDto,
   ChangePasswordDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
 } from './auth.dto.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1688,4 +1691,92 @@ export async function changePassword(userId: string, dto: ChangePasswordDto, ip:
     userAgent: ua,
     changedAt: new Date(),
   }).catch((e) => logger.error('sendPasswordChangedEmail failed', { userId, error: e }))
+}
+
+// ── Forgot password / Reset password ──────────────────────────────────────────
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000 // 1 heure
+
+/**
+ * Demande de réinitialisation de mot de passe.
+ *
+ * SÉCURITÉ : on retourne TOUJOURS un succès (200) même si l'email n'existe pas
+ * en base, pour ne pas permettre l'énumération de comptes. Le rate-limiting
+ * (sensitiveLimiter) est appliqué côté router.
+ */
+export async function requestPasswordReset(dto: ForgotPasswordDto): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where:  { email: dto.email },
+    select: { id: true, email: true, nom: true, isActive: true },
+  })
+
+  // Ne rien faire si l'user n'existe pas ou est désactivé — mais ne pas le signaler
+  if (!user || !user.isActive) {
+    logger.info('[auth] password reset requested for unknown/inactive email', { email: dto.email })
+    return
+  }
+
+  // Invalider les tokens précédents non utilisés (un seul actif à la fois)
+  await prisma.passwordResetToken.updateMany({
+    where: { userId: user.id, usedAt: null, expiresAt: { gt: new Date() } },
+    data:  { usedAt: new Date() }, // marquer comme "consommé" pour empêcher la réutilisation
+  })
+
+  const rawToken  = crypto.randomBytes(32).toString('hex')
+  const tokenHash = hashToken(rawToken)
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS)
+
+  await prisma.passwordResetToken.create({
+    data: { userId: user.id, tokenHash, expiresAt },
+  })
+
+  void sendPasswordResetEmail(user.email, {
+    token:     rawToken,
+    firstName: user.nom,
+  }).catch((e) => logger.error('sendPasswordResetEmail failed', { userId: user.id, error: e }))
+}
+
+/**
+ * Réinitialise effectivement le mot de passe avec le token reçu par email.
+ *
+ * Le token est à usage unique : on le marque `usedAt` après succès et on
+ * révoque tous les refresh tokens (force la reconnexion sur tous les appareils).
+ */
+export async function resetPassword(dto: ResetPasswordDto, ip: string, ua: string): Promise<void> {
+  const tokenHash = hashToken(dto.token)
+  const record = await prisma.passwordResetToken.findUnique({
+    where:  { tokenHash },
+    select: { id: true, userId: true, expiresAt: true, usedAt: true },
+  })
+
+  if (!record)               throw new AppError('Lien invalide ou expiré', 400, 'INVALID_RESET_TOKEN')
+  if (record.usedAt)         throw new AppError('Ce lien a déjà été utilisé', 400, 'RESET_TOKEN_USED')
+  if (record.expiresAt < new Date()) throw new AppError('Lien expiré, demandez-en un nouveau', 400, 'RESET_TOKEN_EXPIRED')
+
+  const user = await prisma.user.findUniqueOrThrow({
+    where:  { id: record.userId },
+    select: { email: true, nom: true, companyId: true },
+  })
+
+  const newPasswordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS)
+
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: record.userId }, data: { passwordHash: newPasswordHash } }),
+    prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+    // Révoque toutes les sessions existantes par sécurité
+    prisma.refreshToken.updateMany({
+      where: { userId: record.userId, revokedAt: null },
+      data:  { revokedAt: new Date() },
+    }),
+  ])
+
+  await audit('PASSWORD_RESET', record.userId, user.companyId ?? null, ip, ua)
+
+  // Notification de confirmation (toujours bonne pratique sur changement de mdp)
+  void sendPasswordChangedEmail(user.email, {
+    firstName: user.nom,
+    ip,
+    userAgent: ua,
+    changedAt: new Date(),
+  }).catch((e) => logger.error('sendPasswordChangedEmail (reset) failed', { userId: record.userId, error: e }))
 }

@@ -53,6 +53,11 @@ export function Login() {
       <button type="submit" disabled={loading} className="btn-primary w-full">
         {loading ? 'Connexion…' : 'Se connecter'}
       </button>
+      <p className="text-center text-sm">
+        <Link to="/auth/forgot-password" className="text-forest-700 hover:text-forest-900 hover:underline">
+          Mot de passe oublié ?
+        </Link>
+      </p>
       <p className="text-center text-sm text-gray-500">
         Pas encore de compte ?{' '}
         <Link to="/auth/register" className="font-medium text-forest-700 hover:text-forest-900">

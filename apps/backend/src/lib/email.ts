@@ -1024,6 +1024,55 @@ export async function sendFirstLoginEmail(
 
 // ── 6. Mot de passe modifié — alerte sécurité ────────────────────────────────
 
+// ── Demande de réinitialisation de mot de passe ───────────────────────────────
+
+export async function sendPasswordResetEmail(
+  to: string,
+  opts: { token: string; firstName?: string | null },
+): Promise<void> {
+  const url      = `${env.frontendUrl}/auth/reset-password?token=${opts.token}`
+  const safeUrl  = escapeHtml(url)
+  const greeting = opts.firstName ? `Bonjour ${escapeHtml(opts.firstName)},` : 'Bonjour,'
+
+  await sendMail({
+    to,
+    subject: 'Réinitialisation de votre mot de passe — Athenis',
+    text: [
+      `Vous avez demandé à réinitialiser le mot de passe de votre compte Athenis.`,
+      ``,
+      `Cliquez sur ce lien pour choisir un nouveau mot de passe :`,
+      url,
+      ``,
+      `Ce lien est valable 1 heure et ne peut être utilisé qu'une seule fois.`,
+      ``,
+      `Si vous n'êtes pas à l'origine de cette demande, ignorez ce message — votre mot de passe ne sera pas modifié.`,
+    ].join('\n'),
+    html: emailLayout({
+      preheader: 'Suivez le lien pour choisir un nouveau mot de passe.',
+      bodyHtml: `
+        <p style="margin:0 0 8px;color:#374151;font-size:15px">${greeting}</p>
+        <h1 style="margin:0 0 12px;font-size:22px;color:#111827;line-height:1.3">Réinitialiser votre mot de passe</h1>
+        <p style="margin:0 0 24px;color:#6b7280;line-height:1.6;font-size:14px">
+          Vous avez demandé à réinitialiser le mot de passe de votre compte <strong>Athenis</strong>.
+          Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe.
+        </p>
+        ${ctaButton(url, 'Choisir un nouveau mot de passe')}
+        <div style="background:#fef3c7;border-left:3px solid #f59e0b;padding:12px 16px;margin:24px 0;border-radius:0 6px 6px 0">
+          <p style="margin:0;font-size:13px;color:#92400e;line-height:1.5">
+            <strong>Lien à usage unique :</strong> ce lien est valable <strong>1 heure</strong> et ne peut être utilisé qu'une seule fois.
+          </p>
+        </div>
+        <p style="margin:8px 0 0;color:#9ca3af;font-size:13px">
+          Si vous n'êtes pas à l'origine de cette demande, ignorez ce message — votre mot de passe ne sera pas modifié.
+        </p>
+        <p style="margin:16px 0 0;color:#9ca3af;font-size:12px;word-break:break-all">
+          Lien : <a href="${safeUrl}" style="color:#1a3a2a">${safeUrl}</a>
+        </p>
+      `,
+    }),
+  })
+}
+
 export async function sendPasswordChangedEmail(
   to: string,
   opts: {

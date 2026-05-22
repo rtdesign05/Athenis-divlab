@@ -73,7 +73,8 @@ model User {
 
   // Relations
   companyMemberships CompanyMember[]
-  refreshTokens      RefreshToken[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
   auditLogs          AuditLog[]
   cabinet            Cabinet?         @relation(fields: [cabinetId], references: [id], onDelete: Cascade)
   company            Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -240,6 +241,22 @@ model RefreshToken {
   @@index([userId])
   @@index([expiresAt])
   @@map("refresh_tokens")
+}
+
+/// Token usage unique pour réinitialiser un mot de passe oublié.
+/// Stockage de l'empreinte SHA-256 du token, pas du token brut.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // ─────────────────────────────────────────
