@@ -719,6 +719,7 @@ function defaultsForModele(modele: ModeleFacture): { notes: string; conditionsPa
 
 function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences, defaultVatRate }: ModalNouvelleFactureProps) {
   const { addFactureVente, articles, updateFactureVenteStatut } = useGestion()
+  const { fmt } = useCurrency()
 
   // Si true, la facture est immédiatement validée (statut Envoyée) → comptabilisée
   // dans le journal VTE et visible sur le dashboard. Si false, elle reste en
@@ -1158,15 +1159,15 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
                 <div className="w-64 rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-1.5 text-sm">
                   <div className="flex justify-between text-gray-600">
                     <span>Total HT</span>
-                    <span className="font-medium">{totalHT.toLocaleString('fr-FR')} XAF</span>
+                    <span className="font-medium">{fmt(totalHT)}</span>
                   </div>
                   <div className="flex justify-between text-gray-500 text-xs">
                     <span>TVA</span>
-                    <span>{tvaAmt.toLocaleString('fr-FR')} XAF</span>
+                    <span>{fmt(tvaAmt)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-gray-900 border-t border-gray-200 pt-1.5">
                     <span>Total TTC</span>
-                    <span>{totalTTC.toLocaleString('fr-FR')} XAF</span>
+                    <span>{fmt(totalTTC)}</span>
                   </div>
                 </div>
               </div>

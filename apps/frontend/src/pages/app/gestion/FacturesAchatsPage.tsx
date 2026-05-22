@@ -221,7 +221,7 @@ function ImportModal({ defaultVat, defaultAgence, onImport, onClose }: ImportMod
                           <td className="px-3 py-2 font-mono text-gray-500">{r.commande || '—'}</td>
                           <td className="px-3 py-2 text-gray-600">{r.date}</td>
                           <td className="px-3 py-2 text-gray-600">{r.echeance}</td>
-                          <td className="px-3 py-2 font-semibold text-gray-900">{fmt(r.montantTTC)} XAF</td>
+                          <td className="px-3 py-2 font-semibold text-gray-900">{fmt(r.montantTTC)}</td>
                           <td className="px-3 py-2">
                             <span className={`rounded-full px-2 py-0.5 font-medium ${STATUT_STYLE[r.statut] ?? 'bg-gray-100 text-gray-600'}`}>{r.statut}</span>
                           </td>
@@ -275,6 +275,7 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
   const today = new Date().toISOString().slice(0, 10)
   const { articles, fournisseurs } = useGestion()
   const { agences } = useCompanySettings()
+  const { fmt } = useCurrency()
   // achats prop reste passé pour compat (lien éventuel à un bon de commande dans le futur)
   void achats
 
@@ -597,9 +598,9 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
             </div>
             <div className="col-span-2 flex items-center gap-4 rounded-lg bg-gray-50 px-3 py-2">
               <span className="text-xs text-gray-500">Total HT</span>
-              <span className="text-sm font-medium text-gray-700 tabular-nums">{montantHT.toLocaleString('fr-FR')} XAF</span>
+              <span className="text-sm font-medium text-gray-700 tabular-nums">{fmt(montantHT)}</span>
               <span className="ml-auto text-xs text-gray-500">TTC</span>
-              <span className="text-sm font-semibold text-gray-900 tabular-nums">{montantTTC.toLocaleString('fr-FR')} XAF</span>
+              <span className="text-sm font-semibold text-gray-900 tabular-nums">{fmt(montantTTC)}</span>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -894,11 +895,11 @@ function FAView({ fa, fournisseur, companyName, address, fmtCurrency, onClose, o
               <div className="w-64 space-y-1.5">
                 <div className="flex justify-between text-xs text-gray-600">
                   <span>Total HT</span>
-                  <span className="font-medium">{totalHT.toLocaleString('fr-FR')} XAF</span>
+                  <span className="font-medium">{fmtCurrency(totalHT)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-600">
                   <span>TVA {fa.tva} %</span>
-                  <span className="font-medium">{Math.round(tvaMontant).toLocaleString('fr-FR')} XAF</span>
+                  <span className="font-medium">{fmtCurrency(Math.round(tvaMontant))}</span>
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 flex justify-between text-sm font-bold text-gray-900">
                   <span>Total TTC</span>

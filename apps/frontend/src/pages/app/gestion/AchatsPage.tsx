@@ -45,6 +45,7 @@ interface ModalBCProps {
 function ModalBC({ fournisseurs, agenceNom, agences, initial, onSave, onClose }: ModalBCProps) {
   const today  = new Date().toISOString().slice(0, 10)
   const isEdit = !!initial
+  const { fmt } = useCurrency()
 
   const [form, setForm] = useState({
     fournisseur:       initial?.fournisseur        ?? '',
@@ -231,9 +232,9 @@ function ModalBC({ fournisseurs, agenceNom, agences, initial, onSave, onClose }:
               </table>
             </div>
             <div className="mt-2 text-right text-xs text-gray-500 space-y-0.5 pr-2">
-              <div>Total HT : <span className="font-semibold text-gray-800">{totalHT.toLocaleString('fr-FR')} XAF</span></div>
-              <div>TVA 19,25 % : <span className="font-semibold text-gray-800">{Math.round(tva).toLocaleString('fr-FR')} XAF</span></div>
-              <div className="text-sm font-bold text-gray-900">Total TTC : {Math.round(totalTTC).toLocaleString('fr-FR')} XAF</div>
+              <div>Total HT : <span className="font-semibold text-gray-800">{fmt(totalHT)}</span></div>
+              <div>TVA 19,25 % : <span className="font-semibold text-gray-800">{fmt(Math.round(tva))}</span></div>
+              <div className="text-sm font-bold text-gray-900">Total TTC : {fmt(Math.round(totalTTC))}</div>
             </div>
           </div>
 
@@ -442,11 +443,11 @@ function BCView({ bc, companyName, address, city, fmtCurrency, onClose, onEdit, 
               <div className="w-64 space-y-1.5">
                 <div className="flex justify-between text-xs text-gray-600">
                   <span>Total HT</span>
-                  <span className="font-medium">{totalHT.toLocaleString('fr-FR')} XAF</span>
+                  <span className="font-medium">{fmtCurrency(totalHT)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-600">
                   <span>TVA 19,25 %</span>
-                  <span className="font-medium">{Math.round(tva).toLocaleString('fr-FR')} XAF</span>
+                  <span className="font-medium">{fmtCurrency(Math.round(tva))}</span>
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 flex justify-between text-sm font-bold text-gray-900">
                   <span>Total TTC</span>
