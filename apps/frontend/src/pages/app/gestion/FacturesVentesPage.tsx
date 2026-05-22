@@ -1060,7 +1060,8 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
                               type="number"
                               min={0}
                               step="any"
-                              value={l.quantite}
+                              placeholder="0"
+                              value={l.quantite || ''}
                               onChange={e => updateLigne(idx, { quantite: e.target.value })}
                               className={`w-full rounded border px-2 py-1 text-xs focus:outline-none focus:ring-1 ${
                                 lineError?.reason === 'qty-stock' || lineError?.reason === 'qty-zero'
@@ -1081,7 +1082,7 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
                           <td className="px-2 py-1.5">
                             <input
                               type="number"
-                              value={l.prixUnitaireHT}
+                              value={l.prixUnitaireHT || ''}
                               onChange={e => updateLigne(idx, { prixUnitaireHT: e.target.value })}
                               placeholder="0"
                               className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30"

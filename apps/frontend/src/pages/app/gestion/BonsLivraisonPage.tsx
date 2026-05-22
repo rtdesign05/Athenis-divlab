@@ -538,7 +538,7 @@ function ModalBL({ commandes, articles, agenceNom, onSave, onClose }: ModalBLPro
                           className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
                       </td>
                       <td className="px-3 py-1.5">
-                        <input type="number" min={1} value={l.quantite}
+                        <input type="number" min={1} placeholder="0" value={l.quantite || ''}
                           onChange={e => updateLigne(i, 'quantite', Number(e.target.value))}
                           className="w-full rounded border border-gray-200 px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-500/30" />
                       </td>

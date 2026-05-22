@@ -204,7 +204,7 @@ function ModalBC({ fournisseurs, agenceNom, agences, initial, onSave, onClose }:
                           className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
                       </td>
                       <td className="px-2 py-1.5">
-                        <input type="number" min={0} step="0.01" value={l.quantite}
+                        <input type="number" min={0} step="0.01" placeholder="0" value={l.quantite || ''}
                           onChange={e => updateLigne(l.id, 'quantite', parseFloat(e.target.value) || 0)}
                           className="w-16 rounded border border-gray-200 px-1.5 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-500/30" />
                       </td>
@@ -214,7 +214,7 @@ function ModalBC({ fournisseurs, agenceNom, agences, initial, onSave, onClose }:
                           className="w-16 rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
                       </td>
                       <td className="px-2 py-1.5">
-                        <input type="number" min={0} step="1" value={l.prixUnitaireHT}
+                        <input type="number" min={0} step="1" placeholder="0" value={l.prixUnitaireHT || ''}
                           onChange={e => updateLigne(l.id, 'prixUnitaireHT', parseFloat(e.target.value) || 0)}
                           className="w-24 rounded border border-gray-200 px-1.5 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-500/30" />
                       </td>

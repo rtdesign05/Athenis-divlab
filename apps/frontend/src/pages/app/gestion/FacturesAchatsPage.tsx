@@ -549,7 +549,7 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
                           />
                         </td>
                         <td className="px-2 py-1.5">
-                          <input type="number" min={0} step="any" value={l.quantite}
+                          <input type="number" min={0} step="any" placeholder="0" value={l.quantite || ''}
                             onChange={e => updateLigne(idx, { quantite: e.target.value })}
                             className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
                         </td>
@@ -561,7 +561,7 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
                           </select>
                         </td>
                         <td className="px-2 py-1.5">
-                          <input type="number" min={0} step="any" value={l.prixUnitaireHT}
+                          <input type="number" min={0} step="any" value={l.prixUnitaireHT || ''}
                             onChange={e => updateLigne(idx, { prixUnitaireHT: e.target.value })}
                             placeholder="0"
                             className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />

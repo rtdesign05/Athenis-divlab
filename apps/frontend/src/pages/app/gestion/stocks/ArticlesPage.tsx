@@ -115,7 +115,7 @@ function ArticleModal({ families, onClose, initial }: { families: StockFamily[];
     tvaAchat:         String(initial ? initial.tvaAchat * 100 : TVA_CM_PCT),
     tvaVente:         String(initial ? initial.tvaVente * 100 : TVA_CM_PCT),
     stockInitial:     '',
-    stockMin:         String(initial?.stockMin ?? '0'),
+    stockMin:         String(initial?.stockMin ?? ''),
     stockMax:         String(initial?.stockMax ?? ''),
     methodeValuation: (initial?.methodeValuation ?? 'CMUP') as StockMethod,
     description:      initial?.description ?? '',
@@ -222,7 +222,7 @@ function ArticleModal({ families, onClose, initial }: { families: StockFamily[];
                   </div>
                   <div>
                     <label className="label">Délai appro (jours)</label>
-                    <input className="input" type="number" min={0} value={form.delaiAppro} onChange={(e) => f('delaiAppro', e.target.value)} />
+                    <input className="input" type="number" min={0} placeholder="0" value={form.delaiAppro} onChange={(e) => f('delaiAppro', e.target.value)} />
                   </div>
                 </div>
                 <div>
@@ -241,11 +241,11 @@ function ArticleModal({ families, onClose, initial }: { families: StockFamily[];
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">Prix d'achat HT *</label>
-                    <input className="input" type="number" required min={0} step="any" value={form.prixAchat} onChange={(e) => f('prixAchat', e.target.value)} />
+                    <input className="input" type="number" required min={0} step="any" placeholder="0" value={form.prixAchat} onChange={(e) => f('prixAchat', e.target.value)} />
                   </div>
                   <div>
                     <label className="label">Prix de vente HT *</label>
-                    <input className="input" type="number" required min={0} step="any" value={form.prixVente} onChange={(e) => f('prixVente', e.target.value)} />
+                    <input className="input" type="number" required min={0} step="any" placeholder="0" value={form.prixVente} onChange={(e) => f('prixVente', e.target.value)} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -267,7 +267,7 @@ function ArticleModal({ families, onClose, initial }: { families: StockFamily[];
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">Stock minimum (alerte)</label>
-                    <input className="input" type="number" min={0} step="any" value={form.stockMin} onChange={(e) => f('stockMin', e.target.value)} />
+                    <input className="input" type="number" min={0} step="any" placeholder="0" value={form.stockMin} onChange={(e) => f('stockMin', e.target.value)} />
                   </div>
                   <div>
                     <label className="label">Stock maximum</label>

@@ -1139,11 +1139,18 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       invoiceDbIds.current[created.reference] = created.id
       const next = apiInvoiceToFactureVente(created)
       setFacturesVentes(prev => [next, ...prev])
-      // Invalide les vues consommatrices (liste factures, dashboard) — important
-      // pour que la nouvelle facture apparaisse immédiatement après création.
-      qc.invalidateQueries({ queryKey: ['invoices'] })
-      qc.invalidateQueries({ queryKey: ['billing'] })
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
+      // Invalide les vues consommatrices. ['invoices'] couvre les sous-clés
+      // ['invoices','list',...], ['invoices','dashboard',...], etc.
+      // Note : une facture DRAFT n'est PAS comptée dans le CA du tableau de bord
+      // (conforme SYSCOHADA — reconnaissance à l'émission/SENT). Le tableau de
+      // bord ne "bouge" qu'au passage de la facture en SENT/PAID.
+      ;[
+        'invoices',
+        'accounting',           // SIG / compte de résultat
+        'dashboard',
+        'fiscal-years',
+        'comptes-tiers',
+      ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
       return next
     } catch (err) {
       // Échec API : on remonte l'erreur au lieu d'un fallback local silencieux

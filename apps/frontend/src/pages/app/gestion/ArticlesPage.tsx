@@ -126,8 +126,11 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
 
   const set    = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
-  const setNum  = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm(f => ({ ...f, [k]: Number(e.target.value) }))
+  const setNum  = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value
+    // Vide → 0, sinon parse. Évite NaN si user efface tout.
+    setForm(f => ({ ...f, [k]: raw === '' ? 0 : Number(raw) }))
+  }
   const setBool = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [k]: e.target.checked }))
 
@@ -185,22 +188,22 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Prix vente HT (XAF)</label>
-              <input type="number" min={0} value={form.prixVenteHT} onChange={setNum('prixVenteHT')}
+              <input type="number" min={0} step="0.01" placeholder="0" value={form.prixVenteHT || ''} onChange={setNum('prixVenteHT')}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Prix achat HT (XAF)</label>
-              <input type="number" min={0} value={form.prixAchatHT} onChange={setNum('prixAchatHT')}
+              <input type="number" min={0} step="0.01" placeholder="0" value={form.prixAchatHT || ''} onChange={setNum('prixAchatHT')}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Stock actuel</label>
-              <input type="number" min={0} value={form.stock} onChange={setNum('stock')}
+              <input type="number" min={0} placeholder="0" value={form.stock || ''} onChange={setNum('stock')}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Stock minimum (alerte)</label>
-              <input type="number" min={0} value={form.stockMin} onChange={setNum('stockMin')}
+              <input type="number" min={0} placeholder="0" value={form.stockMin || ''} onChange={setNum('stockMin')}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
             </div>
             <div className="col-span-2">
