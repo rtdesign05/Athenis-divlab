@@ -543,7 +543,32 @@ export function BanquesPage() {
     )
   }
 
-  if (!selected) return null
+  if (!selected) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white px-8 py-12 text-center max-w-md">
+          <p className="text-5xl mb-3">🏦</p>
+          <p className="text-base font-semibold text-gray-900">Aucun compte bancaire</p>
+          <p className="mt-2 text-sm text-gray-500">
+            Créez votre premier compte bancaire pour commencer à suivre vos opérations et votre solde.
+          </p>
+          <button
+            onClick={() => setShowAddCompte(true)}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-forest-900 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-800"
+          >
+            + Ajouter un compte bancaire
+          </button>
+        </div>
+        {showAddCompte && (
+          <ModalCompte
+            onSave={addCompte}
+            onClose={() => setShowAddCompte(false)}
+            {...(agenceNom ? { defaultAgence: agenceNom } : {})}
+          />
+        )}
+      </div>
+    )
+  }
 
   const isFiltered = dateFrom !== '' || dateTo !== ''
   const filteredTotal = filteredOperations.reduce((s, o) => s + o.montant, 0)

@@ -272,10 +272,10 @@ export function MobileMoneyPage() {
 
   const portesVisibles = agenceNom ? portefeuilles.filter(p => p.agence === agenceNom) : portefeuilles
   const [selectedId, setSelectedId] = useState<string>(
-    () => (agenceNom ? portefeuilles.find(p => p.agence === agenceNom)?.id : portefeuilles[0]?.id) ?? portefeuilles[0]!.id
+    () => (agenceNom ? portefeuilles.find(p => p.agence === agenceNom)?.id : portefeuilles[0]?.id) ?? ''
   )
 
-  const selected   = portesVisibles.find(p => p.id === selectedId) ?? portesVisibles[0]!
+  const selected   = portesVisibles.find(p => p.id === selectedId) ?? portesVisibles[0]
   const totalSolde = portesVisibles.reduce((s, p) => s + p.solde, 0)
 
   // Filtre par date sur les mouvements du portefeuille sélectionné
@@ -300,6 +300,7 @@ export function MobileMoneyPage() {
   }
 
   function addOperation(op: Omit<Operation, 'id'>) {
+    if (!selected) return
     const newOp: Operation = { ...op, id: Date.now().toString() }
     setPortefeuilles(ps => ps.map(p =>
       p.id === selectedId
@@ -377,8 +378,29 @@ export function MobileMoneyPage() {
 
   if (!selected) {
     return (
-      <div className="h-full flex items-center justify-center text-sm text-gray-400">
-        Aucun portefeuille disponible
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white px-8 py-12 text-center max-w-md">
+          <p className="text-5xl mb-3">📱</p>
+          <p className="text-base font-semibold text-gray-900">Aucun portefeuille Mobile Money</p>
+          <p className="mt-2 text-sm text-gray-500">
+            {agenceNom
+              ? <>Votre agence <span className="font-medium">{agenceNom}</span> n'a pas encore de portefeuille mobile money.</>
+              : 'Ajoutez votre premier portefeuille MTN, Orange Money ou Mobile Money pour suivre les flux.'}
+          </p>
+          <button
+            onClick={() => setShowAddPorte(true)}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-forest-900 px-4 py-2 text-sm font-semibold text-white hover:bg-forest-800"
+          >
+            + Ajouter un portefeuille
+          </button>
+        </div>
+        {showAddPorte && (
+          <ModalPortefeuille
+            onSave={addPortefeuille}
+            onClose={() => setShowAddPorte(false)}
+            {...(agenceNom ? { defaultAgence: agenceNom } : {})}
+          />
+        )}
       </div>
     )
   }

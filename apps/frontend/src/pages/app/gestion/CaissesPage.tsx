@@ -247,10 +247,10 @@ export function CaissesPage() {
   // Filtrer les caisses accessibles à cet utilisateur
   const caissesVisibles = agenceNom ? caisses.filter(c => c.agence === agenceNom) : caisses
   const [selectedId, setSelectedId] = useState<string>(
-    () => (agenceNom ? caisses.find(c => c.agence === agenceNom)?.id : caisses[0]?.id) ?? caisses[0]!.id
+    () => (agenceNom ? caisses.find(c => c.agence === agenceNom)?.id : caisses[0]?.id) ?? ''
   )
 
-  const selected   = caissesVisibles.find(c => c.id === selectedId) ?? caissesVisibles[0]!
+  const selected   = caissesVisibles.find(c => c.id === selectedId) ?? caissesVisibles[0]
   const totalSolde = caissesVisibles.reduce((s, c) => s + c.solde, 0)
 
   // Filtre par date sur les mouvements du compte sélectionné
@@ -276,6 +276,7 @@ export function CaissesPage() {
   }
 
   function addOperation(op: Omit<Operation, 'id'>) {
+    if (!selected) return
     const newOp: Operation = { ...op, id: Date.now().toString() }
     setCaisses(cs => cs.map(c =>
       c.id === selectedId
@@ -350,6 +351,39 @@ export function CaissesPage() {
       }
     }))
   }
+
+  // Empty state : aucune caisse créée (la liste 2-colonnes a besoin d'au moins
+  // une caisse pour afficher quelque chose)
+  if (caissesVisibles.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 bg-white px-8 py-12 text-center max-w-md">
+          <p className="text-5xl mb-3">💵</p>
+          <p className="text-base font-semibold text-gray-900">Aucune caisse</p>
+          <p className="mt-2 text-sm text-gray-500">
+            {agenceNom
+              ? <>Votre agence <span className="font-medium">{agenceNom}</span> n'a pas encore de caisse.</>
+              : 'Créez votre première caisse pour suivre les entrées et sorties d\'espèces.'}
+          </p>
+          <button
+            onClick={() => setShowAddCaisse(true)}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800"
+          >
+            + Ajouter une caisse
+          </button>
+        </div>
+        {showAddCaisse && (
+          <ModalCaisse
+            onSave={addCaisse}
+            onClose={() => setShowAddCaisse(false)}
+            {...(agenceNom ? { defaultAgence: agenceNom } : {})}
+          />
+        )}
+      </div>
+    )
+  }
+
+  if (!selected) return null
 
   return (
     <div className="h-full flex gap-3 overflow-hidden">
