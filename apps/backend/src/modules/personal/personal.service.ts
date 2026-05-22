@@ -348,17 +348,21 @@ export async function listObjectifs(userId: string) {
   })
 }
 
+/**
+ * Les clés d'entrée matchent le DTO Zod (label, targetDate) ; on les mappe
+ * vers la colonne Prisma (name, deadline) à l'écriture.
+ */
 export async function createObjectif(
   userId: string,
-  data: { name: string; targetAmount: number; currentAmount?: number; deadline?: string },
+  data: { label: string; targetAmount: number; currentAmount?: number; targetDate?: string | Date },
 ) {
   return prisma.personalObjectif.create({
     data: {
       userId,
-      name:          data.name,
+      name:          data.label,
       targetAmount:  data.targetAmount,
       currentAmount: data.currentAmount ?? 0,
-      deadline:      data.deadline ? new Date(data.deadline) : null,
+      deadline:      data.targetDate ? new Date(data.targetDate) : null,
     },
   })
 }
@@ -366,7 +370,13 @@ export async function createObjectif(
 export async function updateObjectif(
   userId: string,
   id: string,
-  data: { name?: string; targetAmount?: number; currentAmount?: number; deadline?: string; achieved?: boolean },
+  data: {
+    label?:         string
+    targetAmount?:  number
+    currentAmount?: number
+    targetDate?:    string | Date
+    achieved?:      boolean
+  },
 ) {
   const obj = await prisma.personalObjectif.findFirst({ where: { id, userId } })
   if (!obj) throw new AppError('Objectif introuvable', 404, 'NOT_FOUND')
@@ -374,11 +384,11 @@ export async function updateObjectif(
   return prisma.personalObjectif.update({
     where: { id },
     data: {
-      ...(data.name          !== undefined ? { name: data.name }                          : {}),
-      ...(data.targetAmount  !== undefined ? { targetAmount: data.targetAmount }          : {}),
+      ...(data.label         !== undefined ? { name:          data.label }                : {}),
+      ...(data.targetAmount  !== undefined ? { targetAmount:  data.targetAmount }         : {}),
       ...(data.currentAmount !== undefined ? { currentAmount: data.currentAmount }        : {}),
-      ...(data.deadline      !== undefined ? { deadline: new Date(data.deadline) }        : {}),
-      ...(data.achieved      !== undefined ? { achieved: data.achieved }                  : {}),
+      ...(data.targetDate    !== undefined ? { deadline:      new Date(data.targetDate) } : {}),
+      ...(data.achieved      !== undefined ? { achieved:      data.achieved }             : {}),
     },
   })
 }
