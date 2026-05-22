@@ -270,12 +270,17 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
 export function ArticlesPage() {
   const { fmt }  = useCurrency()
   const { user } = useAuth()
+  const { agences } = useCompanySettings()
   const {
     articles, addArticle, updateArticle, deleteArticle,
     categoriesArticles, addCategorieArticle,
   } = useGestion()
 
   const agenceNom = user?.agenceNom ?? null
+  const agenceIdByName = useMemo(
+    () => Object.fromEntries(agences.map(a => [a.nom, a.id])) as Record<string, string>,
+    [agences],
+  )
 
   const [search,       setSearch]       = useState('')
   const [catFilter,    setCatFilter]    = useState<string>('all')
@@ -310,8 +315,13 @@ export function ArticlesPage() {
   const actifs        = visible.filter(a => a.actif).length
 
   function handleSave(data: Omit<Article, 'id' | 'createdAt'>) {
-    if (editing) { updateArticle(editing.id, data); setEditing(null) }
-    else         { addArticle(data);                setShowModal(false) }
+    const agenceId = agenceIdByName[data.agence]
+    const dataWithAgence: Omit<Article, 'id' | 'createdAt'> = {
+      ...data,
+      ...(agenceId ? { agenceId } : {}),
+    }
+    if (editing) { updateArticle(editing.id, dataWithAgence); setEditing(null) }
+    else         { addArticle(dataWithAgence);                setShowModal(false) }
   }
 
   function handleNewCategory(nom: string) {

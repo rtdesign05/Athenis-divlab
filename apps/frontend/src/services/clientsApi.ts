@@ -7,6 +7,8 @@ export interface Client {
   phone: string | null
   address: string | null
   siren: string | null
+  agenceId: string | null
+  agence: { id: string; nom: string } | null
   reliabilityScore?: number
   invoiceCount?: number
   invoiceTotal?: string
@@ -21,6 +23,7 @@ export interface CreateClientDto {
   phone?: string
   address?: string
   siren?: string
+  agenceId?: string | null
 }
 
 export type UpdateClientDto = Partial<CreateClientDto>

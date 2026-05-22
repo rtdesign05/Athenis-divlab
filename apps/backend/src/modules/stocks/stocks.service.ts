@@ -114,7 +114,10 @@ export async function listArticles(companyId: string, query: ListArticlesInput) 
   const [items, total] = await Promise.all([
     prisma.article.findMany({
       where,
-      include: { famille: { select: { id: true, code: true, nom: true } } },
+      include: {
+        famille: { select: { id: true, code: true, nom: true } },
+        agence:  { select: { id: true, nom: true } },
+      },
       orderBy: { reference: 'asc' },
       skip: (page - 1) * limit,
       take: limit,
@@ -168,6 +171,7 @@ export async function createArticle(companyId: string, dto: CreateArticleInput) 
         reference,
         designation: rest.designation,
         ...(rest.familleId ? { familleId: rest.familleId } : {}),
+        ...(rest.agenceId  ? { agenceId:  rest.agenceId }  : {}),
         unite: rest.unite ?? 'unité',
         prixAchat: rest.prixAchat,
         prixVente: rest.prixVente,
@@ -193,7 +197,10 @@ export async function createArticle(companyId: string, dto: CreateArticleInput) 
       }, 'system')
     }
 
-    return tx.article.findUniqueOrThrow({ where: { id: article.id }, include: { famille: true } })
+    return tx.article.findUniqueOrThrow({
+      where: { id: article.id },
+      include: { famille: true, agence: { select: { id: true, nom: true } } },
+    })
   })
 }
 
@@ -229,8 +236,9 @@ export async function updateArticle(companyId: string, id: string, dto: UpdateAr
       ...(dto.compteVente  !== undefined ? { compteVente: dto.compteVente }       : {}),
       ...(dto.compteStock  !== undefined ? { compteStock: dto.compteStock }       : {}),
       ...(dto.compteVariationStock !== undefined ? { compteVariationStock: dto.compteVariationStock } : {}),
+      ...(dto.agenceId     !== undefined ? { agenceId: dto.agenceId ?? null }     : {}),
     } as never,
-    include: { famille: true },
+    include: { famille: true, agence: { select: { id: true, nom: true } } },
   })
 }
 

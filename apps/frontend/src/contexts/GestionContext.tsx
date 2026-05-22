@@ -91,6 +91,8 @@ export interface Article {
   stock:        number
   stockMin:     number   // seuil alerte rupture
   agence:       string
+  /** FK vers l'agence — résolu par la page via useCompanySettings depuis le nom. */
+  agenceId?:    string | null
   description:  string
   actif:        boolean
   createdAt:    string   // ISO date
@@ -778,6 +780,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       ...(a.description ? { description: a.description } : {}),
       ...(a.compteAchat?.trim() ? { compteAchat: a.compteAchat.trim() } : {}),
       ...(a.compteVente?.trim() ? { compteVente: a.compteVente.trim() } : {}),
+      ...(a.agenceId ? { agenceId: a.agenceId } : {}),
     })
       .then(created => {
         // Remplace l'entrée locale par celle du backend (avec son CUID)
@@ -815,6 +818,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       if (patch.description !== undefined) apiPatch.description  = patch.description
       if (patch.compteAchat !== undefined) apiPatch.compteAchat  = patch.compteAchat
       if (patch.compteVente !== undefined) apiPatch.compteVente  = patch.compteVente
+      if (patch.agenceId    !== undefined) apiPatch.agenceId     = patch.agenceId ?? null
       if (Object.keys(apiPatch).length > 0) {
         stocksApi.updateArticle(id, apiPatch).catch(err =>
           console.error('[articles] updateArticle API error', err),

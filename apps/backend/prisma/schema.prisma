@@ -542,6 +542,8 @@ model Client {
   id        String  @id @default(cuid())
   companyId String  @map("company_id")
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId  String? @map("agence_id")
+  agence    Agence? @relation(fields: [agenceId], references: [id], onDelete: SetNull)
 
   nom            String  @map("name")
   email          String?
@@ -561,6 +563,7 @@ model Client {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([companyId])
+  @@index([agenceId])
   @@map("clients")
 }
 
@@ -1166,6 +1169,8 @@ model Article {
   id               String       @id @default(cuid())
   companyId        String       @map("company_id")
   company          Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId         String?      @map("agence_id")
+  agence           Agence?      @relation(fields: [agenceId], references: [id], onDelete: SetNull)
   familleId        String?      @map("famille_id")
   famille          StockFamily? @relation(fields: [familleId], references: [id])
 
@@ -1198,6 +1203,7 @@ model Article {
   @@unique([companyId, reference])
   @@index([companyId])
   @@index([familleId])
+  @@index([agenceId])
   @@map("articles")
 }
 
@@ -2132,6 +2138,8 @@ model Agence {
   purchaseOrders   PurchaseOrder[]
   treasuryEntries  TreasuryEntry[]
   treasurySources  TreasurySource[]
+  clients          Client[]
+  articles         Article[]
 
   @@unique([companyId, code])
   @@index([companyId])

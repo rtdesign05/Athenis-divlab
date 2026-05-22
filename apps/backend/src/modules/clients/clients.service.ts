@@ -47,6 +47,7 @@ export async function listClients(companyId: string, query: ListClientsInput) {
   const [items, total] = await Promise.all([
     prisma.client.findMany({
       where,
+      include: { agence: { select: { id: true, nom: true } } },
       orderBy: { nom: 'asc' },
       skip: (page - 1) * limit,
       take: limit,
@@ -75,7 +76,10 @@ export async function listClients(companyId: string, query: ListClientsInput) {
 }
 
 export async function getClient(companyId: string, id: string) {
-  const client = await prisma.client.findUnique({ where: { id } })
+  const client = await prisma.client.findUnique({
+    where: { id },
+    include: { agence: { select: { id: true, nom: true } } },
+  })
   if (!client || client.companyId !== companyId)
     throw new AppError('Client not found', 404, 'NOT_FOUND')
 
@@ -156,7 +160,9 @@ export async function createClient(companyId: string, data: CreateClientInput & 
       telephone:      data.phone     ?? null,
       adresse:        data.address   ?? null,
       accountingCode: normalized,
+      ...(data.agenceId ? { agenceId: data.agenceId } : {}),
     },
+    include: { agence: { select: { id: true, nom: true } } },
   })
 }
 
@@ -171,11 +177,13 @@ export async function updateClient(companyId: string, id: string, data: UpdateCl
   return prisma.client.update({
     where: { id },
     data: {
-      ...(data.name    !== undefined ? { nom: data.name }                   : {}),
-      ...(data.email   !== undefined ? { email: data.email ?? null }        : {}),
-      ...(data.phone   !== undefined ? { telephone: data.phone ?? null }    : {}),
-      ...(data.address !== undefined ? { adresse: data.address ?? null }    : {}),
+      ...(data.name     !== undefined ? { nom: data.name }                   : {}),
+      ...(data.email    !== undefined ? { email: data.email ?? null }        : {}),
+      ...(data.phone    !== undefined ? { telephone: data.phone ?? null }    : {}),
+      ...(data.address  !== undefined ? { adresse: data.address ?? null }    : {}),
+      ...(data.agenceId !== undefined ? { agenceId: data.agenceId ?? null }  : {}),
     },
+    include: { agence: { select: { id: true, nom: true } } },
   })
 }
 

@@ -31,6 +31,8 @@ export const CreateArticleDto = z.object({
   compteVente:      z.string().max(20).optional(),
   compteStock:           z.string().max(20).optional(),
   compteVariationStock:  z.string().max(20).optional(),
+  /** Agence à laquelle rattacher l'article (multi-site). */
+  agenceId:              z.string().nullable().optional(),
 })
 
 export const UpdateArticleDto = CreateArticleDto.omit({ stockInitial: true }).partial()

@@ -8,6 +8,8 @@ export const CreateClientDto = z.object({
   address: z.string().max(500).optional(),
   /** Compte comptable client (411xxx). Auto-généré si non fourni. */
   accountingCode: z.string().min(3).max(9).optional(),
+  /** Agence à laquelle rattacher le client (multi-site). */
+  agenceId: z.string().nullable().optional(),
 })
 
 export const UpdateClientDto = CreateClientDto.partial()

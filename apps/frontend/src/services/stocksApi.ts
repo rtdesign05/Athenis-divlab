@@ -28,6 +28,8 @@ export interface Article {
   designation: string
   familleId?: string
   famille?: { id: string; code: string; nom: string }
+  agenceId?: string | null
+  agence?: { id: string; nom: string } | null
   unite: string
   prixAchat: number
   prixVente: number
@@ -135,7 +137,7 @@ export const stocksApi = {
   getFiche: (id: string) =>
     api.get<{ data: ArticleFiche }>(`/stocks/articles/${id}/fiche`).then(d),
   createArticle: (dto: {
-    designation: string; reference?: string; familleId?: string; unite?: string;
+    designation: string; reference?: string; familleId?: string; agenceId?: string | null; unite?: string;
     prixAchat: number; prixVente: number; tvaAchat?: number; tvaVente?: number;
     stockInitial?: number; stockMin?: number; stockMax?: number;
     methodeValuation?: StockMethod; description?: string; codeBarres?: string;
@@ -143,7 +145,7 @@ export const stocksApi = {
     compteAchat?: string; compteVente?: string;
   }) => api.post<{ data: Article }>('/stocks/articles', dto).then(d),
   updateArticle: (id: string, dto: Partial<{
-    designation: string; reference?: string; familleId?: string; unite?: string;
+    designation: string; reference?: string; familleId?: string; agenceId?: string | null; unite?: string;
     prixAchat: number; prixVente: number; tvaAchat?: number; tvaVente?: number;
     stockInitial?: number; stockMin?: number; stockMax?: number;
     methodeValuation?: StockMethod; description?: string; codeBarres?: string;
