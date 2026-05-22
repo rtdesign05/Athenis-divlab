@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { personalApi, CATEGORIES_DEPENSES, CATEGORIES_REVENUS } from '@/services/personalApi'
 import type { PersonalDashboard, PersonalAnnualOverview } from '@/services/personalApi'
+import { usePersonalPeriod, periodQueryString } from './usePersonalPeriod'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n)
@@ -14,26 +15,13 @@ function catLabel(cat: string, type: 'REVENU' | 'DEPENSE') {
   return found ? `${found.emoji} ${found.label}` : cat
 }
 
-function defaultPeriod(): string {
-  const n = new Date()
-  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
-}
-
-function parsePeriod(s: string): { annee: number; mois: number } {
-  const [y, m] = s.split('-')
-  return {
-    annee: parseInt(y ?? '0', 10) || new Date().getFullYear(),
-    mois:  parseInt(m ?? '0', 10) || (new Date().getMonth() + 1),
-  }
-}
-
 const MOIS_FR = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
 
 export function PersonalDashboard() {
   const { user } = useAuth()
+  const { annee: pAnnee, mois: pMois, periodString: periode, setPeriod } = usePersonalPeriod()
   const [vue, setVue]         = useState<'mois' | 'annee'>('mois')
-  const [periode, setPeriode] = useState<string>(defaultPeriod)
-  const [annee, setAnnee]     = useState<number>(() => new Date().getFullYear())
+  const [annee, setAnnee]     = useState<number>(pAnnee)
 
   // Données vue MOIS
   const [data, setData]       = useState<PersonalDashboard | null>(null)
@@ -43,12 +31,19 @@ export function PersonalDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState('')
 
+  // Quand le user change l'année dans la vue annuelle, on synchronise le param URL
+  // pour que les autres onglets héritent
+  useEffect(() => {
+    if (vue === 'annee' && annee !== pAnnee) {
+      setPeriod(`${annee}-${String(pMois).padStart(2, '0')}`)
+    }
+  }, [vue, annee, pAnnee, pMois, setPeriod])
+
   useEffect(() => {
     setLoading(true)
     setError('')
     if (vue === 'mois') {
-      const { annee: a, mois: m } = parsePeriod(periode)
-      personalApi.dashboard({ annee: a, mois: m })
+      personalApi.dashboard({ annee: pAnnee, mois: pMois })
         .then(setData)
         .catch(() => setError('Impossible de charger le tableau de bord'))
         .finally(() => setLoading(false))
@@ -58,9 +53,8 @@ export function PersonalDashboard() {
         .catch(() => setError('Impossible de charger la vue annuelle'))
         .finally(() => setLoading(false))
     }
-  }, [vue, periode, annee])
+  }, [vue, pAnnee, pMois, annee])
 
-  const { annee: pAnnee, mois: pMois } = parsePeriod(periode)
   const periodeLabel = new Date(pAnnee, pMois - 1, 1)
     .toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
 
@@ -68,6 +62,8 @@ export function PersonalDashboard() {
     const n = new Date()
     return pAnnee > n.getFullYear() || (pAnnee === n.getFullYear() && pMois > n.getMonth() + 1)
   })()
+
+  const linkQS = periodQueryString(pAnnee, pMois)
 
   return (
     <div className="space-y-6">
@@ -111,7 +107,7 @@ export function PersonalDashboard() {
               type="month"
               className="input w-full sm:w-44"
               value={periode}
-              onChange={(e) => setPeriode(e.target.value || defaultPeriod())}
+              onChange={(e) => e.target.value && setPeriod(e.target.value)}
             />
           ) : (
             <input
@@ -156,12 +152,12 @@ export function PersonalDashboard() {
             <div className="card">
               <p className="text-sm font-medium text-gray-500">Revenus du mois</p>
               <p className="mt-2 text-2xl font-bold text-green-600">{fmt(data.revenusMois)}</p>
-              <Link to="/personal/income" className="mt-1 block text-xs text-forest-700 hover:underline">Voir les revenus →</Link>
+              <Link to={`/personal/income${linkQS}`} className="mt-1 block text-xs text-forest-700 hover:underline">Voir les revenus →</Link>
             </div>
             <div className="card">
               <p className="text-sm font-medium text-gray-500">Dépenses du mois</p>
               <p className="mt-2 text-2xl font-bold text-red-500">{fmt(data.depensesMois)}</p>
-              <Link to="/personal/expenses" className="mt-1 block text-xs text-forest-700 hover:underline">Voir les dépenses →</Link>
+              <Link to={`/personal/expenses${linkQS}`} className="mt-1 block text-xs text-forest-700 hover:underline">Voir les dépenses →</Link>
             </div>
             <div className="card">
               <p className="text-sm font-medium text-gray-500">Flux net du mois</p>
@@ -179,16 +175,16 @@ export function PersonalDashboard() {
             <div className="mb-4 flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">Transactions de la période</h3>
               <div className="flex gap-3 text-xs">
-                <Link to="/personal/income" className="text-green-700 hover:underline">Revenus</Link>
-                <Link to="/personal/expenses" className="text-red-600 hover:underline">Dépenses</Link>
+                <Link to={`/personal/income${linkQS}`} className="text-green-700 hover:underline">Revenus</Link>
+                <Link to={`/personal/expenses${linkQS}`} className="text-red-600 hover:underline">Dépenses</Link>
               </div>
             </div>
             {data.transactionsRecentes.length === 0 ? (
               <div className="rounded-lg bg-gray-50 py-10 text-center text-sm text-gray-400">
                 Aucune transaction sur cette période.<br />
-                <Link to="/personal/income" className="mt-2 inline-block text-forest-700 hover:underline">Ajouter un revenu</Link>
+                <Link to={`/personal/income${linkQS}`} className="mt-2 inline-block text-forest-700 hover:underline">Ajouter un revenu</Link>
                 {' '}ou{' '}
-                <Link to="/personal/expenses" className="text-forest-700 hover:underline">une dépense</Link>
+                <Link to={`/personal/expenses${linkQS}`} className="text-forest-700 hover:underline">une dépense</Link>
               </div>
             ) : (
               <ul className="divide-y divide-gray-100">

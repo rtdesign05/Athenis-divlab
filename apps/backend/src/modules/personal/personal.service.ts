@@ -211,9 +211,22 @@ export async function getAnnualOverview(userId: string, anneeIn?: number) {
 
 // ── Revenus ───────────────────────────────────────────────────────────────────
 
-export async function listRevenus(userId: string) {
+export async function listRevenus(
+  userId: string,
+  filters?: { annee?: number; mois?: number; categorie?: string },
+) {
+  const where: Record<string, unknown> = { userId }
+  if (filters?.annee && filters?.mois) {
+    const a = Math.trunc(filters.annee)
+    const m = Math.min(12, Math.max(1, Math.trunc(filters.mois)))
+    where['date'] = { gte: new Date(a, m - 1, 1), lt: new Date(a, m, 1) }
+  } else if (filters?.annee) {
+    const a = Math.trunc(filters.annee)
+    where['date'] = { gte: new Date(a, 0, 1), lt: new Date(a + 1, 0, 1) }
+  }
+  if (filters?.categorie) where['type'] = filters.categorie
   return prisma.personalRevenue.findMany({
-    where:   { userId },
+    where,
     orderBy: { date: 'desc' },
   })
 }
@@ -264,9 +277,22 @@ export async function deleteRevenu(userId: string, id: string) {
 
 // ── Dépenses ──────────────────────────────────────────────────────────────────
 
-export async function listDepenses(userId: string) {
+export async function listDepenses(
+  userId: string,
+  filters?: { annee?: number; mois?: number; categorie?: string },
+) {
+  const where: Record<string, unknown> = { userId }
+  if (filters?.annee && filters?.mois) {
+    const a = Math.trunc(filters.annee)
+    const m = Math.min(12, Math.max(1, Math.trunc(filters.mois)))
+    where['date'] = { gte: new Date(a, m - 1, 1), lt: new Date(a, m, 1) }
+  } else if (filters?.annee) {
+    const a = Math.trunc(filters.annee)
+    where['date'] = { gte: new Date(a, 0, 1), lt: new Date(a + 1, 0, 1) }
+  }
+  if (filters?.categorie) where['category'] = filters.categorie
   return prisma.personalExpense.findMany({
-    where:   { userId },
+    where,
     orderBy: { date: 'desc' },
   })
 }

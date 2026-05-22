@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { personalApi, CATEGORIES_REVENUS } from '@/services/personalApi'
 import type { PersonalRevenu } from '@/services/personalApi'
+import { usePersonalPeriod } from './usePersonalPeriod'
 
 function fmt(n: number) {
   return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n)
@@ -96,13 +97,11 @@ function RevenuModal({ initial, onSave, onClose }: ModalProps) {
 // ── Page principale ───────────────────────────────────────────────────────────
 
 export function PersonalIncome() {
+  // Période synchronisée avec Dashboard / Expenses via les query params de l'URL
+  const { annee, mois, periodString: filterMois, setPeriod } = usePersonalPeriod()
   const [items, setItems]       = useState<PersonalRevenu[]>([])
   const [loading, setLoading]   = useState(true)
   const [filterCat, setFilterCat] = useState('')
-  const [filterMois, setFilterMois] = useState(() => {
-    const n = new Date()
-    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
-  })
   const [modal, setModal]       = useState<'add' | 'edit' | null>(null)
   const [editing, setEditing]   = useState<PersonalRevenu | null>(null)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -110,15 +109,12 @@ export function PersonalIncome() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const parts = filterMois.split('-')
-      const annee = parseInt(parts[0] ?? '0')
-      const mois  = parseInt(parts[1] ?? '0')
       const params: { annee: number; mois: number; categorie?: string } = { annee, mois }
       if (filterCat) params.categorie = filterCat
       const data = await personalApi.revenus.list(params)
       setItems(data)
     } finally { setLoading(false) }
-  }, [filterMois, filterCat])
+  }, [annee, mois, filterCat])
 
   useEffect(() => { void load() }, [load])
 
@@ -155,7 +151,12 @@ export function PersonalIncome() {
 
       {/* Filtres */}
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <input type="month" className="input w-full sm:w-44" value={filterMois} onChange={(e) => setFilterMois(e.target.value)} />
+        <input
+          type="month"
+          className="input w-full sm:w-44"
+          value={filterMois}
+          onChange={(e) => e.target.value && setPeriod(e.target.value)}
+        />
         <select className="input w-full sm:w-52" value={filterCat} onChange={(e) => setFilterCat(e.target.value)}>
           <option value="">Toutes les catégories</option>
           {CATEGORIES_REVENUS.map((c) => <option key={c.value} value={c.value}>{c.emoji} {c.label}</option>)}

@@ -49,7 +49,20 @@ personalRouter.get('/annual', async (req, res, next) => {
 
 personalRouter.get('/revenus', async (req, res, next) => {
   try {
-    const data = await svc.listRevenus(req.user!.sub)
+    const anneeRaw = req.query['annee']
+    const moisRaw  = req.query['mois']
+    const catRaw   = req.query['categorie']
+    const filters: { annee?: number; mois?: number; categorie?: string } = {}
+    if (typeof anneeRaw === 'string' && anneeRaw.length > 0) {
+      const v = parseInt(anneeRaw, 10)
+      if (Number.isFinite(v)) filters.annee = v
+    }
+    if (typeof moisRaw === 'string' && moisRaw.length > 0) {
+      const v = parseInt(moisRaw, 10)
+      if (Number.isFinite(v)) filters.mois = v
+    }
+    if (typeof catRaw === 'string' && catRaw.length > 0) filters.categorie = catRaw
+    const data = await svc.listRevenus(req.user!.sub, filters)
     res.json({ success: true, data })
   } catch (e) { next(e) }
 })
@@ -79,7 +92,20 @@ personalRouter.delete('/revenus/:id', async (req, res, next) => {
 
 personalRouter.get('/depenses', async (req, res, next) => {
   try {
-    const data = await svc.listDepenses(req.user!.sub)
+    const anneeRaw = req.query['annee']
+    const moisRaw  = req.query['mois']
+    const catRaw   = req.query['categorie']
+    const filters: { annee?: number; mois?: number; categorie?: string } = {}
+    if (typeof anneeRaw === 'string' && anneeRaw.length > 0) {
+      const v = parseInt(anneeRaw, 10)
+      if (Number.isFinite(v)) filters.annee = v
+    }
+    if (typeof moisRaw === 'string' && moisRaw.length > 0) {
+      const v = parseInt(moisRaw, 10)
+      if (Number.isFinite(v)) filters.mois = v
+    }
+    if (typeof catRaw === 'string' && catRaw.length > 0) filters.categorie = catRaw
+    const data = await svc.listDepenses(req.user!.sub, filters)
     res.json({ success: true, data })
   } catch (e) { next(e) }
 })
