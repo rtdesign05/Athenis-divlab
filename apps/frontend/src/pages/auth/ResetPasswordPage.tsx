@@ -16,6 +16,8 @@ export function ResetPasswordPage() {
 
   const [password, setPassword]       = useState('')
   const [confirm, setConfirm]         = useState('')
+  const [showPw, setShowPw]           = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading]         = useState(false)
   const [error, setError]             = useState('')
   const [success, setSuccess]         = useState(false)
@@ -85,28 +87,50 @@ export function ResetPasswordPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="label">Nouveau mot de passe</label>
-              <input
-                type="password"
-                required
-                autoFocus
-                autoComplete="new-password"
-                className="input mt-1 w-full"
-                placeholder="Min. 8 car., 1 majuscule, 1 chiffre"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <div className="relative mt-1">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  required
+                  autoFocus
+                  autoComplete="new-password"
+                  className="input w-full pr-10"
+                  placeholder="Min. 8 car., 1 majuscule, 1 chiffre"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw((s) => !s)}
+                  aria-label={showPw ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  aria-pressed={showPw}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-700"
+                >
+                  {showPw ? '🙈' : '👁️'}
+                </button>
+              </div>
             </div>
             <div>
               <label className="label">Confirmer le mot de passe</label>
-              <input
-                type="password"
-                required
-                autoComplete="new-password"
-                className={`input mt-1 w-full ${confirm && confirm !== password ? 'border-red-300 focus:ring-red-500/30' : ''}`}
-                placeholder="Retapez le même mot de passe"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-              />
+              <div className="relative mt-1">
+                <input
+                  type={showConfirm ? 'text' : 'password'}
+                  required
+                  autoComplete="new-password"
+                  className={`input w-full pr-10 ${confirm && confirm !== password ? 'border-red-300 focus:ring-red-500/30' : ''}`}
+                  placeholder="Retapez le même mot de passe"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm((s) => !s)}
+                  aria-label={showConfirm ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                  aria-pressed={showConfirm}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 hover:text-gray-700"
+                >
+                  {showConfirm ? '🙈' : '👁️'}
+                </button>
+              </div>
               {confirm && confirm !== password && (
                 <p className="mt-1 text-xs text-red-600">Les deux mots de passe ne correspondent pas.</p>
               )}
