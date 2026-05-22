@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useFiscalYear } from '@/contexts/FiscalYearContext'
+import { useCurrency } from '@/hooks/useCurrency'
 import {
   useAssets,
   useAssetSummary,
@@ -15,6 +16,8 @@ import { cn } from '@/shared/utils/cn'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Fallback non-React (utilisé par sous-composants hors hook).
+ *  La version dynamique est obtenue via useCurrency() dans le composant principal. */
 export function fmt(n: number) {
   return n.toLocaleString('fr-FR') + ' F CFA'
 }
@@ -304,7 +307,10 @@ export function ScheduleModal({ assetId, onClose }: { assetId: string; onClose: 
 
 export function ImmobilisationsPage() {
   const { selectedYear: year } = useFiscalYear()
+  const { fmt: fmtCur } = useCurrency()
   const { data, isLoading, error } = useAssetSummary(year)
+  // Shadow le helper module-level avec la version dynamique pour le rendu principal
+  const fmt = (n: number) => fmtCur(n)
 
   if (isLoading) return <Spinner />
   if (error) return <p className="text-sm text-red-600">Erreur lors du chargement des données.</p>

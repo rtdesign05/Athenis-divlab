@@ -3,6 +3,7 @@ import { useIGSDeclaration } from '@/hooks/useFiscalRegime'
 import { DgiFormHeader } from '@/components/fiscal/DgiFormHeader'
 import { FormPageViewer } from '@/components/fiscal/FormPageViewer'
 import { usePdfDownload } from '@/hooks/usePdfDownload'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 const YEARS = [2024, 2025, 2026]
 
@@ -22,9 +23,29 @@ const tblStyle: React.CSSProperties     = { borderCollapse: 'collapse', width: '
 function fmt(n: number) { return n.toLocaleString('fr-FR') }
 
 export function IGSPage() {
+  const { country } = useCompanySettings()
   const [year, setYear] = useState(new Date().getFullYear())
   const { data, isLoading } = useIGSDeclaration(year)
   const { downloadIgs }     = usePdfDownload()
+
+  // IGS = Impôt Général Synthétique. Régime libératoire propre au Cameroun
+  // (TPE < 10M FCFA). Pas d'équivalent direct en France (micro-BIC/BNC vs IS).
+  if (country && country !== 'CM') {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 px-8 py-12 text-center max-w-lg">
+          <p className="text-4xl mb-3">⚠️</p>
+          <p className="text-base font-semibold text-amber-900">IGS spécifique au Cameroun</p>
+          <p className="mt-2 text-sm text-amber-800">
+            L'<strong>Impôt Général Synthétique</strong> est un régime libératoire camerounais
+            pour les TPE (CA &lt; 10M FCFA). Pour la France : régime micro-BIC/BNC (CA &lt; 188 700 € / 77 700 €)
+            ou IS classique.
+          </p>
+          <p className="mt-3 text-xs text-amber-700">Pays détecté : <strong>{country}</strong>.</p>
+        </div>
+      </div>
+    )
+  }
 
   const [caN1Input, setCaN1Input]     = useState(0)
   const [adherentCga, setAdherentCga] = useState(false)

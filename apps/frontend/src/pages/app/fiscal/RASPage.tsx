@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useRAS, useTaxConfig, useRasSuggestions } from '@/hooks/useFiscal'
 import { DgiFormHeader } from '@/components/fiscal/DgiFormHeader'
 import { FormPageViewer } from '@/components/fiscal/FormPageViewer'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 const MONTHS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre']
 
@@ -37,12 +38,31 @@ const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }>
 }
 
 export function RASPage() {
+  const { country } = useCompanySettings()
   const year = new Date().getFullYear()
   const currentMonth = new Date().getMonth() + 1
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const { data, isLoading } = useRAS(year)
   const { data: config }    = useTaxConfig()
   const { data: suggestions, isLoading: loadingSugg, refetch: fetchSugg } = useRasSuggestions(year, selectedMonth)
+
+  // RAS (Retenue À la Source) avec taux Cameroun (5.5%, 11%, 16.5%, CGI art. 68/71/77).
+  // FR utilise un système différent (prélèvement à la source géré par la DGFiP).
+  if (country && country !== 'CM') {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 px-8 py-12 text-center max-w-lg">
+          <p className="text-4xl mb-3">⚠️</p>
+          <p className="text-base font-semibold text-amber-900">RAS spécifique au Cameroun</p>
+          <p className="mt-2 text-sm text-amber-800">
+            La <strong>Retenue À la Source</strong> (taux 5,5% / 11% / 16,5%) est régie par le CGI camerounais.
+            Pour la France, le prélèvement à la source sur les revenus est géré directement par la DGFiP.
+          </p>
+          <p className="mt-3 text-xs text-amber-700">Pays détecté : <strong>{country}</strong>.</p>
+        </div>
+      </div>
+    )
+  }
 
   const [rows, setRows] = useState<RASRow[]>([
     { id: '1', beneficiaire: '', type: 'SERVICES', base: 0, taux: 5.5, retenue: 0 },
