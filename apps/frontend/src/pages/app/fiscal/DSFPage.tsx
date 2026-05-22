@@ -3,6 +3,7 @@ import { useDSF } from '@/hooks/useFiscal'
 import { DgiFormHeader } from '@/components/fiscal/DgiFormHeader'
 import { FormPageViewer } from '@/components/fiscal/FormPageViewer'
 import { usePdfDownload } from '@/hooks/usePdfDownload'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 const YEARS = [2024, 2025, 2026]
 
@@ -563,10 +564,32 @@ function Fiche8({ data, year }: { data: NonNullable<ReturnType<typeof useDSF>['d
 
 // ── Main DSF Page ─────────────────────────────────────────────────────────────
 export function DSFPage() {
+  const { country } = useCompanySettings()
   const [year, setYear]           = useState(new Date().getFullYear())
   const [currentPage, setCurrentPage] = useState(1)
   const { data, isLoading }       = useDSF(year)
   const { downloadDsf }           = usePdfDownload()
+
+  // DSF est un formulaire DGI Cameroun (Déclaration Statistique et Fiscale).
+  // Pour la France l'équivalent est la liasse fiscale (BIC/BNC) via téléTVA.
+  if (country && country !== 'CM') {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 px-8 py-12 text-center max-w-lg">
+          <p className="text-4xl mb-3">⚠️</p>
+          <p className="text-base font-semibold text-amber-900">DSF spécifique au Cameroun</p>
+          <p className="mt-2 text-sm text-amber-800">
+            La <strong>Déclaration Statistique et Fiscale (DSF)</strong> est un formulaire
+            DGI propre au Cameroun. Pour la France, utilisez la <strong>Liasse fiscale</strong>
+            (formulaires CERFA 2050+ via téléTVA).
+          </p>
+          <p className="mt-3 text-xs text-amber-700">
+            Pays détecté : <strong>{country}</strong>. Modifiable dans Paramètres → Localisation.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   if (isLoading) return <div className="h-96 animate-pulse rounded-xl bg-gray-100" />
   if (!data) return null

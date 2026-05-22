@@ -1320,6 +1320,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
           ;[
             'journal', 'balance-journal', 'grand-livre-journal', 'grand-livre-situation',
             'financial-statements', 'etats-financiers', 'comptes', 'comptes-tiers',
+            'accounting',  // ['accounting','compte-resultat',year] → SIG du tableau de bord
             'billing', 'dashboard', 'invoices', 'fiscal-years',
             'stocks', 'stocks-articles',  // stock peut bouger via inventaire permanent
           ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))

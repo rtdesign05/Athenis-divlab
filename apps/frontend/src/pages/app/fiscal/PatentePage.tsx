@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { usePatente, useTaxConfig } from '@/hooks/useFiscal'
 import { DgiFormHeader } from '@/components/fiscal/DgiFormHeader'
 import { FormPageViewer } from '@/components/fiscal/FormPageViewer'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 const YEARS = [2024, 2025, 2026]
 
@@ -19,9 +20,27 @@ const tblStyle: React.CSSProperties     = { borderCollapse: 'collapse', width: '
 function fmt(n: number | undefined | null) { return (n ?? 0).toLocaleString('fr-FR') }
 
 export function PatentePage() {
+  const { country } = useCompanySettings()
   const [year, setYear] = useState(new Date().getFullYear())
   const { data, isLoading } = usePatente(year)
   const { data: config }    = useTaxConfig()
+
+  // Patente = impôt local Cameroun. Équivalent FR : CFE (Cotisation Foncière des Entreprises).
+  if (country && country !== 'CM') {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 px-8 py-12 text-center max-w-lg">
+          <p className="text-4xl mb-3">⚠️</p>
+          <p className="text-base font-semibold text-amber-900">Patente spécifique au Cameroun</p>
+          <p className="mt-2 text-sm text-amber-800">
+            La <strong>Patente</strong> est un impôt local camerounais. Pour la France, l'équivalent
+            est la <strong>CFE (Cotisation Foncière des Entreprises)</strong>, gérée par la DGFiP.
+          </p>
+          <p className="mt-3 text-xs text-amber-700">Pays détecté : <strong>{country}</strong>.</p>
+        </div>
+      </div>
+    )
+  }
 
   if (isLoading) return <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
   if (!data) return null
