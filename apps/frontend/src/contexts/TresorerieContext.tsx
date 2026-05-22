@@ -102,14 +102,18 @@ function apiSourceType(t: string): SourceType {
 /** Convertit une entrée API en Transaction locale */
 function apiEntryToTx(e: treasuryApi.ApiTreasuryEntry): Transaction {
   const sourceType = apiSourceType(e.sourceType)
-  const pieces: PieceJustificative[] = e.pieceName
+  const basePieces: PieceJustificative[] = e.pieceName
     ? [{ id: `pj-${e.id}`, nom: e.pieceName, type: 'autre', addedAt: e.createdAt }]
     : []
+  const extra: PieceJustificative[] = (e.extraPieces ?? []).map(p => ({
+    id: p.id, nom: p.nom, type: p.type, addedAt: p.addedAt,
+  }))
   return mkTx(
     e.id, e.date.slice(0, 10), e.libelle, Number(e.montant),
     sourceType, e.sourceName,
     e.agence?.nom ?? 'Siège',
-    'a_traiter', pieces,
+    e.status, [...basePieces, ...extra],
+    e.contrepartie ?? undefined,
   )
 }
 
@@ -226,6 +230,7 @@ export function TresorerieProvider({ children }: { children: ReactNode }) {
   }
 
   function validateTransaction(id: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]) {
+    // Mise à jour optimiste locale
     setTransactions(prev =>
       prev.map(tx =>
         tx.id === id
@@ -233,6 +238,14 @@ export function TresorerieProvider({ children }: { children: ReactNode }) {
           : tx,
       ),
     )
+    // Persistance en base — status + contrepartie + nouvelles pièces
+    treasuryApi.updateEntry(id, {
+      status:       'traite',
+      contrepartie,
+      extraPieces:  newPieces.map(p => ({
+        id: p.id, nom: p.nom, type: p.type, addedAt: p.addedAt,
+      })),
+    }).catch(err => console.error('[treasury] validateTransaction API error', err))
   }
 
   return (

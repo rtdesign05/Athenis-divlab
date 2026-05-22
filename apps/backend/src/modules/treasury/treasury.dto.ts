@@ -9,11 +9,28 @@ export const CreateTreasuryEntryDto = z.object({
   pieceName:  z.string().optional(),
 })
 
+const ContrepartieSchema = z.object({
+  accountCode:  z.string().min(1),
+  accountLabel: z.string().min(1),
+  libelle:      z.string().min(1),
+  addedAt:      z.string().min(1),
+})
+
+const ExtraPieceSchema = z.object({
+  id:      z.string().min(1),
+  nom:     z.string().min(1),
+  type:    z.enum(['facture', 'recu', 'bon_commande', 'virement', 'contrat', 'autre']),
+  addedAt: z.string().min(1),
+})
+
 export const UpdateTreasuryEntryDto = z.object({
-  date:      z.coerce.date().optional(),
-  libelle:   z.string().min(1).optional(),
-  montant:   z.number().optional(),
-  pieceName: z.string().nullable().optional(),
+  date:         z.coerce.date().optional(),
+  libelle:      z.string().min(1).optional(),
+  montant:      z.number().optional(),
+  pieceName:    z.string().nullable().optional(),
+  status:       z.enum(['a_traiter', 'traite']).optional(),
+  contrepartie: ContrepartieSchema.nullable().optional(),
+  extraPieces:  z.array(ExtraPieceSchema).nullable().optional(),
 })
 
 export const ListTreasuryDto = z.object({

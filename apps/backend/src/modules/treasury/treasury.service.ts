@@ -81,10 +81,13 @@ export async function updateEntry(
   return prisma.treasuryEntry.update({
     where: { id },
     data: {
-      ...(data.date      !== undefined ? { date: data.date } : {}),
-      ...(data.libelle   !== undefined ? { libelle: data.libelle } : {}),
-      ...(data.montant   !== undefined ? { montant: new Prisma.Decimal(data.montant) } : {}),
-      ...(data.pieceName !== undefined ? { pieceName: data.pieceName } : {}),
+      ...(data.date         !== undefined ? { date: data.date } : {}),
+      ...(data.libelle      !== undefined ? { libelle: data.libelle } : {}),
+      ...(data.montant      !== undefined ? { montant: new Prisma.Decimal(data.montant) } : {}),
+      ...(data.pieceName    !== undefined ? { pieceName: data.pieceName } : {}),
+      ...(data.status       !== undefined ? { status: data.status } : {}),
+      ...(data.contrepartie !== undefined ? { contrepartie: data.contrepartie ?? Prisma.JsonNull } : {}),
+      ...(data.extraPieces  !== undefined ? { extraPieces:  data.extraPieces  ?? Prisma.JsonNull } : {}),
     },
     include: { agence: { select: { nom: true } } },
   })

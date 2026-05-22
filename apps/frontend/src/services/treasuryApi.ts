@@ -3,18 +3,36 @@ import { api } from '@/lib/api'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type TreasurySourceType = 'banque' | 'caisse' | 'mobile_money'
+export type TreasuryEntryStatus = 'a_traiter' | 'traite'
+
+export interface ApiContrepartie {
+  accountCode:  string
+  accountLabel: string
+  libelle:      string
+  addedAt:      string
+}
+
+export interface ApiExtraPiece {
+  id:      string
+  nom:     string
+  type:    'facture' | 'recu' | 'bon_commande' | 'virement' | 'contrat' | 'autre'
+  addedAt: string
+}
 
 export interface ApiTreasuryEntry {
-  id:         string
-  date:       string
-  libelle:    string
-  montant:    number | string
-  sourceType: TreasurySourceType
-  sourceName: string
-  pieceName:  string | null
-  agenceId:   string | null
-  agence:     { nom: string } | null
-  createdAt:  string
+  id:           string
+  date:         string
+  libelle:      string
+  montant:      number | string
+  sourceType:   TreasurySourceType
+  sourceName:   string
+  pieceName:    string | null
+  status:       TreasuryEntryStatus
+  contrepartie: ApiContrepartie | null
+  extraPieces:  ApiExtraPiece[] | null
+  agenceId:     string | null
+  agence:       { nom: string } | null
+  createdAt:    string
 }
 
 export interface ApiBalance {
@@ -58,10 +76,13 @@ export function createEntry(payload: CreateEntryPayload) {
 }
 
 export interface UpdateEntryPayload {
-  date?:      string
-  libelle?:   string
-  montant?:   number
-  pieceName?: string | null
+  date?:         string
+  libelle?:      string
+  montant?:      number
+  pieceName?:    string | null
+  status?:       TreasuryEntryStatus
+  contrepartie?: ApiContrepartie | null
+  extraPieces?:  ApiExtraPiece[] | null
 }
 
 export function updateEntry(id: string, payload: UpdateEntryPayload) {
