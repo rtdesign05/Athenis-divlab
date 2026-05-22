@@ -19,6 +19,10 @@ export const CreateEmployeeDto = z.object({
   bankAccountHolder:    z.string().max(100).optional(),
   bankAccountNumber:    z.string().max(50).optional(),
   bankSwiftCode:        z.string().max(20).optional(),
+  // Métadonnées organisationnelles
+  poste:        z.string().max(100).nullable().optional(),
+  departement:  z.string().max(100).nullable().optional(),
+  managerId:    z.string().nullable().optional(),
 })
 
 export const UpdateEmployeeDto = CreateEmployeeDto.partial()

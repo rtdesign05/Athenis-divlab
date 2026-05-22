@@ -321,8 +321,9 @@ model Company {
   purchaseOrders   PurchaseOrder[]
   treasuryEntries  TreasuryEntry[]
   treasurySources  TreasurySource[]
-  employees        Employee[]
-  esgData          ESGData[]
+  employees             Employee[]
+  employmentContracts   EmploymentContract[]
+  esgData               ESGData[]
   assets           Asset[]
   articles         Article[]
   stockFamilies    StockFamily[]
@@ -768,15 +769,59 @@ model Employee {
   // ── Compte comptable de tiers (422xxxxx) ──────────────────────────────
   accountingCode         String?        @map("accounting_code")
 
-  annualReviews AnnualReview[]
-  leaveRequests LeaveRequest[]
-  workSchedules WorkSchedule[]
+  // ── Métadonnées organisationnelles ─────────────────────────────────────
+  poste          String?        // ex: "Comptable senior"
+  departement    String?        // ex: "Finance"
+  managerId      String?        @map("manager_id")
+  manager        Employee?      @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull)
+  subordinates   Employee[]     @relation("EmployeeManager")
+
+  annualReviews       AnnualReview[]
+  leaveRequests       LeaveRequest[]
+  workSchedules       WorkSchedule[]
+  employmentContracts EmploymentContract[]
 
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
   @@index([companyId])
+  @@index([managerId])
   @@map("employees")
+}
+
+// ── Contrats d'emploi (CDI, CDD, stages, temps partiel) ─────────────────────
+enum EmploymentContractStatus {
+  DRAFT
+  SIGNED
+  TERMINATED
+
+  @@map("EmploymentContractStatus")
+}
+
+model EmploymentContract {
+  id            String                   @id @default(cuid())
+  companyId     String                   @map("company_id")
+  company       Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employeeId    String                   @map("employee_id")
+  employee      Employee                 @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  contractType  EmploymentType           @map("contract_type")
+  status        EmploymentContractStatus @default(DRAFT)
+  startDate     DateTime                 @map("start_date")
+  endDate       DateTime?                @map("end_date")
+  grossSalary   Decimal                  @db.Decimal(12, 2) @map("gross_salary")
+  poste         String
+  departement   String
+  lieuTravail   String                   @map("lieu_travail")
+  /// Texte complet du contrat — modifiable jusqu'à signature
+  content       String                   @db.Text
+  signedAt      DateTime?                @map("signed_at")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("employment_contracts")
 }
 
 enum PaymentMethod {

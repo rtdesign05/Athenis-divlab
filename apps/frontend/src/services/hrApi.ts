@@ -25,6 +25,10 @@ export interface Employee {
   bankAccountHolder?:    string | null
   bankAccountNumber?:    string | null
   bankSwiftCode?:        string | null
+  // Métadonnées organisationnelles
+  poste?:        string | null
+  departement?:  string | null
+  managerId?:    string | null
   createdAt: string
   updatedAt: string
 }
@@ -51,6 +55,9 @@ export interface CreateEmployeeDto {
   bankAccountHolder?:   string
   bankAccountNumber?:   string
   bankSwiftCode?:       string
+  poste?:               string
+  departement?:         string
+  managerId?:           string | null
 }
 
 export type UpdateEmployeeDto = Partial<CreateEmployeeDto>

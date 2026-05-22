@@ -27,6 +27,7 @@ import { invitationRouter } from '../modules/invitation/invitation.routes.js'
 import { mailRouter } from '../modules/mail/mail.routes.js'
 import scanRouter from '../modules/scan/scan.routes.js'
 import { treasuryRouter } from '../modules/treasury/treasury.routes.js'
+import { employmentContractsRouter } from '../modules/employment-contracts/employment-contracts.routes.js'
 
 const router = Router()
 
@@ -61,6 +62,7 @@ router.use('/invitations', invitationRouter)
 router.use('/mail', mailRouter)
 router.use('/scan', scanRouter)
 router.use('/treasury', treasuryRouter)
+router.use('/employment-contracts', employmentContractsRouter)
 router.use('/billing', billingRouter)
 
 export { router }

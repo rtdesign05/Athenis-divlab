@@ -1,4 +1,5 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
+import { employmentContractsApi, type ApiEmploymentContract } from '@/services/employmentContractsApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type ContractType   = 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'INTERN'
@@ -24,9 +25,11 @@ export interface EmploymentContract {
 
 interface ContractsContextValue {
   contracts:      EmploymentContract[]
-  addContract(c: Omit<EmploymentContract, 'id' | 'createdAt'>): void
-  updateContract(id: string, patch: Partial<EmploymentContract>): void
-  deleteContract(id: string): void
+  loading:        boolean
+  refresh():      Promise<void>
+  addContract(c: Omit<EmploymentContract, 'id' | 'createdAt'>): Promise<void>
+  updateContract(id: string, patch: Partial<EmploymentContract>): Promise<void>
+  deleteContract(id: string): Promise<void>
 }
 
 const ContractsContext = createContext<ContractsContextValue | null>(null)
@@ -406,24 +409,100 @@ export function generateTemplate(
   }
 }
 
+// ── Mapping API ↔ Context ───────────────────────────────────────────────────
+function mapContract(c: ApiEmploymentContract): EmploymentContract {
+  return {
+    id:            c.id,
+    employeeId:    c.employeeId,
+    employeeName:  c.employeeName,
+    employeeEmail: c.employeeEmail,
+    contractType:  c.contractType,
+    status:        c.status,
+    startDate:     c.startDate,
+    endDate:       c.endDate,
+    grossSalary:   c.grossSalary,
+    poste:         c.poste,
+    departement:   c.departement,
+    lieuTravail:   c.lieuTravail,
+    content:       c.content,
+    createdAt:     c.createdAt.slice(0, 10),
+    signedAt:      c.signedAt,
+  }
+}
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 export function ContractsProvider({ children }: { children: React.ReactNode }) {
   const [contracts, setContracts] = useState<EmploymentContract[]>([])
+  const [loading,   setLoading]   = useState(true)
 
-  function addContract(c: Omit<EmploymentContract, 'id' | 'createdAt'>) {
-    setContracts(prev => [...prev, { ...c, id: `ec-${Date.now()}`, createdAt: new Date().toISOString().slice(0, 10) }])
+  async function refresh() {
+    setLoading(true)
+    try {
+      const data = await employmentContractsApi.list()
+      setContracts(data.map(mapContract))
+    } catch (e) {
+      console.error('ContractsProvider refresh', e)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  function updateContract(id: string, patch: Partial<EmploymentContract>) {
-    setContracts(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
+  useEffect(() => {
+    void refresh()
+  }, [])
+
+  async function addContract(c: Omit<EmploymentContract, 'id' | 'createdAt'>) {
+    try {
+      const created = await employmentContractsApi.create({
+        employeeId:   c.employeeId,
+        contractType: c.contractType,
+        status:       c.status,
+        startDate:    c.startDate,
+        endDate:      c.endDate,
+        grossSalary:  c.grossSalary,
+        poste:        c.poste,
+        departement:  c.departement,
+        lieuTravail:  c.lieuTravail,
+        content:      c.content,
+        signedAt:     c.signedAt,
+      })
+      setContracts(prev => [mapContract(created), ...prev])
+    } catch (e) {
+      console.error('addContract', e)
+    }
   }
 
-  function deleteContract(id: string) {
-    setContracts(prev => prev.filter(c => c.id !== id))
+  async function updateContract(id: string, patch: Partial<EmploymentContract>) {
+    try {
+      const updated = await employmentContractsApi.update(id, {
+        ...(patch.contractType !== undefined ? { contractType: patch.contractType } : {}),
+        ...(patch.status       !== undefined ? { status:       patch.status }       : {}),
+        ...(patch.startDate    !== undefined ? { startDate:    patch.startDate }    : {}),
+        ...(patch.endDate      !== undefined ? { endDate:      patch.endDate }      : {}),
+        ...(patch.grossSalary  !== undefined ? { grossSalary:  patch.grossSalary }  : {}),
+        ...(patch.poste        !== undefined ? { poste:        patch.poste }        : {}),
+        ...(patch.departement  !== undefined ? { departement:  patch.departement }  : {}),
+        ...(patch.lieuTravail  !== undefined ? { lieuTravail:  patch.lieuTravail }  : {}),
+        ...(patch.content      !== undefined ? { content:      patch.content }      : {}),
+        ...(patch.signedAt     !== undefined ? { signedAt:     patch.signedAt }     : {}),
+      })
+      setContracts(prev => prev.map(c => c.id === id ? mapContract(updated) : c))
+    } catch (e) {
+      console.error('updateContract', e)
+    }
+  }
+
+  async function deleteContract(id: string) {
+    try {
+      await employmentContractsApi.remove(id)
+      setContracts(prev => prev.filter(c => c.id !== id))
+    } catch (e) {
+      console.error('deleteContract', e)
+    }
   }
 
   return (
-    <ContractsContext.Provider value={{ contracts, addContract, updateContract, deleteContract }}>
+    <ContractsContext.Provider value={{ contracts, loading, refresh, addContract, updateContract, deleteContract }}>
       {children}
     </ContractsContext.Provider>
   )

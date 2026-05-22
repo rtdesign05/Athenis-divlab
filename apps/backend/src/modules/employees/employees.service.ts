@@ -31,6 +31,9 @@ function serialize(e: PrismaEmployee) {
     bankAccountHolder:    e.bankAccountHolder,
     bankAccountNumber:    e.bankAccountNumber,
     bankSwiftCode:        e.bankSwiftCode,
+    poste:                e.poste,
+    departement:          e.departement,
+    managerId:            e.managerId,
     createdAt:      e.createdAt.toISOString(),
     updatedAt:      e.updatedAt.toISOString(),
   }
@@ -87,6 +90,9 @@ export async function createEmployee(companyId: string, data: CreateEmployeeInpu
       bankAccountHolder:   data.bankAccountHolder ?? null,
       bankAccountNumber:   data.bankAccountNumber ?? null,
       bankSwiftCode:       data.bankSwiftCode ?? null,
+      poste:               data.poste       ?? null,
+      departement:         data.departement ?? null,
+      managerId:           data.managerId   ?? null,
     },
   })
   return serialize(created)
@@ -117,6 +123,9 @@ export async function updateEmployee(companyId: string, id: string, data: Update
       ...(data.bankAccountHolder    !== undefined ? { bankAccountHolder:   data.bankAccountHolder ?? null }   : {}),
       ...(data.bankAccountNumber    !== undefined ? { bankAccountNumber:   data.bankAccountNumber ?? null }   : {}),
       ...(data.bankSwiftCode        !== undefined ? { bankSwiftCode:       data.bankSwiftCode ?? null }       : {}),
+      ...(data.poste                !== undefined ? { poste:               data.poste       ?? null }        : {}),
+      ...(data.departement          !== undefined ? { departement:         data.departement ?? null }        : {}),
+      ...(data.managerId            !== undefined ? { managerId:           data.managerId   ?? null }        : {}),
     },
   })
   return serialize(updated)
