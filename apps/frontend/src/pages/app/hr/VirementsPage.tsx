@@ -250,7 +250,7 @@ export function VirementsPage() {
             <div>
               <p className="text-xs text-gray-500 uppercase tracking-wide">Total versé YTD {currentYear}</p>
               <p className="text-2xl font-bold text-gray-800 mt-1">{fmt(totalYTD)}</p>
-              <p className="text-xs text-gray-400 mt-0.5">FCFA (net)</p>
+              <p className="text-xs text-gray-400 mt-0.5">net</p>
             </div>
             <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
               <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

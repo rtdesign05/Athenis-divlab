@@ -1,6 +1,6 @@
 import { useISHistory } from '@/hooks/useFiscal'
+import { useCurrency } from '@/hooks/useCurrency'
 
-function fmt(n: number | null) { return n != null ? n.toLocaleString('fr-FR') + ' F CFA' : '—' }
 function fmtDate(d: string | null) { return d ? new Date(d).toLocaleDateString('fr-FR') : '—' }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -12,6 +12,8 @@ const STATUS_BADGE: Record<string, string> = {
 
 export function ISHistoriquePage() {
   const { data = [], isLoading } = useISHistory()
+  const { fmt: fmtCur } = useCurrency()
+  const fmt = (n: number | null) => n != null ? fmtCur(n) : '—'
 
   return (
     <div className="space-y-6">

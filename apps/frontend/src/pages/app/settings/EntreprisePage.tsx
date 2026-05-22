@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { settingsApi, type CompanySettings } from '@/services/settingsApi'
 import { useAuth } from '@/features/auth/useAuth'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { AtheisId } from '@/shared/components/ui/AtheisId'
 
 // ── Logo : helpers localStorage ────────────────────────────────────────────────
@@ -132,6 +133,7 @@ function settingsToForm(s: CompanySettings): FormState {
 
 export function EntreprisePage() {
   const { user } = useAuth()
+  const { refreshCompany } = useCompanySettings()
   const [form, setForm]       = useState<FormState | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState(false)
@@ -225,6 +227,9 @@ export function EntreprisePage() {
       }
       const updated = await settingsApi.updateCompany(body)
       setForm(settingsToForm(updated))
+      // Propage les modifications (devise, pays, locale, etc.) à tous les
+      // modules qui consomment useCompanySettings — sans nécessiter un reload.
+      void refreshCompany()
       setSuccess(true)
       setTimeout(() => setSuccess(false), 3000)
     } catch (err) {

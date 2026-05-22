@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fiscalApi } from '@/services/fiscalApi'
+import { useCurrency } from '@/hooks/useCurrency'
 import type { TaxDeclStatus } from '@/services/fiscalApi'
 
 const YEARS = [2024, 2025, 2026]
@@ -14,11 +15,11 @@ const STATUS_CONFIG: Record<TaxDeclStatus, { label: string; cls: string }> = {
   EXEMPTED:  { label: 'Exonérée',  cls: 'bg-gray-100 text-gray-500' },
 }
 
-function fmt(n: number) { return n.toLocaleString('fr-FR') + ' F CFA' }
 function fmtDate(d: string | Date | null) { return d ? new Date(d).toLocaleDateString('fr-FR') : '—' }
 
 export function TVAHistoriquePage() {
   const [year, setYear] = useState(new Date().getFullYear())
+  const { fmt } = useCurrency()
   const { data: history = [], isLoading } = useQuery({
     queryKey: ['fiscal', 'tva-history', year],
     queryFn: () => fiscalApi.tvaHistory(year),

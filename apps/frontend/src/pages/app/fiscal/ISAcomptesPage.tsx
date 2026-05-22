@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useIS } from '@/hooks/useFiscal'
+import { useCurrency } from '@/hooks/useCurrency'
 import type { TaxDeclStatus } from '@/services/fiscalApi'
 
 const YEARS = [2024, 2025, 2026]
 
-function fmt(n: number) { return n.toLocaleString('fr-FR') + ' F CFA' }
 function fmtDate(d: string | Date | null) { return d ? new Date(d).toLocaleDateString('fr-FR') : '—' }
 
 const STATUS_CONFIG: Record<TaxDeclStatus, { label: string; cls: string; dot: string }> = {
@@ -18,6 +18,7 @@ const STATUS_CONFIG: Record<TaxDeclStatus, { label: string; cls: string; dot: st
 export function ISAcomptesPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   const { data, isLoading } = useIS(year)
+  const { fmt } = useCurrency()
 
   if (isLoading) return <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
 
