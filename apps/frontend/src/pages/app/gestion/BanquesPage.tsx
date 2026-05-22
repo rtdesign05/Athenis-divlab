@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useTresorerie } from '@/contexts/TresorerieContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { uploadBankStatement, type BankStatementResult } from '@/services/bankApi'
 import {
   listSources as apiListSources,
@@ -13,6 +14,7 @@ import {
   type ApiTreasurySource,
   type ApiTreasuryEntry,
 } from '@/services/treasuryApi'
+import type { Agence } from '@/services/settingsApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -314,12 +316,17 @@ function ModalImportReleve({ compte, onImport, onClose }: {
 
 // ── Modals ────────────────────────────────────────────────────────────────────
 
-function ModalCompte({ onSave, onClose, defaultAgence }: {
+function ModalCompte({ onSave, onClose, defaultAgence, agences }: {
   onSave: (c: Omit<Compte, 'id' | 'operations'>) => void
   onClose: () => void
   defaultAgence?: string
+  agences: Agence[]
 }) {
-  const [form, setForm] = useState({ banque: '', intitule: '', numero: '', solde: '', devise: 'XAF', agence: defaultAgence ?? 'Siège' })
+  const initialAgence = defaultAgence
+    ?? agences.find(a => a.isSiege)?.nom
+    ?? agences[0]?.nom
+    ?? 'Siège'
+  const [form, setForm] = useState({ banque: '', intitule: '', numero: '', solde: '', devise: 'XAF', agence: initialAgence })
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -360,6 +367,30 @@ function ModalCompte({ onSave, onClose, defaultAgence }: {
             <label className="block text-xs font-medium text-gray-600 mb-1">Numéro de compte</label>
             <input value={form.numero} onChange={set('numero')} placeholder="ex: CM 021 10023 00412876001 45"
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Agence *</label>
+            {defaultAgence ? (
+              <div className="w-full rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                {defaultAgence}
+              </div>
+            ) : (
+              <select value={form.agence} onChange={set('agence')}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
+                {agences.length === 0 ? (
+                  <option value="Siège">Siège</option>
+                ) : (
+                  agences.map(a => (
+                    <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>
+                  ))
+                )}
+              </select>
+            )}
+            {agences.length === 0 && (
+              <p className="mt-1 text-[10px] text-gray-400">
+                Aucune agence configurée — créez-en dans Paramètres → Agences pour cloisonner vos comptes par agence.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Solde initial</label>
@@ -511,6 +542,11 @@ export function BanquesPage() {
   const { user } = useAuth()
   const agenceNom = user?.agenceNom ?? null
   const { addTransaction } = useTresorerie()
+  const { agences } = useCompanySettings()
+  const agenceIdByName = useMemo(
+    () => Object.fromEntries(agences.map(a => [a.nom, a.id])) as Record<string, string>,
+    [agences],
+  )
 
   const [comptes, setComptes] = useState<Compte[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
@@ -620,6 +656,7 @@ export function BanquesPage() {
           <ModalCompte
             onSave={addCompte}
             onClose={() => setShowAddCompte(false)}
+            agences={agences}
             {...(agenceNom ? { defaultAgence: agenceNom } : {})}
           />
         )}
@@ -632,6 +669,7 @@ export function BanquesPage() {
 
   async function addCompte(data: Omit<Compte, 'id' | 'operations'>) {
     try {
+      const agenceId = agenceIdByName[data.agence]
       const created = await apiCreateSource({
         type:   'banque',
         nom:    data.intitule,
@@ -639,6 +677,7 @@ export function BanquesPage() {
         solde:  data.solde,
         devise: data.devise,
         ...(data.numero ? { numero: data.numero } : {}),
+        ...(agenceId   ? { agenceId } : {}),
       })
       const nc: Compte = {
         id:        created.id,
@@ -987,7 +1026,7 @@ export function BanquesPage() {
       </div>
 
       {/* Modals */}
-      {showAddCompte && <ModalCompte onSave={addCompte} onClose={() => setShowAddCompte(false)} {...(agenceNom ? { defaultAgence: agenceNom } : {})} />}
+      {showAddCompte && <ModalCompte onSave={addCompte} onClose={() => setShowAddCompte(false)} agences={agences} {...(agenceNom ? { defaultAgence: agenceNom } : {})} />}
       {showAddOp && <ModalOperation compte={selected} onSave={addOperation} onClose={() => setShowAddOp(false)} />}
       {editingOp && <ModalOperation compte={selected} initialOp={editingOp} onSave={updateOperation} onClose={() => setEditingOp(null)} />}
       {showImport && (

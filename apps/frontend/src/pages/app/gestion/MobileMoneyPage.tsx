@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useTresorerie } from '@/contexts/TresorerieContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import {
   listSources as apiListSources,
   createSource as apiCreateSource,
@@ -12,6 +13,7 @@ import {
   type ApiTreasurySource,
   type ApiTreasuryEntry,
 } from '@/services/treasuryApi'
+import type { Agence } from '@/services/settingsApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,22 +52,23 @@ const OPERATEURS: { label: string; couleur: string; textColor: string }[] = [
   { label: 'Wave',             couleur: 'bg-sky-400',     textColor: 'text-white'      },
 ]
 
-const AGENCES = ['Siège']
-
-// ── Données initiales ─────────────────────────────────────────────────────────
-
 // ── Modal nouveau portefeuille ────────────────────────────────────────────────
 
-function ModalPortefeuille({ onSave, onClose, defaultAgence }: {
+function ModalPortefeuille({ onSave, onClose, defaultAgence, agences }: {
   onSave: (p: Omit<Portefeuille, 'id' | 'operations'>) => void
   onClose: () => void
   defaultAgence?: string
+  agences: Agence[]
 }) {
+  const initialAgence = defaultAgence
+    ?? agences.find(a => a.isSiege)?.nom
+    ?? agences[0]?.nom
+    ?? 'Siège'
   const [form, setForm] = useState({
     operateur:   OPERATEURS[0]!.label,
     numero:      '',
     responsable: '',
-    agence:      defaultAgence ?? AGENCES[0]!,
+    agence:      initialAgence,
     solde:       '',
   })
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -109,10 +112,21 @@ function ModalPortefeuille({ onSave, onClose, defaultAgence }: {
               : (
                 <select value={form.agence} onChange={set('agence')}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                  {agences.length === 0 ? (
+                    <option value="Siège">Siège</option>
+                  ) : (
+                    agences.map(a => (
+                      <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>
+                    ))
+                  )}
                 </select>
               )
             }
+            {!defaultAgence && agences.length === 0 && (
+              <p className="mt-1 text-[10px] text-gray-400">
+                Aucune agence configurée — créez-en dans Paramètres → Agences.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Responsable</label>
@@ -271,6 +285,11 @@ export function MobileMoneyPage() {
   const { user } = useAuth()
   const agenceNom = user?.agenceNom ?? null
   const { addTransaction } = useTresorerie()
+  const { agences } = useCompanySettings()
+  const agenceIdByName = useMemo(
+    () => Object.fromEntries(agences.map(a => [a.nom, a.id])) as Record<string, string>,
+    [agences],
+  )
 
   const [portefeuilles, setPortefeuilles] = useState<Portefeuille[]>([])
   const [showAddPorte, setShowAddPorte]   = useState(false)
@@ -351,6 +370,7 @@ export function MobileMoneyPage() {
 
   async function addPortefeuille(data: Omit<Portefeuille, 'id' | 'operations'>) {
     try {
+      const agenceId = agenceIdByName[data.agence]
       const created = await apiCreateSource({
         type:      'mobile_money',
         nom:       data.operateur, // pour l'agrégation côté trésorerie
@@ -358,6 +378,7 @@ export function MobileMoneyPage() {
         solde:     data.solde,
         ...(data.numero      ? { numeroTelephone: data.numero }      : {}),
         ...(data.responsable ? { responsable:     data.responsable } : {}),
+        ...(agenceId         ? { agenceId } : {}),
       })
       const np: Portefeuille = {
         id:          created.id,
@@ -512,6 +533,7 @@ export function MobileMoneyPage() {
           <ModalPortefeuille
             onSave={addPortefeuille}
             onClose={() => setShowAddPorte(false)}
+            agences={agences}
             {...(agenceNom ? { defaultAgence: agenceNom } : {})}
           />
         )}
@@ -735,6 +757,7 @@ export function MobileMoneyPage() {
         <ModalPortefeuille
           onSave={addPortefeuille}
           onClose={() => setShowAddPorte(false)}
+          agences={agences}
           {...(agenceNom ? { defaultAgence: agenceNom } : {})}
         />
       )}

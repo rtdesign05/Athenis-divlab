@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useTresorerie } from '@/contexts/TresorerieContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import {
   listSources as apiListSources,
   createSource as apiCreateSource,
@@ -12,6 +13,7 @@ import {
   type ApiTreasurySource,
   type ApiTreasuryEntry,
 } from '@/services/treasuryApi'
+import type { Agence } from '@/services/settingsApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,18 +40,19 @@ interface Caisse {
   operations: Operation[]
 }
 
-// ── Données initiales ─────────────────────────────────────────────────────────
-
-const AGENCES = ['Siège']
-
 // ── Modal nouvelle caisse ─────────────────────────────────────────────────────
 
-function ModalCaisse({ onSave, onClose, defaultAgence }: {
+function ModalCaisse({ onSave, onClose, defaultAgence, agences }: {
   onSave: (c: Omit<Caisse, 'id' | 'operations'>) => void
   onClose: () => void
   defaultAgence?: string
+  agences: Agence[]
 }) {
-  const [form, setForm] = useState({ nom: '', agence: defaultAgence ?? AGENCES[0]!, responsable: '', solde: '' })
+  const initialAgence = defaultAgence
+    ?? agences.find(a => a.isSiege)?.nom
+    ?? agences[0]?.nom
+    ?? 'Siège'
+  const [form, setForm] = useState({ nom: '', agence: initialAgence, responsable: '', solde: '' })
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -83,10 +86,21 @@ function ModalCaisse({ onSave, onClose, defaultAgence }: {
               : (
                 <select value={form.agence} onChange={set('agence')}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                  {agences.length === 0 ? (
+                    <option value="Siège">Siège</option>
+                  ) : (
+                    agences.map(a => (
+                      <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>
+                    ))
+                  )}
                 </select>
               )
             }
+            {!defaultAgence && agences.length === 0 && (
+              <p className="mt-1 text-[10px] text-gray-400">
+                Aucune agence configurée — créez-en dans Paramètres → Agences pour cloisonner vos caisses.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Responsable</label>
@@ -245,6 +259,11 @@ export function CaissesPage() {
   const { user } = useAuth()
   const agenceNom = user?.agenceNom ?? null
   const { addTransaction } = useTresorerie()
+  const { agences } = useCompanySettings()
+  const agenceIdByName = useMemo(
+    () => Object.fromEntries(agences.map(a => [a.nom, a.id])) as Record<string, string>,
+    [agences],
+  )
 
   const [caisses, setCaisses]       = useState<Caisse[]>([])
   const [showAddCaisse, setShowAddCaisse] = useState(false)
@@ -322,11 +341,13 @@ export function CaissesPage() {
 
   async function addCaisse(data: Omit<Caisse, 'id' | 'operations'>) {
     try {
+      const agenceId = agenceIdByName[data.agence]
       const created = await apiCreateSource({
         type:  'caisse',
         nom:   data.nom,
         solde: data.solde,
         ...(data.responsable ? { responsable: data.responsable } : {}),
+        ...(agenceId         ? { agenceId } : {}),
       })
       const nc: Caisse = {
         id:          created.id,
@@ -480,6 +501,7 @@ export function CaissesPage() {
           <ModalCaisse
             onSave={addCaisse}
             onClose={() => setShowAddCaisse(false)}
+            agences={agences}
             {...(agenceNom ? { defaultAgence: agenceNom } : {})}
           />
         )}
@@ -693,7 +715,7 @@ export function CaissesPage() {
       </div>
 
       {/* Modals */}
-      {showAddCaisse && <ModalCaisse onSave={addCaisse} onClose={() => setShowAddCaisse(false)} {...(agenceNom ? { defaultAgence: agenceNom } : {})} />}
+      {showAddCaisse && <ModalCaisse onSave={addCaisse} onClose={() => setShowAddCaisse(false)} agences={agences} {...(agenceNom ? { defaultAgence: agenceNom } : {})} />}
       {showAddOp && <ModalOperation caisse={selected} onSave={addOperation} onClose={() => setShowAddOp(false)} />}
       {editingOp && <ModalOperation caisse={selected} initialOp={editingOp} onSave={updateOperation} onClose={() => setEditingOp(null)} />}
     </div>
