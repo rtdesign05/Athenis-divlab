@@ -2,14 +2,13 @@ import { useMemo, useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type Client, type ClientType } from '@/contexts/GestionContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { CompteCombobox } from '@/components/accounting/CompteCombobox'
 
 const TYPE_STYLE: Record<ClientType, string> = {
   entreprise:  'bg-indigo-50 text-indigo-700 ring-indigo-200',
   particulier: 'bg-pink-50 text-pink-700 ring-pink-200',
 }
-
-const AGENCES = ['Siège']
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
@@ -21,6 +20,7 @@ interface ModalClientProps {
 }
 
 function ModalClient({ initial, agenceNom, onSave, onClose }: ModalClientProps) {
+  const { agences } = useCompanySettings()
   const [form, setForm] = useState({
     nom:       initial?.nom       ?? '',
     type:      initial?.type      ?? 'entreprise' as ClientType,
@@ -74,7 +74,9 @@ function ModalClient({ initial, agenceNom, onSave, onClose }: ModalClientProps) 
               ) : (
                 <select value={form.agence} onChange={set('agence')}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                  {agences.length === 0
+                    ? <option value="Siège">Siège</option>
+                    : agences.map(a => <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>)}
                 </select>
               )}
             </div>

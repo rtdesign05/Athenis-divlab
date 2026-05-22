@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type RetourStatut } from '@/contexts/GestionContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 const STATUT_STYLE: Record<RetourStatut, string> = {
@@ -23,8 +24,6 @@ const MOTIFS_COURANTS = [
   'Autre',
 ]
 
-const AGENCES = ['Siège']
-
 // ── Modal nouveau retour ──────────────────────────────────────────────────────
 
 interface ModalRetourProps {
@@ -36,6 +35,7 @@ interface ModalRetourProps {
 }
 
 function ModalRetour({ clients, factures, agenceNom, onSave, onClose }: ModalRetourProps) {
+  const { agences } = useCompanySettings()
   const today = new Date().toISOString().slice(0, 10)
   const [form, setForm] = useState({
     facture:  '',
@@ -137,7 +137,9 @@ function ModalRetour({ clients, factures, agenceNom, onSave, onClose }: ModalRet
             ) : (
               <select value={form.agence} onChange={set('agence')}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                {agences.length === 0
+                  ? <option value="Siège">Siège</option>
+                  : agences.map(a => <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>)}
               </select>
             )}
           </div>

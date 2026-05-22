@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type Fournisseur, type FournisseurCategorie } from '@/contexts/GestionContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { CompteCombobox } from '@/components/accounting/CompteCombobox'
 
 const CATEGORIE_STYLE: Record<FournisseurCategorie, string> = {
@@ -17,8 +18,6 @@ const CATEGORIES: FournisseurCategorie[] = [
   'Matières premières', 'Services', 'Équipement', 'Logistique', 'Informatique', 'Autre',
 ]
 
-const AGENCES = ['Siège']
-
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
 interface ModalFournisseurProps {
@@ -29,6 +28,7 @@ interface ModalFournisseurProps {
 }
 
 function ModalFournisseur({ initial, agenceNom, onSave, onClose }: ModalFournisseurProps) {
+  const { agences } = useCompanySettings()
   const [form, setForm] = useState({
     nom:       initial?.nom       ?? '',
     categorie: initial?.categorie ?? 'Autre' as FournisseurCategorie,
@@ -81,7 +81,9 @@ function ModalFournisseur({ initial, agenceNom, onSave, onClose }: ModalFourniss
               ) : (
                 <select value={form.agence} onChange={set('agence')}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                  {agences.length === 0
+                    ? <option value="Siège">Siège</option>
+                    : agences.map(a => <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>)}
                 </select>
               )}
             </div>

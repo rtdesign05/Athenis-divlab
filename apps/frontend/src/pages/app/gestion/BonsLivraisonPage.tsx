@@ -18,8 +18,6 @@ const STATUT_STYLE: Record<BLStatut, string> = {
 
 const STATUTS: BLStatut[] = ['En préparation', 'Expédié', 'Livré', 'Retourné']
 
-const AGENCES = ['Siège']
-
 function fmtDate(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -344,6 +342,7 @@ interface ModalBLProps {
 }
 
 function ModalBL({ commandes, articles, agenceNom, onSave, onClose }: ModalBLProps) {
+  const { agences } = useCompanySettings()
   const today = new Date().toISOString().slice(0, 10)
 
   const availableCmds = useMemo(
@@ -471,7 +470,9 @@ function ModalBL({ commandes, articles, agenceNom, onSave, onClose }: ModalBLPro
                 <select value={form.agence}
                   onChange={e => setForm(f => ({ ...f, agence: e.target.value }))}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                  {agences.length === 0
+                    ? <option value="Siège">Siège</option>
+                    : agences.map(a => <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>)}
                 </select>
               )}
             </div>

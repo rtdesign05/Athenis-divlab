@@ -22,7 +22,6 @@ const STATUT_STYLE: Record<BRStatut, string> = {
 }
 
 const STATUTS: BRStatut[] = ['Attendu', 'Reçu partiel', 'Reçu', 'Litige']
-const AGENCES = ['Siège']
 
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -93,6 +92,7 @@ interface ModalBRProps {
 }
 
 function ModalBR({ achats, agenceNom, initial, onSave, onClose }: ModalBRProps) {
+  const { agences } = useCompanySettings()
   const today = new Date().toISOString().slice(0, 10)
   const isEdit = !!initial
 
@@ -223,7 +223,9 @@ function ModalBR({ achats, agenceNom, initial, onSave, onClose }: ModalBRProps) 
                 <select value={form.agence}
                   onChange={e => setForm(f => ({ ...f, agence: e.target.value }))}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                  {agences.length === 0
+                    ? <option value="Siège">Siège</option>
+                    : agences.map(a => <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>)}
                 </select>
               )}
             </div>

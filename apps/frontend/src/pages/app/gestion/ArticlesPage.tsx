@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type Article, type ArticleUnite } from '@/contexts/GestionContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { CompteCombobox } from '@/components/accounting/CompteCombobox'
 import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 const UNITES: ArticleUnite[] = ['pièce', 'kg', 'litre', 'm²', 'heure', 'forfait']
-const AGENCES = ['Siège']
 
 // Palette de couleurs pour les catégories (statiques pour Tailwind JIT)
 const CATEGORY_PALETTE = [
@@ -107,6 +107,7 @@ interface ModalArticleProps {
 }
 
 function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: ModalArticleProps) {
+  const { agences } = useCompanySettings()
   const [form, setForm] = useState({
     reference:   initial?.reference   ?? '',
     nom:         initial?.nom         ?? '',
@@ -176,7 +177,9 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
               ) : (
                 <select value={form.agence} onChange={set('agence')}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                  {agences.length === 0
+                    ? <option value="Siège">Siège</option>
+                    : agences.map(a => <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>)}
                 </select>
               )}
             </div>

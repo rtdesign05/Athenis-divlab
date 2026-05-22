@@ -7,11 +7,10 @@ import {
   type MouvementStock,
   type MouvementType,
 } from '@/contexts/GestionContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
-
-const AGENCES = ['Siège']
 
 const MVT_STYLE: Record<MouvementType, string> = {
   'Entrée':     'bg-green-50  text-green-700  ring-green-200',
@@ -42,6 +41,7 @@ interface ModalAjustementProps {
 }
 
 function ModalAjustement({ articles, agenceNom, onSave, onClose }: ModalAjustementProps) {
+  const { agences } = useCompanySettings()
   const stockables = articles.filter(a => a.categorie !== 'Service' && a.actif)
 
   const [form, setForm] = useState({
@@ -126,7 +126,9 @@ function ModalAjustement({ articles, agenceNom, onSave, onClose }: ModalAjusteme
               ) : (
                 <select value={form.agence} onChange={set('agence')}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  {AGENCES.map(a => <option key={a} value={a}>{a}</option>)}
+                  {agences.length === 0
+                    ? <option value="Siège">Siège</option>
+                    : agences.map(a => <option key={a.id} value={a.nom}>{a.nom}{a.isSiege ? ' (Siège)' : ''}</option>)}
                 </select>
               )}
             </div>
