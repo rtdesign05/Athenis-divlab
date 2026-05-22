@@ -1,7 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useTresorerie } from '@/contexts/TresorerieContext'
+import {
+  listSources as apiListSources,
+  createSource as apiCreateSource,
+  type ApiTreasurySource,
+} from '@/services/treasuryApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -292,11 +297,63 @@ export function MobileMoneyPage() {
 
   const agencesPresentes = Array.from(new Set(portesVisibles.map(p => p.agence)))
 
-  function addPortefeuille(data: Omit<Portefeuille, 'id' | 'operations'>) {
-    const np: Portefeuille = { ...data, id: Date.now().toString(), operations: [] }
-    setPortefeuilles(ps => [...ps, np])
-    setSelectedId(np.id)
-    setShowAddPorte(false)
+  // ── Persistance des portefeuilles via API ───────────────────────────────────
+  useEffect(() => {
+    let cancelled = false
+    apiListSources('mobile_money')
+      .then((sources: ApiTreasurySource[]) => {
+        if (cancelled) return
+        const mapped: Portefeuille[] = sources.map(s => {
+          const op = OPERATEURS.find(o => o.label === s.operateur)
+          return {
+            id:          s.id,
+            operateur:   s.operateur ?? '',
+            couleur:     op?.couleur   ?? 'bg-gray-200',
+            textColor:   op?.textColor ?? 'text-gray-700',
+            numero:      s.numeroTelephone ?? '',
+            responsable: s.responsable ?? '',
+            agence:      s.agence?.nom ?? 'Siège',
+            solde:       Number(s.solde),
+            operations:  [],
+          }
+        })
+        setPortefeuilles(mapped)
+        if (mapped.length > 0 && !selectedId) setSelectedId(mapped[0]!.id)
+      })
+      .catch(() => { /* erreur silencieuse */ })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function addPortefeuille(data: Omit<Portefeuille, 'id' | 'operations'>) {
+    try {
+      const created = await apiCreateSource({
+        type:      'mobile_money',
+        nom:       data.operateur, // pour l'agrégation côté trésorerie
+        operateur: data.operateur,
+        solde:     data.solde,
+        ...(data.numero      ? { numeroTelephone: data.numero }      : {}),
+        ...(data.responsable ? { responsable:     data.responsable } : {}),
+      })
+      const np: Portefeuille = {
+        id:          created.id,
+        operateur:   created.operateur ?? data.operateur,
+        couleur:     data.couleur,
+        textColor:   data.textColor,
+        numero:      created.numeroTelephone ?? '',
+        responsable: created.responsable ?? '',
+        agence:      created.agence?.nom ?? data.agence,
+        solde:       Number(created.solde),
+        operations:  [],
+      }
+      setPortefeuilles(ps => [...ps, np])
+      setSelectedId(np.id)
+    } catch (e) {
+      console.error('createSource mobile_money', e)
+      alert('Erreur lors de la création du portefeuille')
+    } finally {
+      setShowAddPorte(false)
+    }
   }
 
   function addOperation(op: Omit<Operation, 'id'>) {

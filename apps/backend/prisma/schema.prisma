@@ -320,6 +320,7 @@ model Company {
   expenses         Expense[]
   purchaseOrders   PurchaseOrder[]
   treasuryEntries  TreasuryEntry[]
+  treasurySources  TreasurySource[]
   employees        Employee[]
   esgData          ESGData[]
   assets           Asset[]
@@ -659,6 +660,39 @@ model TreasuryEntry {
   @@index([agenceId])
   @@index([companyId, sourceName])
   @@map("treasury_entries")
+}
+
+// Sources de trésorerie persistées (comptes bancaires, caisses, portefeuilles
+// mobile money). Une table unique avec un champ `type` pour distinguer les 3
+// natures — les colonnes spécifiques à un type sont nullable.
+model TreasurySource {
+  id              String             @id @default(cuid())
+  companyId       String             @map("company_id")
+  company         Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId        String?            @map("agence_id")
+  agence          Agence?            @relation(fields: [agenceId], references: [id], onDelete: SetNull)
+  type            TreasurySourceType
+  /// Nom affiché (ex: "BICEC compte courant", "Caisse principale")
+  nom             String
+  /// Solde courant — recalculé à chaque opération ; init au solde d'ouverture
+  solde           Decimal            @db.Decimal(15, 2) @default(0)
+  devise          String             @default("XAF")
+  // ── Banque-specific ───────────────────────────────────────────────────
+  banque          String?
+  numero          String?            // IBAN ou numéro de compte
+  // ── Caisse-specific ───────────────────────────────────────────────────
+  responsable     String?
+  // ── Mobile Money-specific ─────────────────────────────────────────────
+  operateur       String?            // 'MTN' | 'Orange Money' | 'Wave' …
+  numeroTelephone String?            @map("numero_telephone")
+  // ── Métadonnées ───────────────────────────────────────────────────────
+  isActive        Boolean            @default(true) @map("is_active")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt      @map("updated_at")
+
+  @@index([companyId, type])
+  @@index([agenceId])
+  @@map("treasury_sources")
 }
 
 // ─────────────────────────────────────────
@@ -2032,6 +2066,7 @@ model Agence {
   bankTransactions BankTransaction[]
   purchaseOrders   PurchaseOrder[]
   treasuryEntries  TreasuryEntry[]
+  treasurySources  TreasurySource[]
 
   @@unique([companyId, code])
   @@index([companyId])

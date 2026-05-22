@@ -1,8 +1,13 @@
-import { useState, useRef, useCallback, useMemo } from 'react'
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useTresorerie } from '@/contexts/TresorerieContext'
 import { uploadBankStatement, type BankStatementResult } from '@/services/bankApi'
+import {
+  listSources as apiListSources,
+  createSource as apiCreateSource,
+  type ApiTreasurySource,
+} from '@/services/treasuryApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -504,6 +509,30 @@ export function BanquesPage() {
 
   const [comptes, setComptes] = useState<Compte[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
+
+  // ── Persistance des comptes via API ─────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false
+    apiListSources('banque')
+      .then((sources: ApiTreasurySource[]) => {
+        if (cancelled) return
+        const mapped: Compte[] = sources.map(s => ({
+          id:        s.id,
+          banque:    s.banque ?? '',
+          intitule:  s.nom,
+          numero:    s.numero ?? '',
+          solde:     Number(s.solde),
+          devise:    s.devise,
+          agence:    s.agence?.nom ?? 'Siège',
+          operations: [],
+        }))
+        setComptes(mapped)
+        if (mapped.length > 0 && !selectedId) setSelectedId(mapped[0]!.id)
+      })
+      .catch(() => { /* erreur silencieuse — affichage état vide */ })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [showAddCompte, setShowAddCompte] = useState(false)
   const [showAddOp, setShowAddOp] = useState(false)
   const [editingOp, setEditingOp] = useState<Operation | null>(null)
@@ -573,12 +602,36 @@ export function BanquesPage() {
   const isFiltered = dateFrom !== '' || dateTo !== ''
   const filteredTotal = filteredOperations.reduce((s, o) => s + o.montant, 0)
 
-  function addCompte(data: Omit<Compte, 'id' | 'operations'>) {
-    const nc: Compte = { ...data, id: Date.now().toString(), operations: [] }
-    setComptes(cs => [...cs, nc])
-    setSelectedId(nc.id)
-    setShowAddCompte(false)
+  async function addCompte(data: Omit<Compte, 'id' | 'operations'>) {
+    try {
+      const created = await apiCreateSource({
+        type:   'banque',
+        nom:    data.intitule,
+        banque: data.banque,
+        solde:  data.solde,
+        devise: data.devise,
+        ...(data.numero ? { numero: data.numero } : {}),
+      })
+      const nc: Compte = {
+        id:        created.id,
+        banque:    created.banque ?? data.banque,
+        intitule:  created.nom,
+        numero:    created.numero ?? '',
+        solde:     Number(created.solde),
+        devise:    created.devise,
+        agence:    created.agence?.nom ?? data.agence,
+        operations: [],
+      }
+      setComptes(cs => [...cs, nc])
+      setSelectedId(nc.id)
+    } catch (e) {
+      console.error('createSource banque', e)
+      alert('Erreur lors de la création du compte bancaire')
+    } finally {
+      setShowAddCompte(false)
+    }
   }
+
 
   function addOperation(op: Omit<Operation, 'id'>) {
     const newOp: Operation = { ...op, id: Date.now().toString() }

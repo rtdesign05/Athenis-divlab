@@ -1,7 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useTresorerie } from '@/contexts/TresorerieContext'
+import {
+  listSources as apiListSources,
+  createSource as apiCreateSource,
+  type ApiTreasurySource,
+} from '@/services/treasuryApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -268,11 +273,52 @@ export function CaissesPage() {
   // Grouper par agence
   const agencesPresentes = Array.from(new Set(caissesVisibles.map(c => c.agence)))
 
-  function addCaisse(data: Omit<Caisse, 'id' | 'operations'>) {
-    const nc: Caisse = { ...data, id: Date.now().toString(), operations: [] }
-    setCaisses(cs => [...cs, nc])
-    setSelectedId(nc.id)
-    setShowAddCaisse(false)
+  // ── Persistance des caisses via API ─────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false
+    apiListSources('caisse')
+      .then((sources: ApiTreasurySource[]) => {
+        if (cancelled) return
+        const mapped: Caisse[] = sources.map(s => ({
+          id:          s.id,
+          nom:         s.nom,
+          agence:      s.agence?.nom ?? 'Siège',
+          responsable: s.responsable ?? '',
+          solde:       Number(s.solde),
+          operations:  [],
+        }))
+        setCaisses(mapped)
+        if (mapped.length > 0 && !selectedId) setSelectedId(mapped[0]!.id)
+      })
+      .catch(() => { /* erreur silencieuse */ })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function addCaisse(data: Omit<Caisse, 'id' | 'operations'>) {
+    try {
+      const created = await apiCreateSource({
+        type:  'caisse',
+        nom:   data.nom,
+        solde: data.solde,
+        ...(data.responsable ? { responsable: data.responsable } : {}),
+      })
+      const nc: Caisse = {
+        id:          created.id,
+        nom:         created.nom,
+        agence:      created.agence?.nom ?? data.agence,
+        responsable: created.responsable ?? '',
+        solde:       Number(created.solde),
+        operations:  [],
+      }
+      setCaisses(cs => [...cs, nc])
+      setSelectedId(nc.id)
+    } catch (e) {
+      console.error('createSource caisse', e)
+      alert('Erreur lors de la création de la caisse')
+    } finally {
+      setShowAddCaisse(false)
+    }
   }
 
   function addOperation(op: Omit<Operation, 'id'>) {
