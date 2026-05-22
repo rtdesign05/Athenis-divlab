@@ -57,6 +57,19 @@ export function createEntry(payload: CreateEntryPayload) {
     .then(r => r.data.data)
 }
 
+export interface UpdateEntryPayload {
+  date?:      string
+  libelle?:   string
+  montant?:   number
+  pieceName?: string | null
+}
+
+export function updateEntry(id: string, payload: UpdateEntryPayload) {
+  return api
+    .put<{ success: true; data: ApiTreasuryEntry }>(`/treasury/${id}`, payload)
+    .then(r => r.data.data)
+}
+
 export function deleteEntry(id: string) {
   return api.delete(`/treasury/${id}`)
 }

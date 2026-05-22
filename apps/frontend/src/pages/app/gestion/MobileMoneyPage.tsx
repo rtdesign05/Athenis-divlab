@@ -5,7 +5,12 @@ import { useTresorerie } from '@/contexts/TresorerieContext'
 import {
   listSources as apiListSources,
   createSource as apiCreateSource,
+  listEntries as apiListEntries,
+  createEntry as apiCreateEntry,
+  updateEntry as apiUpdateEntry,
+  deleteEntry as apiDeleteEntry,
   type ApiTreasurySource,
+  type ApiTreasuryEntry,
 } from '@/services/treasuryApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -297,24 +302,43 @@ export function MobileMoneyPage() {
 
   const agencesPresentes = Array.from(new Set(portesVisibles.map(p => p.agence)))
 
-  // ── Persistance des portefeuilles via API ───────────────────────────────────
+  // ── Persistance des portefeuilles + mouvements via API ─────────────────────
+  const mapEntryToOp = (e: ApiTreasuryEntry): Operation => ({
+    id:      e.id,
+    date:    e.date.slice(0, 10),
+    libelle: e.libelle,
+    montant: Number(e.montant),
+  })
+
   useEffect(() => {
     let cancelled = false
-    apiListSources('mobile_money')
-      .then((sources: ApiTreasurySource[]) => {
+    Promise.all([
+      apiListSources('mobile_money'),
+      apiListEntries({ sourceType: 'mobile_money', limit: 500 }),
+    ])
+      .then(([sources, entriesPage]) => {
         if (cancelled) return
-        const mapped: Portefeuille[] = sources.map(s => {
-          const op = OPERATEURS.find(o => o.label === s.operateur)
+        const entriesBySource = new Map<string, Operation[]>()
+        for (const e of entriesPage.items) {
+          const arr = entriesBySource.get(e.sourceName) ?? []
+          arr.push(mapEntryToOp(e))
+          entriesBySource.set(e.sourceName, arr)
+        }
+        const mapped: Portefeuille[] = (sources as ApiTreasurySource[]).map(s => {
+          const opMeta   = OPERATEURS.find(o => o.label === s.operateur)
+          const operateur = s.operateur ?? ''
+          const ops      = entriesBySource.get(operateur) ?? []
+          const opsSolde = ops.reduce((sum, o) => sum + o.montant, 0)
           return {
             id:          s.id,
-            operateur:   s.operateur ?? '',
-            couleur:     op?.couleur   ?? 'bg-gray-200',
-            textColor:   op?.textColor ?? 'text-gray-700',
+            operateur,
+            couleur:     opMeta?.couleur   ?? 'bg-gray-200',
+            textColor:   opMeta?.textColor ?? 'text-gray-700',
             numero:      s.numeroTelephone ?? '',
             responsable: s.responsable ?? '',
             agence:      s.agence?.nom ?? 'Siège',
-            solde:       Number(s.solde),
-            operations:  [],
+            solde:       Number(s.solde) + opsSolde,
+            operations:  ops,
           }
         })
         setPortefeuilles(mapped)
@@ -356,53 +380,86 @@ export function MobileMoneyPage() {
     }
   }
 
-  function addOperation(op: Omit<Operation, 'id'>) {
+  async function addOperation(op: Omit<Operation, 'id'>) {
     if (!selected) return
-    const newOp: Operation = { ...op, id: Date.now().toString() }
-    setPortefeuilles(ps => ps.map(p =>
-      p.id === selectedId
-        ? { ...p, solde: p.solde + op.montant, operations: [newOp, ...p.operations] }
-        : p
-    ))
-    // Propager vers le contexte trésorerie → visible dans Transactions comptabilité
-    addTransaction(
-      { date: op.date, libelle: op.libelle, montant: op.montant },
-      selected.operateur,
-      'mobile-money',
-      selected.agence,
-      op.piece?.name,
-    )
-    setShowAddOp(false)
+    try {
+      const created = await apiCreateEntry({
+        date:       op.date,
+        libelle:    op.libelle,
+        montant:    op.montant,
+        sourceType: 'mobile_money',
+        sourceName: selected.operateur,
+        ...(op.piece?.name ? { pieceName: op.piece.name } : {}),
+      })
+      const persistedOp: Operation = { ...op, id: created.id }
+      setPortefeuilles(ps => ps.map(p =>
+        p.id === selectedId
+          ? { ...p, solde: p.solde + op.montant, operations: [persistedOp, ...p.operations] }
+          : p
+      ))
+      addTransaction(
+        { date: op.date, libelle: op.libelle, montant: op.montant },
+        selected.operateur,
+        'mobile-money',
+        selected.agence,
+        op.piece?.name,
+      )
+    } catch (e) {
+      console.error('createEntry mobile_money', e)
+      alert("Erreur lors de l'enregistrement du mouvement")
+    } finally {
+      setShowAddOp(false)
+    }
   }
 
-  function updateOperation(updated: Omit<Operation, 'id'>) {
+  async function updateOperation(updated: Omit<Operation, 'id'>) {
     if (!editingOp) return
-    setPortefeuilles(ps => ps.map(p => {
-      if (p.id !== selectedId) return p
-      const diff = updated.montant - editingOp.montant
-      return {
-        ...p,
-        solde: p.solde + diff,
-        operations: p.operations.map(op =>
-          op.id === editingOp.id ? { ...op, ...updated } : op
-        ),
-      }
-    }))
-    setEditingOp(null)
+    const previous = editingOp
+    try {
+      await apiUpdateEntry(previous.id, {
+        date:    updated.date,
+        libelle: updated.libelle,
+        montant: updated.montant,
+        ...(updated.piece?.name !== undefined ? { pieceName: updated.piece.name } : {}),
+      })
+      setPortefeuilles(ps => ps.map(p => {
+        if (p.id !== selectedId) return p
+        const diff = updated.montant - previous.montant
+        return {
+          ...p,
+          solde: p.solde + diff,
+          operations: p.operations.map(op =>
+            op.id === previous.id ? { ...op, ...updated } : op
+          ),
+        }
+      }))
+    } catch (e) {
+      console.error('updateEntry mobile_money', e)
+      alert('Erreur lors de la modification du mouvement')
+    } finally {
+      setEditingOp(null)
+    }
   }
 
-  function deleteOperation(opId: string) {
-    setPortefeuilles(ps => ps.map(p => {
-      if (p.id !== selectedId) return p
-      const op = p.operations.find(o => o.id === opId)
-      if (!op) return p
-      if (op.piece) URL.revokeObjectURL(op.piece.url)
-      return {
-        ...p,
-        solde: p.solde - op.montant,
-        operations: p.operations.filter(o => o.id !== opId),
-      }
-    }))
+  async function deleteOperation(opId: string) {
+    const porte = portefeuilles.find(p => p.id === selectedId)
+    const op    = porte?.operations.find(o => o.id === opId)
+    if (!op) return
+    try {
+      await apiDeleteEntry(opId)
+      setPortefeuilles(ps => ps.map(p => {
+        if (p.id !== selectedId) return p
+        if (op.piece) URL.revokeObjectURL(op.piece.url)
+        return {
+          ...p,
+          solde: p.solde - op.montant,
+          operations: p.operations.filter(o => o.id !== opId),
+        }
+      }))
+    } catch (e) {
+      console.error('deleteEntry mobile_money', e)
+      alert('Erreur lors de la suppression')
+    }
   }
 
   function attachPiece(opId: string, file: File) {

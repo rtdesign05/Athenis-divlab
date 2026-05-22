@@ -9,6 +9,13 @@ export const CreateTreasuryEntryDto = z.object({
   pieceName:  z.string().optional(),
 })
 
+export const UpdateTreasuryEntryDto = z.object({
+  date:      z.coerce.date().optional(),
+  libelle:   z.string().min(1).optional(),
+  montant:   z.number().optional(),
+  pieceName: z.string().nullable().optional(),
+})
+
 export const ListTreasuryDto = z.object({
   page:       z.coerce.number().int().positive().default(1),
   limit:      z.coerce.number().int().min(1).max(500).default(200),
@@ -38,6 +45,7 @@ export const ListTreasurySourcesDto = z.object({
 })
 
 export type CreateTreasuryEntryInput   = z.infer<typeof CreateTreasuryEntryDto>
+export type UpdateTreasuryEntryInput   = z.infer<typeof UpdateTreasuryEntryDto>
 export type ListTreasuryInput          = z.infer<typeof ListTreasuryDto>
 export type CreateTreasurySourceInput  = z.infer<typeof CreateTreasurySourceDto>
 export type UpdateTreasurySourceInput  = z.infer<typeof UpdateTreasurySourceDto>

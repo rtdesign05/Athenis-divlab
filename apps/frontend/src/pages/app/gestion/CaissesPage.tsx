@@ -5,7 +5,12 @@ import { useTresorerie } from '@/contexts/TresorerieContext'
 import {
   listSources as apiListSources,
   createSource as apiCreateSource,
+  listEntries as apiListEntries,
+  createEntry as apiCreateEntry,
+  updateEntry as apiUpdateEntry,
+  deleteEntry as apiDeleteEntry,
   type ApiTreasurySource,
+  type ApiTreasuryEntry,
 } from '@/services/treasuryApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -273,20 +278,40 @@ export function CaissesPage() {
   // Grouper par agence
   const agencesPresentes = Array.from(new Set(caissesVisibles.map(c => c.agence)))
 
-  // ── Persistance des caisses via API ─────────────────────────────────────────
+  // ── Persistance des caisses + mouvements via API ───────────────────────────
+  const mapEntryToOp = (e: ApiTreasuryEntry): Operation => ({
+    id:      e.id,
+    date:    e.date.slice(0, 10),
+    libelle: e.libelle,
+    montant: Number(e.montant),
+  })
+
   useEffect(() => {
     let cancelled = false
-    apiListSources('caisse')
-      .then((sources: ApiTreasurySource[]) => {
+    Promise.all([
+      apiListSources('caisse'),
+      apiListEntries({ sourceType: 'caisse', limit: 500 }),
+    ])
+      .then(([sources, entriesPage]) => {
         if (cancelled) return
-        const mapped: Caisse[] = sources.map(s => ({
-          id:          s.id,
-          nom:         s.nom,
-          agence:      s.agence?.nom ?? 'Siège',
-          responsable: s.responsable ?? '',
-          solde:       Number(s.solde),
-          operations:  [],
-        }))
+        const entriesBySource = new Map<string, Operation[]>()
+        for (const e of entriesPage.items) {
+          const arr = entriesBySource.get(e.sourceName) ?? []
+          arr.push(mapEntryToOp(e))
+          entriesBySource.set(e.sourceName, arr)
+        }
+        const mapped: Caisse[] = (sources as ApiTreasurySource[]).map(s => {
+          const ops      = entriesBySource.get(s.nom) ?? []
+          const opsSolde = ops.reduce((sum, o) => sum + o.montant, 0)
+          return {
+            id:          s.id,
+            nom:         s.nom,
+            agence:      s.agence?.nom ?? 'Siège',
+            responsable: s.responsable ?? '',
+            solde:       Number(s.solde) + opsSolde,
+            operations:  ops,
+          }
+        })
         setCaisses(mapped)
         if (mapped.length > 0 && !selectedId) setSelectedId(mapped[0]!.id)
       })
@@ -321,53 +346,86 @@ export function CaissesPage() {
     }
   }
 
-  function addOperation(op: Omit<Operation, 'id'>) {
+  async function addOperation(op: Omit<Operation, 'id'>) {
     if (!selected) return
-    const newOp: Operation = { ...op, id: Date.now().toString() }
-    setCaisses(cs => cs.map(c =>
-      c.id === selectedId
-        ? { ...c, solde: c.solde + op.montant, operations: [newOp, ...c.operations] }
-        : c
-    ))
-    // Propager vers le contexte trésorerie → visible dans Transactions comptabilité
-    addTransaction(
-      { date: op.date, libelle: op.libelle, montant: op.montant },
-      selected.nom,
-      'caisse',
-      selected.agence,
-      op.piece?.name,
-    )
-    setShowAddOp(false)
+    try {
+      const created = await apiCreateEntry({
+        date:       op.date,
+        libelle:    op.libelle,
+        montant:    op.montant,
+        sourceType: 'caisse',
+        sourceName: selected.nom,
+        ...(op.piece?.name ? { pieceName: op.piece.name } : {}),
+      })
+      const persistedOp: Operation = { ...op, id: created.id }
+      setCaisses(cs => cs.map(c =>
+        c.id === selectedId
+          ? { ...c, solde: c.solde + op.montant, operations: [persistedOp, ...c.operations] }
+          : c
+      ))
+      addTransaction(
+        { date: op.date, libelle: op.libelle, montant: op.montant },
+        selected.nom,
+        'caisse',
+        selected.agence,
+        op.piece?.name,
+      )
+    } catch (e) {
+      console.error('createEntry caisse', e)
+      alert("Erreur lors de l'enregistrement du mouvement")
+    } finally {
+      setShowAddOp(false)
+    }
   }
 
-  function updateOperation(updated: Omit<Operation, 'id'>) {
+  async function updateOperation(updated: Omit<Operation, 'id'>) {
     if (!editingOp) return
-    setCaisses(cs => cs.map(c => {
-      if (c.id !== selectedId) return c
-      const diff = updated.montant - editingOp.montant
-      return {
-        ...c,
-        solde: c.solde + diff,
-        operations: c.operations.map(op =>
-          op.id === editingOp.id ? { ...op, ...updated } : op
-        ),
-      }
-    }))
-    setEditingOp(null)
+    const previous = editingOp
+    try {
+      await apiUpdateEntry(previous.id, {
+        date:    updated.date,
+        libelle: updated.libelle,
+        montant: updated.montant,
+        ...(updated.piece?.name !== undefined ? { pieceName: updated.piece.name } : {}),
+      })
+      setCaisses(cs => cs.map(c => {
+        if (c.id !== selectedId) return c
+        const diff = updated.montant - previous.montant
+        return {
+          ...c,
+          solde: c.solde + diff,
+          operations: c.operations.map(op =>
+            op.id === previous.id ? { ...op, ...updated } : op
+          ),
+        }
+      }))
+    } catch (e) {
+      console.error('updateEntry caisse', e)
+      alert('Erreur lors de la modification du mouvement')
+    } finally {
+      setEditingOp(null)
+    }
   }
 
-  function deleteOperation(opId: string) {
-    setCaisses(cs => cs.map(c => {
-      if (c.id !== selectedId) return c
-      const op = c.operations.find(o => o.id === opId)
-      if (!op) return c
-      if (op.piece) URL.revokeObjectURL(op.piece.url)
-      return {
-        ...c,
-        solde: c.solde - op.montant,
-        operations: c.operations.filter(o => o.id !== opId),
-      }
-    }))
+  async function deleteOperation(opId: string) {
+    const caisse = caisses.find(c => c.id === selectedId)
+    const op     = caisse?.operations.find(o => o.id === opId)
+    if (!op) return
+    try {
+      await apiDeleteEntry(opId)
+      setCaisses(cs => cs.map(c => {
+        if (c.id !== selectedId) return c
+        if (op.piece) URL.revokeObjectURL(op.piece.url)
+        return {
+          ...c,
+          solde: c.solde - op.montant,
+          operations: c.operations.filter(o => o.id !== opId),
+        }
+      }))
+    } catch (e) {
+      console.error('deleteEntry caisse', e)
+      alert('Erreur lors de la suppression')
+    }
   }
 
   function attachPiece(opId: string, file: File) {

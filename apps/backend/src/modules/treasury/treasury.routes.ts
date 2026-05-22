@@ -8,6 +8,7 @@ import {
   CreateTreasurySourceDto,
   ListTreasuryDto,
   ListTreasurySourcesDto,
+  UpdateTreasuryEntryDto,
   UpdateTreasurySourceDto,
 } from './treasury.dto.js'
 import * as svc from './treasury.service.js'
@@ -50,6 +51,23 @@ treasuryRouter.post(
     try {
       const data = await svc.createEntry(getCompanyId(req), req.body, req.user)
       res.status(201).json({ success: true, data })
+    } catch (e) { next(e) }
+  },
+)
+
+// ── Modifier mouvement ────────────────────────────────────────────────────────
+treasuryRouter.put(
+  '/:id',
+  checkModule('gestion', 'write'),
+  validateRequest({ body: UpdateTreasuryEntryDto }),
+  async (req, res, next) => {
+    try {
+      const data = await svc.updateEntry(getCompanyId(req), req.params.id!, req.body)
+      if (!data) {
+        res.status(404).json({ success: false, error: 'Mouvement introuvable' })
+        return
+      }
+      res.json({ success: true, data })
     } catch (e) { next(e) }
   },
 )

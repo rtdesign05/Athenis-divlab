@@ -6,7 +6,12 @@ import { uploadBankStatement, type BankStatementResult } from '@/services/bankAp
 import {
   listSources as apiListSources,
   createSource as apiCreateSource,
+  listEntries as apiListEntries,
+  createEntry as apiCreateEntry,
+  updateEntry as apiUpdateEntry,
+  deleteEntry as apiDeleteEntry,
   type ApiTreasurySource,
+  type ApiTreasuryEntry,
 } from '@/services/treasuryApi'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -510,22 +515,45 @@ export function BanquesPage() {
   const [comptes, setComptes] = useState<Compte[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
 
-  // ── Persistance des comptes via API ─────────────────────────────────────────
+  // ── Persistance des comptes + mouvements via API ───────────────────────────
+  const mapEntryToOp = (e: ApiTreasuryEntry): Operation => ({
+    id:      e.id,
+    date:    e.date.slice(0, 10),
+    libelle: e.libelle,
+    montant: Number(e.montant),
+  })
+
   useEffect(() => {
     let cancelled = false
-    apiListSources('banque')
-      .then((sources: ApiTreasurySource[]) => {
+    Promise.all([
+      apiListSources('banque'),
+      apiListEntries({ sourceType: 'banque', limit: 500 }),
+    ])
+      .then(([sources, entriesPage]) => {
         if (cancelled) return
-        const mapped: Compte[] = sources.map(s => ({
-          id:        s.id,
-          banque:    s.banque ?? '',
-          intitule:  s.nom,
-          numero:    s.numero ?? '',
-          solde:     Number(s.solde),
-          devise:    s.devise,
-          agence:    s.agence?.nom ?? 'Siège',
-          operations: [],
-        }))
+        const entriesBySource = new Map<string, Operation[]>()
+        for (const e of entriesPage.items) {
+          const arr = entriesBySource.get(e.sourceName) ?? []
+          arr.push(mapEntryToOp(e))
+          entriesBySource.set(e.sourceName, arr)
+        }
+        const mapped: Compte[] = (sources as ApiTreasurySource[]).map(s => {
+          const banque   = s.banque ?? ''
+          const intitule = s.nom
+          const key      = `${banque} — ${intitule}`
+          const ops      = entriesBySource.get(key) ?? []
+          const opsSolde = ops.reduce((sum, o) => sum + o.montant, 0)
+          return {
+            id:        s.id,
+            banque,
+            intitule,
+            numero:    s.numero ?? '',
+            solde:     Number(s.solde) + opsSolde,
+            devise:    s.devise,
+            agence:    s.agence?.nom ?? 'Siège',
+            operations: ops,
+          }
+        })
         setComptes(mapped)
         if (mapped.length > 0 && !selectedId) setSelectedId(mapped[0]!.id)
       })
@@ -633,54 +661,90 @@ export function BanquesPage() {
   }
 
 
-  function addOperation(op: Omit<Operation, 'id'>) {
-    const newOp: Operation = { ...op, id: Date.now().toString() }
-    setComptes(cs => cs.map(c =>
-      c.id === selectedId
-        ? { ...c, solde: c.solde + op.montant, operations: [newOp, ...c.operations] }
-        : c
-    ))
-    // Propager vers le contexte trésorerie → visible dans Transactions comptabilité
-    if (selected) {
+  async function addOperation(op: Omit<Operation, 'id'>) {
+    if (!selected) return
+    const sourceName = `${selected.banque} — ${selected.intitule}`
+    try {
+      const created = await apiCreateEntry({
+        date:       op.date,
+        libelle:    op.libelle,
+        montant:    op.montant,
+        sourceType: 'banque',
+        sourceName,
+        ...(op.piece?.name ? { pieceName: op.piece.name } : {}),
+      })
+      const persistedOp: Operation = {
+        ...op,
+        id: created.id,
+      }
+      setComptes(cs => cs.map(c =>
+        c.id === selectedId
+          ? { ...c, solde: c.solde + op.montant, operations: [persistedOp, ...c.operations] }
+          : c
+      ))
       addTransaction(
         { date: op.date, libelle: op.libelle, montant: op.montant },
-        `${selected.banque} — ${selected.intitule}`,
+        sourceName,
         'banque',
         selected.agence,
         op.piece?.name,
       )
+    } catch (e) {
+      console.error('createEntry banque', e)
+      alert("Erreur lors de l'enregistrement du mouvement")
+    } finally {
+      setShowAddOp(false)
     }
-    setShowAddOp(false)
   }
 
-  function updateOperation(updated: Omit<Operation, 'id'>) {
+  async function updateOperation(updated: Omit<Operation, 'id'>) {
     if (!editingOp) return
-    setComptes(cs => cs.map(c => {
-      if (c.id !== selectedId) return c
-      const diff = updated.montant - editingOp.montant
-      return {
-        ...c,
-        solde: c.solde + diff,
-        operations: c.operations.map(op =>
-          op.id === editingOp.id ? { ...op, ...updated } : op
-        ),
-      }
-    }))
-    setEditingOp(null)
+    const previous = editingOp
+    try {
+      await apiUpdateEntry(previous.id, {
+        date:    updated.date,
+        libelle: updated.libelle,
+        montant: updated.montant,
+        ...(updated.piece?.name !== undefined ? { pieceName: updated.piece.name } : {}),
+      })
+      setComptes(cs => cs.map(c => {
+        if (c.id !== selectedId) return c
+        const diff = updated.montant - previous.montant
+        return {
+          ...c,
+          solde: c.solde + diff,
+          operations: c.operations.map(op =>
+            op.id === previous.id ? { ...op, ...updated } : op
+          ),
+        }
+      }))
+    } catch (e) {
+      console.error('updateEntry banque', e)
+      alert('Erreur lors de la modification du mouvement')
+    } finally {
+      setEditingOp(null)
+    }
   }
 
-  function deleteOperation(opId: string) {
-    setComptes(cs => cs.map(c => {
-      if (c.id !== selectedId) return c
-      const op = c.operations.find(o => o.id === opId)
-      if (!op) return c
-      if (op.piece) URL.revokeObjectURL(op.piece.url)
-      return {
-        ...c,
-        solde: c.solde - op.montant,
-        operations: c.operations.filter(o => o.id !== opId),
-      }
-    }))
+  async function deleteOperation(opId: string) {
+    const compte = comptes.find(c => c.id === selectedId)
+    const op     = compte?.operations.find(o => o.id === opId)
+    if (!op) return
+    try {
+      await apiDeleteEntry(opId)
+      setComptes(cs => cs.map(c => {
+        if (c.id !== selectedId) return c
+        if (op.piece) URL.revokeObjectURL(op.piece.url)
+        return {
+          ...c,
+          solde: c.solde - op.montant,
+          operations: c.operations.filter(o => o.id !== opId),
+        }
+      }))
+    } catch (e) {
+      console.error('deleteEntry banque', e)
+      alert('Erreur lors de la suppression')
+    }
   }
 
   function attachPiece(opId: string, file: File) {

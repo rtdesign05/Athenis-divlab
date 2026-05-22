@@ -7,6 +7,7 @@ import type {
   CreateTreasurySourceInput,
   ListTreasuryInput,
   ListTreasurySourcesInput,
+  UpdateTreasuryEntryInput,
   UpdateTreasurySourceInput,
 } from './treasury.dto.js'
 
@@ -65,6 +66,25 @@ export async function createEntry(companyId: string, data: CreateTreasuryEntryIn
       sourceType: data.sourceType,
       sourceName: data.sourceName,
       pieceName:  data.pieceName ?? null,
+    },
+    include: { agence: { select: { nom: true } } },
+  })
+}
+
+export async function updateEntry(
+  companyId: string,
+  id: string,
+  data: UpdateTreasuryEntryInput,
+) {
+  const entry = await prisma.treasuryEntry.findUnique({ where: { id } })
+  if (!entry || entry.companyId !== companyId) return null
+  return prisma.treasuryEntry.update({
+    where: { id },
+    data: {
+      ...(data.date      !== undefined ? { date: data.date } : {}),
+      ...(data.libelle   !== undefined ? { libelle: data.libelle } : {}),
+      ...(data.montant   !== undefined ? { montant: new Prisma.Decimal(data.montant) } : {}),
+      ...(data.pieceName !== undefined ? { pieceName: data.pieceName } : {}),
     },
     include: { agence: { select: { nom: true } } },
   })
