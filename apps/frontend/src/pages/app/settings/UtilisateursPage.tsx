@@ -28,6 +28,7 @@ const MODULES: { key: keyof RolePermissions; label: string }[] = [
   { key: 'rh',           label: 'Ressources humaines' },
   { key: 'juridique',    label: 'Juridique' },
   { key: 'esg',          label: 'ESG & CSRD' },
+  { key: 'fiscalite',    label: 'Fiscalité' },
   { key: 'settings',     label: 'Paramètres' },
 ]
 
@@ -39,13 +40,13 @@ const PERMISSION_LEVELS: { value: PermissionLevel; label: string }[] = [
 ]
 
 const DEFAULT_PERMISSIONS: Record<InviteRole, RolePermissions> = {
-  ADMIN:      { gestion: 'admin', comptabilite: 'admin', rh: 'admin',  juridique: 'admin', esg: 'admin',  settings: 'admin'  },
-  MANAGER:    { gestion: 'write', comptabilite: 'read',  rh: 'read',   juridique: 'read',  esg: 'read',   settings: 'read'   },
-  ACCOUNTANT: { gestion: 'read',  comptabilite: 'write', rh: 'none',   juridique: 'none',  esg: 'none',   settings: 'none'   },
-  HR:         { gestion: 'none',  comptabilite: 'none',  rh: 'write',  juridique: 'read',  esg: 'none',   settings: 'none'   },
-  SALES:      { gestion: 'write', comptabilite: 'none',  rh: 'none',   juridique: 'none',  esg: 'none',   settings: 'none'   },
-  READONLY:   { gestion: 'read',  comptabilite: 'read',  rh: 'read',   juridique: 'read',  esg: 'read',   settings: 'none'   },
-  CUSTOM:     { gestion: 'none',  comptabilite: 'none',  rh: 'none',   juridique: 'none',  esg: 'none',   settings: 'none'   },
+  ADMIN:      { gestion: 'admin', comptabilite: 'admin', rh: 'admin',  juridique: 'admin', esg: 'admin',  fiscalite: 'admin', settings: 'admin'  },
+  MANAGER:    { gestion: 'write', comptabilite: 'read',  rh: 'read',   juridique: 'read',  esg: 'read',   fiscalite: 'read',  settings: 'read'   },
+  ACCOUNTANT: { gestion: 'read',  comptabilite: 'write', rh: 'none',   juridique: 'none',  esg: 'none',   fiscalite: 'write', settings: 'none'   },
+  HR:         { gestion: 'none',  comptabilite: 'none',  rh: 'write',  juridique: 'read',  esg: 'none',   fiscalite: 'none',  settings: 'none'   },
+  SALES:      { gestion: 'write', comptabilite: 'none',  rh: 'none',   juridique: 'none',  esg: 'none',   fiscalite: 'none',  settings: 'none'   },
+  READONLY:   { gestion: 'read',  comptabilite: 'read',  rh: 'read',   juridique: 'read',  esg: 'read',   fiscalite: 'read',  settings: 'none'   },
+  CUSTOM:     { gestion: 'none',  comptabilite: 'none',  rh: 'none',   juridique: 'none',  esg: 'none',   fiscalite: 'none',  settings: 'none'   },
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

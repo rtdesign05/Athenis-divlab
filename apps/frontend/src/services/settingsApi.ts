@@ -8,6 +8,7 @@ export interface RolePermissions {
   rh:           PermissionLevel
   juridique:    PermissionLevel
   esg:          PermissionLevel
+  fiscalite:    PermissionLevel
   settings:     PermissionLevel
 }
 

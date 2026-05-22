@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/features/auth/useAuth'
 import {
   settingsApi,
@@ -22,14 +22,13 @@ interface TresoAccess {
   niveau: TresoLevel
 }
 
-// Agences et les types de ressources qu'elles possèdent réellement
-const AGENCES_TRESO: { label: string; types: TresoResourceType[] }[] = [
-  { label: 'Toutes les agences',         types: ['banque', 'caisse', 'mobile_money'] },
-  { label: 'Siège',                       types: ['banque', 'caisse'] },
-  { label: 'Agence Douala — Akwa',        types: ['caisse'] },
-  { label: 'Succursale Yaoundé — Centre', types: ['caisse'] },
-  { label: 'Bureau Bafoussam',            types: ['caisse'] },
-]
+// Liste minimale par défaut : toutes les agences confondues. Les agences réelles
+// sont chargées via settingsApi.listAgences() dans la page et fusionnées.
+const ALL_RESOURCE_TYPES: TresoResourceType[] = ['banque', 'caisse', 'mobile_money']
+const TOUTES_AGENCES_OPTION: { label: string; types: TresoResourceType[] } = {
+  label: 'Toutes les agences',
+  types: ALL_RESOURCE_TYPES,
+}
 
 const TYPE_LABELS: Record<TresoResourceType, string> = {
   banque:       'Comptes bancaires',
@@ -53,31 +52,17 @@ function userDisplayName(u: SettingsUser): string {
   return full || u.email
 }
 
-function buildInitialAccesses(roles: CompanyRole[]): TresoAccess[] {
-  const adminName = roles.find(r => /admin/i.test(r.name))?.name ?? roles[0]?.name ?? 'Admin'
-  const comptName = roles.find(r => /compt/i.test(r.name))?.name ?? roles[1]?.name ?? 'Comptable'
-  return [
-    {
-      id: 'a1', sujet: adminName, sujetType: 'role',
-      agence: 'Toutes les agences', ressourceTypes: ['banque', 'caisse', 'mobile_money'], niveau: 'ecriture',
-    },
-    {
-      id: 'a2', sujet: comptName, sujetType: 'role',
-      agence: 'Toutes les agences', ressourceTypes: ['banque', 'caisse', 'mobile_money'], niveau: 'lecture',
-    },
-  ]
-}
-
 // ── Modal ajout / modification accès ─────────────────────────────────────────
 
-function ModalTresoAccess({ initial, sujets, onSave, onClose }: {
+function ModalTresoAccess({ initial, sujets, agences, onSave, onClose }: {
   initial?: TresoAccess
-  sujets: { label: string; type: 'role' | 'utilisateur' }[]
-  onSave: (a: Omit<TresoAccess, 'id'>) => void
-  onClose: () => void
+  sujets:   { label: string; type: 'role' | 'utilisateur' }[]
+  agences:  { label: string; types: TresoResourceType[] }[]
+  onSave:   (a: Omit<TresoAccess, 'id'>) => void
+  onClose:  () => void
 }) {
-  const editing = !!initial
-  const defaultAgence = AGENCES_TRESO[0]!
+  const editing       = !!initial
+  const defaultAgence = agences[0] ?? TOUTES_AGENCES_OPTION
 
   const [form, setForm] = useState({
     sujet:          initial?.sujet         ?? sujets[0]?.label ?? '',
@@ -87,11 +72,11 @@ function ModalTresoAccess({ initial, sujets, onSave, onClose }: {
     niveau:         initial?.niveau        ?? 'lecture' as TresoLevel,
   })
 
-  const agenceInfo = AGENCES_TRESO.find(a => a.label === form.agence) ?? defaultAgence
+  const agenceInfo = agences.find(a => a.label === form.agence) ?? defaultAgence
 
   // Quand l'agence change, on recalcule les types disponibles
   function handleAgenceChange(label: string) {
-    const ag = AGENCES_TRESO.find(a => a.label === label) ?? defaultAgence
+    const ag = agences.find(a => a.label === label) ?? defaultAgence
     setForm(f => ({ ...f, agence: label, ressourceTypes: [...ag.types] }))
   }
 
@@ -152,7 +137,7 @@ function ModalTresoAccess({ initial, sujets, onSave, onClose }: {
             </label>
             <select value={form.agence} onChange={e => handleAgenceChange(e.target.value)}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-forest-500/30">
-              {AGENCES_TRESO.map(a => (
+              {agences.map(a => (
                 <option key={a.label} value={a.label}>{a.label}</option>
               ))}
             </select>
@@ -225,19 +210,25 @@ function TresoAccessSection({ roles, users }: { roles: CompanyRole[]; users: Set
     ...users.map(u => ({ label: userDisplayName(u), type: 'utilisateur' as const })),
   ]
 
-  const [accesses, setAccesses] = useState<TresoAccess[]>([])
-  const initialized = useRef(false)
+  // Liste des agences chargée dynamiquement depuis settingsApi.listAgences().
+  // Fallback : juste "Toutes les agences" si l'entreprise n'en a pas créé.
+  const [agencesTreso, setAgencesTreso] = useState<{ label: string; types: TresoResourceType[] }[]>([TOUTES_AGENCES_OPTION])
   useEffect(() => {
-    if (roles.length > 0 && !initialized.current) {
-      initialized.current = true
-      setAccesses(buildInitialAccesses(roles))
-    }
-  }, [roles])
+    settingsApi.listAgences()
+      .then((list) => {
+        setAgencesTreso([
+          TOUTES_AGENCES_OPTION,
+          ...list.map(a => ({ label: a.nom, types: ALL_RESOURCE_TYPES })),
+        ])
+      })
+      .catch(() => { /* non-bloquant : on garde le fallback */ })
+  }, [])
 
-  const [filterSujet, setFilterSujet] = useState('all')
+  const [accesses, setAccesses]   = useState<TresoAccess[]>([])
+  const [filterSujet, setFilterSujet]   = useState('all')
   const [filterAgence, setFilterAgence] = useState('all')
-  const [showModal, setShowModal] = useState(false)
-  const [editing, setEditing] = useState<TresoAccess | null>(null)
+  const [showModal, setShowModal]   = useState(false)
+  const [editing, setEditing]       = useState<TresoAccess | null>(null)
 
   function addOrUpdate(data: Omit<TresoAccess, 'id'>) {
     if (editing) {
@@ -289,7 +280,9 @@ function TresoAccessSection({ roles, users }: { roles: CompanyRole[]; users: Set
         <select value={filterAgence} onChange={e => setFilterAgence(e.target.value)}
           className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-forest-500/30">
           <option value="all">Toutes les agences</option>
-          {AGENCES_TRESO.map(a => <option key={a.label} value={a.label}>{a.label}</option>)}
+          {agencesTreso.filter(a => a.label !== 'Toutes les agences').map(a => (
+            <option key={a.label} value={a.label}>{a.label}</option>
+          ))}
         </select>
       </div>
 
@@ -348,6 +341,7 @@ function TresoAccessSection({ roles, users }: { roles: CompanyRole[]; users: Set
         <ModalTresoAccess
           {...(editing ? { initial: editing } : {})}
           sujets={sujets}
+          agences={agencesTreso}
           onSave={addOrUpdate}
           onClose={() => { setShowModal(false); setEditing(null) }}
         />
@@ -364,6 +358,7 @@ const MODULES: (keyof RolePermissions)[] = [
   'rh',
   'juridique',
   'esg',
+  'fiscalite',
   'settings',
 ]
 
@@ -373,6 +368,7 @@ const MODULE_LABELS: Record<keyof RolePermissions, string> = {
   rh:           'RH',
   juridique:    'Juridique',
   esg:          'ESG',
+  fiscalite:    'Fiscalité',
   settings:     'Paramètres',
 }
 
@@ -398,6 +394,7 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
   rh:           'none',
   juridique:    'none',
   esg:          'none',
+  fiscalite:    'none',
   settings:     'none',
 }
 
