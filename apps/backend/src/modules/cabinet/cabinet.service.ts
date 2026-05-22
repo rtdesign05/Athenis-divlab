@@ -88,32 +88,59 @@ export async function getCabinetDashboard(cabinetId: string) {
   }
 }
 
+type MandatWithCompany = Prisma.MandatGetPayload<{
+  include: { company: { select: { id: true, nom: true, siren: true, plan: true } } }
+}>
+
+/** Sérialise un Mandat Prisma vers le format API (actif → isActive). */
+function serializeMandat(m: MandatWithCompany) {
+  return {
+    id:         m.id,
+    cabinetId:  m.cabinetId,
+    companyId:  m.companyId,
+    type:      m.type,
+    modules:   m.modules,
+    isActive:  m.actif,
+    dateDebut: m.dateDebut ? m.dateDebut.toISOString() : null,
+    dateFin:   m.dateFin   ? m.dateFin.toISOString()   : null,
+    notes:     m.notes,
+    createdAt: m.createdAt.toISOString(),
+    company:   m.company,
+  }
+}
+
 export async function getMandats(cabinetId: string) {
-  return prisma.mandat.findMany({
+  const items = await prisma.mandat.findMany({
     where: { cabinetId },
     include: {
       company: { select: { id: true, nom: true, siren: true, plan: true } },
     },
     orderBy: [{ actif: 'desc' }, { company: { nom: 'asc' } }],
   })
+  return items.map(serializeMandat)
 }
 
 export async function getMandat(cabinetId: string, companyId: string) {
   const mandat = await prisma.mandat.findUnique({
-    where: { cabinetId_companyId: { cabinetId, companyId } },
-    include: { company: true },
+    where:  { cabinetId_companyId: { cabinetId, companyId } },
+    include: { company: { select: { id: true, nom: true, siren: true, plan: true } } },
   })
   if (!mandat) throw new AppError('Mandat introuvable', 404, 'NOT_FOUND')
-  return mandat
+  return serializeMandat(mandat)
 }
 
 export async function toggleMandat(cabinetId: string, companyId: string) {
-  const mandat = await getMandat(cabinetId, companyId)
-  return prisma.mandat.update({
+  const existing = await prisma.mandat.findUnique({
+    where:  { cabinetId_companyId: { cabinetId, companyId } },
+    select: { actif: true },
+  })
+  if (!existing) throw new AppError('Mandat introuvable', 404, 'NOT_FOUND')
+  const updated = await prisma.mandat.update({
     where: { cabinetId_companyId: { cabinetId, companyId } },
-    data: { actif: !mandat.actif },
+    data:  { actif: !existing.actif },
     include: { company: { select: { id: true, nom: true, siren: true, plan: true } } },
   })
+  return serializeMandat(updated)
 }
 
 // ── Company view (context switch) ────────────────────────────────────────────
@@ -255,8 +282,8 @@ export async function createMandat(
     )
   }
 
-  return prisma.$transaction(async (tx) => {
-    const mandat = await tx.mandat.create({
+  const mandat = await prisma.$transaction(async (tx) => {
+    const m = await tx.mandat.create({
       data: {
         cabinetId,
         companyId: data.companyId,
@@ -273,8 +300,9 @@ export async function createMandat(
       data:  { cabinetId },
     })
 
-    return mandat
+    return m
   })
+  return serializeMandat(mandat)
 }
 
 // ── Update ────────────────────────────────────────────────────────────────────
@@ -283,44 +311,119 @@ export async function updateMandat(
   cabinetId: string,
   companyId: string,
   data: {
-    type?:    string
-    modules?: string[]
+    type?:      string
+    modules?:   string[]
+    notes?:     string | null
+    dateDebut?: string | null
+    dateFin?:   string | null
   },
 ) {
   await getMandat(cabinetId, companyId) // throws 404 if not found
 
-  return prisma.mandat.update({
+  const updated = await prisma.mandat.update({
     where: { cabinetId_companyId: { cabinetId, companyId } },
     data: {
-      ...(data.type    !== undefined ? { type: data.type as any }       : {}),
-      ...(data.modules !== undefined ? { modules: data.modules }        : {}),
+      ...(data.type      !== undefined ? { type:      data.type as any }                            : {}),
+      ...(data.modules   !== undefined ? { modules:   data.modules }                                 : {}),
+      ...(data.notes     !== undefined ? { notes:     data.notes ?? null }                          : {}),
+      ...(data.dateDebut !== undefined ? { dateDebut: data.dateDebut ? new Date(data.dateDebut) : null } : {}),
+      ...(data.dateFin   !== undefined ? { dateFin:   data.dateFin   ? new Date(data.dateFin)   : null } : {}),
     },
     include: { company: { select: { id: true, nom: true, siren: true, plan: true } } },
   })
+  return serializeMandat(updated)
 }
 
 // ── Invitations cabinet ───────────────────────────────────────────────────────
 
+/** Sérialise une invitation Prisma en y joignant le bloc `company` attendu côté front. */
+async function serializeInvitation(
+  inv: Awaited<ReturnType<typeof prisma.cabinetInvitation.findMany>>[number],
+) {
+  // Lookup company par email (l'invitation peut viser une company existante ou pas)
+  const company = inv.companyEmail
+    ? await prisma.company.findFirst({
+        where:  { email: inv.companyEmail },
+        select: { id: true, nom: true, siren: true, plan: true },
+      })
+    : null
+  return {
+    id:          inv.id,
+    token:       inv.token,
+    cabinetId:   inv.cabinetId,
+    companyId:   company?.id ?? null,
+    type:        inv.type,
+    modules:     inv.modules,
+    notes:       inv.notes,
+    status:      inv.status,
+    sentTo:      inv.companyEmail ?? '',
+    expiresAt:   inv.expiresAt.toISOString(),
+    acceptedAt:  inv.acceptedAt ? inv.acceptedAt.toISOString() : null,
+    rejectedAt:  inv.rejectedAt ? inv.rejectedAt.toISOString() : null,
+    createdAt:   inv.createdAt.toISOString(),
+    company: company ?? {
+      id:    '',
+      nom:   inv.companyName ?? inv.companyEmail ?? '—',
+      siren: null,
+      plan:  'FREE',
+    },
+  }
+}
+
 export async function getInvitations(cabinetId: string) {
-  return prisma.cabinetInvitation.findMany({
-    where: { cabinetId },
+  const items = await prisma.cabinetInvitation.findMany({
+    where:   { cabinetId },
     orderBy: { createdAt: 'desc' },
   })
+  return Promise.all(items.map(serializeInvitation))
 }
 
 export async function sendInvitation(
   cabinetId: string,
-  data: { companyEmail: string; companyName?: string; type: string; modules: string[]; notes?: string },
+  data: {
+    companyId?:    string
+    companyEmail?: string
+    companyName?:  string
+    type:          string
+    modules:       string[]
+    notes?:        string
+  },
   createdBy: string,
 ) {
   const cabinet = await prisma.cabinet.findUniqueOrThrow({
-    where: { id: cabinetId },
+    where:  { id: cabinetId },
     select: { nom: true },
   })
 
+  // Résolution email/nom :
+  //  - si companyId fourni → lookup en DB (email, nom)
+  //  - sinon, companyEmail doit être fourni
+  let resolvedEmail = data.companyEmail?.trim() ?? ''
+  let resolvedName  = data.companyName ?? null
+
+  if (data.companyId) {
+    const company = await prisma.company.findUnique({
+      where:  { id: data.companyId },
+      select: { email: true, nom: true },
+    })
+    if (!company) throw new AppError('Entreprise introuvable', 404, 'NOT_FOUND')
+    if (!company.email) {
+      throw new AppError(
+        "Cette entreprise n'a pas d'email enregistré. Ajoutez son email avant de l'inviter.",
+        400, 'COMPANY_NO_EMAIL',
+      )
+    }
+    resolvedEmail = company.email
+    resolvedName  = resolvedName ?? company.nom
+  }
+
+  if (!resolvedEmail) {
+    throw new AppError("L'email de l'entreprise est requis", 400, 'EMAIL_REQUIRED')
+  }
+
   // Check for existing pending invitation to same email
   const existing = await prisma.cabinetInvitation.findFirst({
-    where: { cabinetId, companyEmail: data.companyEmail, status: 'PENDING' },
+    where: { cabinetId, companyEmail: resolvedEmail, status: 'PENDING' },
   })
   if (existing) throw new AppError('Une invitation est déjà en attente pour cette adresse', 409, 'INVITATION_PENDING')
 
@@ -330,9 +433,9 @@ export async function sendInvitation(
   const invitation = await prisma.cabinetInvitation.create({
     data: {
       cabinetId,
-      companyEmail: data.companyEmail,
-      companyName:  data.companyName ?? null,
-      type:         data.type as 'COMPLET' | 'COMPTABILITE' | 'GESTION' | 'DECLARATIONS',
+      companyEmail: resolvedEmail,
+      companyName:  resolvedName,
+      type:         data.type as any, // MandatType enum — validé par Zod en amont
       modules:      data.modules,
       notes:        data.notes ?? null,
       token,
@@ -341,15 +444,20 @@ export async function sendInvitation(
     },
   })
 
-  await sendCabinetInvitationEmail(data.companyEmail, {
-    cabinetName: cabinet.nom,
-    companyName: data.companyName ?? data.companyEmail,
-    type:        data.type,
-    token,
-    expiresAt,
-  })
+  // Envoi de l'email — best effort : on n'annule pas l'invitation si SMTP indispo
+  try {
+    await sendCabinetInvitationEmail(resolvedEmail, {
+      cabinetName: cabinet.nom,
+      companyName: resolvedName ?? resolvedEmail,
+      type:        data.type,
+      token,
+      expiresAt,
+    })
+  } catch (err) {
+    console.error('[cabinet] sendCabinetInvitationEmail failed', err)
+  }
 
-  return invitation
+  return serializeInvitation(invitation)
 }
 
 export async function cancelInvitation(cabinetId: string, invitationId: string) {
@@ -357,10 +465,11 @@ export async function cancelInvitation(cabinetId: string, invitationId: string) 
   if (!inv) throw new AppError('Invitation introuvable', 404, 'NOT_FOUND')
   if (inv.status !== 'PENDING') throw new AppError('Cette invitation n\'est plus en attente', 409, 'INVALID_STATUS')
 
-  return prisma.cabinetInvitation.update({
+  const updated = await prisma.cabinetInvitation.update({
     where: { id: invitationId },
     data:  { status: 'CANCELLED' },
   })
+  return serializeInvitation(updated)
 }
 
 export async function getInvitationByToken(token: string) {

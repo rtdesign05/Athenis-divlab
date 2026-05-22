@@ -466,6 +466,12 @@ model Mandat {
   modules   String[]   @default([])
 
   actif     Boolean    @default(true)
+  /// Date de début effective du mandat (peut différer de createdAt)
+  dateDebut DateTime?  @map("date_debut")
+  /// Date de fin prévue
+  dateFin   DateTime?  @map("date_fin")
+  /// Notes internes du cabinet
+  notes     String?
 
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
@@ -480,7 +486,9 @@ enum MandatType {
   COMPLET
   COMPTABILITE
   GESTION
+  FISCAL
   DECLARATIONS
+  PARTIEL
 }
 
 // ─────────────────────────────────────────
