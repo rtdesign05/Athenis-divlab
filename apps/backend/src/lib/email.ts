@@ -40,17 +40,39 @@ interface MailOptions {
 }
 
 export async function sendMail(opts: MailOptions): Promise<void> {
+  // Garde-fou : nodemailer renvoie "No recipients defined" si `to` est falsy,
+  // ce qui rend l'erreur Sentry illisible. On valide ici avec contexte pour
+  // identifier la source.
+  const recipient = (opts.to ?? '').trim()
+  if (!recipient) {
+    logger.warn('[email] sendMail called with empty recipient — skipped', {
+      subject: opts.subject,
+      hasText: !!opts.text,
+      htmlLen: opts.html.length,
+    })
+    return
+  }
+  // Validation basique du format (évite que des données corrompues — ex: nom
+  // d'utilisateur dans `to` au lieu de email — atteignent SMTP)
+  if (!recipient.includes('@')) {
+    logger.warn('[email] sendMail called with invalid recipient — skipped', {
+      to: recipient,
+      subject: opts.subject,
+    })
+    return
+  }
+
   if (!transporter) {
     // Dev mode: log to console instead of sending
     logger.info('📧 [EMAIL — not sent, no SMTP configured]', {
-      to: opts.to,
+      to: recipient,
       subject: opts.subject,
       text: opts.text ?? opts.html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
     })
     return
   }
 
-  await transporter.sendMail({ from: env.smtpFrom, ...opts })
+  await transporter.sendMail({ from: env.smtpFrom, ...opts, to: recipient })
 }
 
 // ── Email templates ───────────────────────────────────────────────────────────
