@@ -312,8 +312,45 @@ export function PersonalDashboard() {
             </div>
           </div>
 
-          {/* Tableau 12 mois */}
-          <div className="card overflow-x-auto p-0">
+          {/* Cards mobiles — 1 card par mois, plus lisible que tableau sur 375px */}
+          <ul className="space-y-2 sm:hidden">
+            {annual.mois.map((m) => {
+              const isFutur = (() => {
+                const n = new Date()
+                return annual.annee > n.getFullYear() || (annual.annee === n.getFullYear() && m.mois > n.getMonth() + 1)
+              })()
+              return (
+                <li key={m.mois} className="card flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900">{MOIS_FR[m.mois - 1]} {annual.annee}</span>
+                      {isFutur && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                          à venir
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs">
+                      <span className="text-green-600">+{fmt(m.revenus)}</span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-red-500">−{fmt(m.depenses)}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-base font-bold ${m.soldeCumul >= 0 ? 'text-gray-900' : 'text-red-500'}`}>
+                      {fmt(m.soldeCumul)}
+                    </p>
+                    <p className={`text-xs ${m.soldeNet >= 0 ? 'text-forest-700' : 'text-red-500'}`}>
+                      {m.soldeNet >= 0 ? '+' : ''}{fmt(m.soldeNet)}
+                    </p>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+
+          {/* Tableau 12 mois — desktop/tablette uniquement */}
+          <div className="hidden sm:block card overflow-x-auto p-0">
             <table className="min-w-full divide-y divide-gray-100 text-sm">
               <thead className="bg-gray-50">
                 <tr>

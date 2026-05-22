@@ -215,41 +215,76 @@ export function PersonalExpenses() {
           <button onClick={() => { setEditing(null); setModal('add') }} className="btn-primary mt-4 text-sm">+ Ajouter</button>
         </div>
       ) : (
-        <div className="card overflow-x-auto p-0">
-          <table className="min-w-full divide-y divide-gray-100">
-            <thead className="bg-gray-50">
-              <tr>
-                {['Date', 'Libellé', 'Catégorie', 'Montant', ''].map((h) => (
-                  <th key={h} className={`px-4 py-3 text-xs font-medium uppercase text-gray-500 ${h === 'Montant' ? 'text-right' : 'text-left'}`}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {items.map((item) => {
-                const cat = catInfo(item.categorie)
-                return (
-                  <tr key={item.id} className="transition-colors hover:bg-gray-50">
-                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">{new Date(item.date).toLocaleDateString('fr-FR')}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-sm font-medium text-gray-900">{item.libelle}</span>
-                      {item.recurrent && <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">Récurrent</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-                        {cat?.emoji} {cat?.label ?? item.categorie}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-red-600">-{fmt(item.montant)}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right">
-                      <button onClick={() => { setEditing(item); setModal('edit') }} className="mr-2 text-xs text-gray-400 hover:text-gray-700">Modifier</button>
-                      <button onClick={() => setDeleting(item.id)} className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+        <>
+          {/* Cards mobiles — 1 ligne = 1 card, plus lisible que le tableau */}
+          <ul className="space-y-2 sm:hidden">
+            {items.map((item) => {
+              const cat = catInfo(item.categorie)
+              return (
+                <li key={item.id} className="card">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{cat?.emoji}</span>
+                        <span className="text-sm font-medium text-gray-900 truncate">{item.libelle}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-gray-400">{new Date(item.date).toLocaleDateString('fr-FR')}</span>
+                        <span className="text-xs text-gray-300">·</span>
+                        <span className="text-xs text-red-700">{cat?.label ?? item.categorie}</span>
+                        {item.recurrent && <span className="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">Récurrent</span>}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-semibold text-red-600">−{fmt(item.montant)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end gap-3 border-t border-gray-100 pt-2">
+                    <button onClick={() => { setEditing(item); setModal('edit') }} className="text-xs text-gray-500 hover:text-gray-900">Modifier</button>
+                    <button onClick={() => setDeleting(item.id)} className="text-xs text-red-500 hover:text-red-700">Supprimer</button>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+
+          {/* Tableau desktop/tablette */}
+          <div className="hidden sm:block card overflow-x-auto p-0">
+            <table className="min-w-full divide-y divide-gray-100">
+              <thead className="bg-gray-50">
+                <tr>
+                  {['Date', 'Libellé', 'Catégorie', 'Montant', ''].map((h) => (
+                    <th key={h} className={`px-4 py-3 text-xs font-medium uppercase text-gray-500 ${h === 'Montant' ? 'text-right' : 'text-left'}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {items.map((item) => {
+                  const cat = catInfo(item.categorie)
+                  return (
+                    <tr key={item.id} className="transition-colors hover:bg-gray-50">
+                      <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-500">{new Date(item.date).toLocaleDateString('fr-FR')}</td>
+                      <td className="px-4 py-3">
+                        <span className="text-sm font-medium text-gray-900">{item.libelle}</span>
+                        {item.recurrent && <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">Récurrent</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+                          {cat?.emoji} {cat?.label ?? item.categorie}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-semibold text-red-600">-{fmt(item.montant)}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <button onClick={() => { setEditing(item); setModal('edit') }} className="mr-2 text-xs text-gray-400 hover:text-gray-700">Modifier</button>
+                        <button onClick={() => setDeleting(item.id)} className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {(modal === 'add' || modal === 'edit') && (
