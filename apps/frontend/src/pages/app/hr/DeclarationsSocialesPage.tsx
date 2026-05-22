@@ -1,7 +1,12 @@
 import { useState, useMemo } from 'react'
 import { useHR, type HREmployee } from '@/contexts/HRContext'
+import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+// Note : cette page implémente les déclarations CNPS Cameroun (plafond 750k F CFA,
+// barème AT/MP, etc.). Pour la France l'équivalent est DSN+URSSAF, structure
+// complètement différente — un message d'avertissement s'affiche pour les
+// entreprises hors Cameroun.
 const CNPS_PLAFOND = 750_000
 const fmtN = (n: number) => new Intl.NumberFormat('fr-CM').format(Math.round(n))
 const fmt  = (n: number) => fmtN(n) + ' FCFA'
@@ -528,9 +533,31 @@ function EditModal({ declaration, employees, onSave, onClose }: EditModalProps) 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export function DeclarationsSocialesPage() {
   const { employees } = useHR()
+  const { country }   = useCompanySettings()
   const [declarations, setDeclarations] = useState<Declaration[]>([])
   const [editingId,    setEditingId]    = useState<string | null>(null)
   const [showNew,      setShowNew]      = useState(false)
+
+  // Cette page est spécifique au Cameroun (CNPS). Affichage d'un avertissement
+  // pour les entreprises hors-CM en attendant l'implémentation des
+  // déclarations sociales locales (DSN/URSSAF pour FR, etc.).
+  if (country && country !== 'CM') {
+    return (
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50 px-8 py-12 text-center max-w-lg">
+          <p className="text-4xl mb-3">⚠️</p>
+          <p className="text-base font-semibold text-amber-900">Déclarations sociales non disponibles pour ce pays</p>
+          <p className="mt-2 text-sm text-amber-800">
+            Cette section couvre actuellement uniquement les déclarations <strong>CNPS Cameroun</strong>.
+            Le support de la <strong>DSN</strong> (France) et autres régimes sera ajouté prochainement.
+          </p>
+          <p className="mt-3 text-xs text-amber-700">
+            Pays détecté : <strong>{country}</strong>. Vous pouvez modifier ce paramètre dans Paramètres → Localisation.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   const activeEmployees = employees.filter(e => !e.endDate || new Date(e.endDate) > new Date())
   const editingDecl     = editingId ? (declarations.find(d => d.id === editingId) ?? null) : null

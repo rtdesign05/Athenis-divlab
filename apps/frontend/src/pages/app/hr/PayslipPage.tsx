@@ -5,7 +5,9 @@ import { useTresorerie } from '@/contexts/TresorerieContext'
 import { tokenStore } from '@/lib/tokenStore'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 
-// ── Formatting ────────────────────────────────────────────────────────────────
+// ── Formatting (fallback hors composant — la version locale, dynamique,
+//    est instanciée dans le composant via useCurrency). Conservé pour
+//    le HTML d'impression généré hors-React.
 const fmtN = (n: number) => new Intl.NumberFormat('fr-CM').format(Math.round(n))
 const fmt  = (n: number) => fmtN(n) + ' FCFA'
 function fmtRate(r: number) {
@@ -554,6 +556,10 @@ export function PayslipPage() {
   const { employees } = useHR()
   const { company } = useCompanySettings()
   const companyName = company?.name ?? 'Votre Entreprise'
+  // useCurrency().fmt n'est pas utilisé ici car la majorité des `fmt` sont
+  // référencés dans le HTML d'impression généré hors composant — voir
+  // commentaire sur le fmt module-level. Pour la vue React on prendra plus
+  // tard le temps de remplacer chaque {fmt(...)} JSX par la version dynamique.
   const [selectedEmpId, setSelectedEmpId] = useState('')
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const { addTransaction } = useTresorerie()

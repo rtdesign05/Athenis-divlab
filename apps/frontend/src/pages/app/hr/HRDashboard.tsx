@@ -1,6 +1,5 @@
 import { useHR } from '@/contexts/HRContext'
-
-const fmt = (n: number) => new Intl.NumberFormat('fr-CM').format(n) + ' FCFA'
+import { useCurrency } from '@/hooks/useCurrency'
 
 const TYPE_LABEL: Record<string, string> = {
   FULL_TIME:  'Temps plein',
@@ -18,6 +17,7 @@ const TYPE_COLOR: Record<string, string> = {
 
 export function HRDashboard() {
   const { employees, leaves } = useHR()
+  const { fmt } = useCurrency()
 
   const actifs = employees.filter(e => !e.endDate).length
   const masseSalariale = employees.reduce((s, e) => s + e.grossSalary, 0)

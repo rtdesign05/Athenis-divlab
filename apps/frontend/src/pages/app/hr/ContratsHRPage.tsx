@@ -4,6 +4,7 @@ import {
   useContracts, type EmploymentContract, type ContractType, type ContractStatus,
   generateTemplate,
 } from '@/contexts/ContractsContext'
+import { useCurrency } from '@/hooks/useCurrency'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TYPE_LABEL: Record<ContractType, string> = {
@@ -28,7 +29,10 @@ const EMP_TYPE_TO_CONTRACT: Record<string, ContractType> = {
   FULL_TIME: 'FULL_TIME', PART_TIME: 'PART_TIME', CONTRACT: 'CONTRACT', INTERN: 'INTERN',
 }
 const fmtDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString('fr-FR') : '—'
-const fmtSal  = (n: number) => new Intl.NumberFormat('fr-CM').format(n) + ' FCFA'
+// Fallback module-level (utilisé dans EditorModal et printContract qui n'ont
+// pas accès au contexte React via useCurrency). Le composant principal
+// `ContratsHRPage` instancie une version dynamique via useCurrency().
+const fmtSalFallback = (n: number) => new Intl.NumberFormat('fr-CM').format(n) + ' FCFA'
 
 // ── Print helper ──────────────────────────────────────────────────────────────
 function printContract(contract: EmploymentContract) {
@@ -162,7 +166,7 @@ function EditorModal({ contract, onSave, onClose, onDelete }: EditorModalProps) 
                   { label: 'Poste',        value: contract.poste },
                   { label: 'Département',  value: contract.departement },
                   { label: 'Type',         value: TYPE_LABEL[contract.contractType] },
-                  { label: 'Salaire brut', value: fmtSal(contract.grossSalary) },
+                  { label: 'Salaire brut', value: fmtSalFallback(contract.grossSalary) },
                   { label: 'Date de début', value: fmtDate(contract.startDate) },
                   { label: 'Date de fin',   value: fmtDate(contract.endDate) },
                   { label: 'Lieu de travail', value: contract.lieuTravail },
@@ -300,6 +304,7 @@ function GenerateModal({ employeeName, defaultType, onGenerate, onClose }: Gener
 export function ContratsHRPage() {
   const { employees } = useHR()
   const { contracts, addContract, updateContract, deleteContract } = useContracts()
+  const { fmt: fmtSal } = useCurrency()
 
   const [editingId,    setEditingId]    = useState<string | null>(null)
   const [generatingId, setGeneratingId] = useState<string | null>(null)

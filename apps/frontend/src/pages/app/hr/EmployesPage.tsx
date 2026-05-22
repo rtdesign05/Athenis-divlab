@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { hrApi, type Employee, type EmploymentType, type PaymentMethod } from '@/services/hrApi'
-
-const fmt = (n: number) => new Intl.NumberFormat('fr-CM').format(n) + ' FCFA'
+import { useCurrency } from '@/hooks/useCurrency'
+import { useHR } from '@/contexts/HRContext'
 
 const TYPE_LABEL: Record<EmploymentType, string> = {
   FULL_TIME: 'Temps plein',
@@ -74,6 +74,7 @@ interface ModalProps {
 
 function EmployeeFormModal({ mode, employee, onClose, onSaved }: ModalProps) {
   const qc = useQueryClient()
+  const { refresh: refreshHR } = useHR()
   const [form, setForm] = useState<FormData>(employee ? fromEmployee(employee) : emptyForm())
   const [error, setError] = useState<string | null>(null)
 
@@ -102,6 +103,10 @@ function EmployeeFormModal({ mode, employee, onClose, onSaved }: ModalProps) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['employee-stats'] })
+      // Rafraîchit le HRContext partagé (employees/leaves/reviews) pour que
+      // ContratsHRPage, HRDashboard, LeavesPage, etc. voient immédiatement
+      // les nouvelles données sans avoir à remonter le provider.
+      void refreshHR()
       onSaved()
     },
     onError: (e: unknown) => {
@@ -165,10 +170,9 @@ function EmployeeFormModal({ mode, employee, onClose, onSaved }: ModalProps) {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Salaire brut (FCFA) *</label>
-              <input type="number" min="0" step="1000" value={form.grossSalary} onChange={e => set('grossSalary', e.target.value)}
-                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono text-right focus:outline-none focus:ring-2 focus:ring-forest-500/30"
-                     placeholder="500000" />
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Salaire brut *</label>
+              <input type="number" min="0" step="1000" placeholder="0" value={form.grossSalary || ''} onChange={e => set('grossSalary', e.target.value)}
+                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono text-right focus:outline-none focus:ring-2 focus:ring-forest-500/30" />
             </div>
           </div>
 
@@ -286,6 +290,8 @@ function EmployeeFormModal({ mode, employee, onClose, onSaved }: ModalProps) {
 
 export function EmployesPage() {
   const qc = useQueryClient()
+  const { fmt } = useCurrency()
+  const { refresh: refreshHR } = useHR()
   const [search,    setSearch]    = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editing,   setEditing]   = useState<Employee | null>(null)
@@ -299,13 +305,17 @@ export function EmployesPage() {
 
   const toggleMutation = useMutation({
     mutationFn: (id: string) => hrApi.toggle(id),
-    onSuccess:  () => qc.invalidateQueries({ queryKey: ['employees'] }),
+    onSuccess:  () => {
+      qc.invalidateQueries({ queryKey: ['employees'] })
+      void refreshHR()
+    },
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => hrApi.remove(id),
     onSuccess:  () => {
       qc.invalidateQueries({ queryKey: ['employees'] })
+      void refreshHR()
       setToast('✓ Employé supprimé')
       setTimeout(() => setToast(null), 3000)
     },

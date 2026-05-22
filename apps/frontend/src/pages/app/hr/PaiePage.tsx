@@ -13,6 +13,9 @@ import { hrApi, type Payroll, type PayslipRow } from '@/services/hrApi'
 
 const MONTHS = ['Janv','Févr','Mars','Avril','Mai','Juin','Juil','Août','Sept','Oct','Nov','Déc']
 
+// NOTE : formatter spécifique CNPS Cameroun. Utilisé par des sous-composants
+// qui n'ont pas accès au hook useCurrency. Pour FR le module Paie sera adapté
+// dans une itération dédiée (DSN + bulletins URSSAF).
 function fmt(n: string | number) {
   return new Intl.NumberFormat('fr-CM').format(Math.round(Number(n))) + ' FCFA'
 }
