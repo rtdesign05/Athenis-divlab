@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAllPlansPricing, getCountryConfig, ALL_COUNTRIES } from '@athenis/shared-types'
 import type { Plan } from '@athenis/shared-types'
+import { useDetectedCountry } from '@/hooks/useDetectedCountry'
 
 const PLAN_FEATURES: Record<Plan, { limits: string[]; modules: string[]; support: string }> = {
   FREE: {
@@ -34,7 +35,8 @@ const PLAN_INFO_LOCAL: Array<{ plan: Plan; label: string; tagline: string; cta: 
 ]
 
 export function PricingPage() {
-  const [countryCode, setCountryCode] = useState('CM')
+  // Pays détecté automatiquement via IP (défaut CM), modifiable par le sélecteur.
+  const { countryCode, setCountryCode } = useDetectedCountry('CM')
   const [yearly, setYearly] = useState(false)
 
   const cfg     = getCountryConfig(countryCode)

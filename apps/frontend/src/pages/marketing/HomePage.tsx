@@ -1,5 +1,27 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { getCountryConfig, getAllPlansPricing } from '@athenis/shared-types'
+import { useDetectedCountry } from '@/hooks/useDetectedCountry'
+
+// ── Mockup numbers — adaptés au pays détecté ─────────────────────────────────
+// Ces chiffres servent de "preview crédible" sur le hero. On les affiche
+// dans la devise locale plutôt qu'en FCFA dur, sinon un utilisateur français
+// voit "12.4M FCFA" qui ne lui parle pas.
+function useMockNumbers(): { ca: string; treso: string; facture: string } {
+  const { countryCode } = useDetectedCountry('CM')
+  const cfg = getCountryConfig(countryCode)
+  const symbol = cfg.currencySymbol
+  // En XAF (Cameroun/Afrique CFA), montants en millions/milliers FCFA.
+  // En EUR/USD/autres, on adapte les ordres de grandeur (PME française = 30-100k€ CA mensuel).
+  if (cfg.currencyCode === 'XAF' || cfg.currencyCode === 'XOF') {
+    return { ca: `12.4M ${symbol}`, treso: `3.8M ${symbol}`, facture: `850 000 ${symbol}` }
+  }
+  if (cfg.currencyCode === 'USD' || cfg.currencyCode === 'CAD') {
+    return { ca: `$24,000`, treso: `$7,200`, facture: `$1,600` }
+  }
+  // EUR / FR / BE / autres pays européens
+  return { ca: `24 000 ${symbol}`, treso: `7 200 ${symbol}`, facture: `1 600 ${symbol}` }
+}
 
 // ── Reusable: section heading ────────────────────────────────────────────────
 
@@ -29,6 +51,7 @@ function SectionHeading({ eyebrow, title, subtitle, center = false }: {
 // ── Hero ─────────────────────────────────────────────────────────────────────
 
 function Hero() {
+  const mock = useMockNumbers()
   return (
     <section className="relative overflow-hidden bg-gradient-to-b from-forest-50/40 via-white to-white pt-12 pb-16 lg:pt-20 lg:pb-24">
       {/* Décoratif : motifs en arrière-plan */}
@@ -117,7 +140,7 @@ function Hero() {
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   <div className="bg-white rounded-lg p-3 border border-gray-200">
                     <p className="text-[10px] text-gray-500 uppercase">Chiffre d'affaires</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">12.4M FCFA</p>
+                    <p className="text-lg font-bold text-gray-900 mt-1">{mock.ca}</p>
                     <p className="text-[10px] text-green-600 mt-0.5">↑ 12% ce mois</p>
                   </div>
                   <div className="bg-white rounded-lg p-3 border border-gray-200">
@@ -127,7 +150,7 @@ function Hero() {
                   </div>
                   <div className="bg-white rounded-lg p-3 border border-gray-200">
                     <p className="text-[10px] text-gray-500 uppercase">Trésorerie</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">3.8M FCFA</p>
+                    <p className="text-lg font-bold text-gray-900 mt-1">{mock.treso}</p>
                     <p className="text-[10px] text-green-600 mt-0.5">Stable</p>
                   </div>
                 </div>
@@ -144,7 +167,7 @@ function Hero() {
               <div className="h-9 w-9 rounded-lg bg-green-100 flex items-center justify-center text-xl">✓</div>
               <div>
                 <p className="text-xs font-semibold text-gray-900">Facture validée</p>
-                <p className="text-[10px] text-gray-500">FAC-2026-0042 · 850 000 FCFA</p>
+                <p className="text-[10px] text-gray-500">FAC-2026-0042 · {mock.facture}</p>
               </div>
             </div>
             <div className="hidden lg:block absolute -top-4 -right-6 bg-white rounded-xl shadow-xl border border-gray-100 p-3 flex items-center gap-2">
@@ -412,6 +435,10 @@ function WhyAthenis() {
 // ── Pricing preview ──────────────────────────────────────────────────────────
 
 function PricingPreview() {
+  const { countryCode } = useDetectedCountry('CM')
+  const cfg     = getCountryConfig(countryCode)
+  const pricing = getAllPlansPricing(cfg.currencyCode, cfg.locale, cfg.currencySymbol)
+  const isXaf   = cfg.currencyCode === 'XAF' || cfg.currencyCode === 'XOF'
   return (
     <section className="py-20 lg:py-28 bg-forest-900 text-white">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -450,31 +477,39 @@ function PricingPreview() {
 
           {/* Mini comparatif tarifs */}
           <div className="bg-white/10 backdrop-blur rounded-2xl p-6 lg:p-8 border border-white/20">
-            <p className="text-sm font-semibold text-forest-300 mb-4">EXEMPLES DE TARIFS · F CFA</p>
+            <p className="text-sm font-semibold text-forest-300 mb-4">
+              EXEMPLES DE TARIFS · {cfg.flag} {cfg.currency} ({cfg.currencySymbol})
+            </p>
             <div className="space-y-3">
               {[
-                { plan: 'Gratuit', price: '0 F CFA', desc: 'Comptabilité simple, 1 user',  badge: null },
-                { plan: 'Starter', price: '5 900',   desc: 'Gestion + RH, 3 users',         badge: null },
-                { plan: 'Pro',     price: '19 000',  desc: 'Tout en illimité, 5 users',     badge: 'Populaire' },
-                { plan: 'Premium', price: '49 000',  desc: 'Multi-tenant, 20 users',        badge: null },
-              ].map(t => (
-                <div key={t.plan} className={`flex items-baseline justify-between gap-4 p-3 rounded-lg ${t.badge ? 'bg-amber-400/10 border border-amber-400/30' : 'bg-white/5'}`}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-white">{t.plan}</p>
-                      {t.badge && <span className="text-[10px] uppercase font-bold tracking-wider text-amber-300">{t.badge}</span>}
+                { plan: 'Gratuit', plankey: 'FREE'    as const, desc: 'Comptabilité simple, 1 user',  badge: null },
+                { plan: 'Starter', plankey: 'STARTER' as const, desc: 'Gestion + RH, 3 users',         badge: null },
+                { plan: 'Pro',     plankey: 'PRO'     as const, desc: 'Tout en illimité, 5 users',     badge: 'Populaire' as const },
+                { plan: 'Premium', plankey: 'PREMIUM' as const, desc: 'Multi-tenant, 20 users',        badge: null },
+              ].map(t => {
+                const p = pricing[t.plankey]
+                const isFree = p.amount === 0
+                return (
+                  <div key={t.plan} className={`flex items-baseline justify-between gap-4 p-3 rounded-lg ${t.badge ? 'bg-amber-400/10 border border-amber-400/30' : 'bg-white/5'}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-white">{t.plan}</p>
+                        {t.badge && <span className="text-[10px] uppercase font-bold tracking-wider text-amber-300">{t.badge}</span>}
+                      </div>
+                      <p className="text-xs text-gray-400 truncate">{t.desc}</p>
                     </div>
-                    <p className="text-xs text-gray-400 truncate">{t.desc}</p>
+                    <div className="text-right">
+                      <p className="font-bold text-white">{isFree ? `0 ${cfg.currencySymbol}` : p.formatted}</p>
+                      {!isFree && <p className="text-[10px] text-gray-400">/ mois</p>}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold text-white">{t.price}</p>
-                    {t.price !== '0 F CFA' && <p className="text-[10px] text-gray-400">/ mois</p>}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
             <p className="mt-4 text-xs text-gray-400 text-center">
-              En Euros : 9€ / 29€ / 79€ — adaptés à chaque pays
+              {isXaf
+                ? 'Tarifs en F CFA pour l\'Afrique francophone — en EUR/USD ailleurs'
+                : 'Tarifs adaptés automatiquement à votre pays'}
             </p>
           </div>
         </div>
