@@ -340,6 +340,10 @@ model Company {
   treasurySources  TreasurySource[]
   employees             Employee[]
   employmentContracts   EmploymentContract[]
+  fournisseurs          Fournisseur[]
+  deliveryNotes         DeliveryNote[]
+  goodsReceipts         GoodsReceipt[]
+  customerReturns       CustomerReturn[]
   esgData               ESGData[]
   assets           Asset[]
   articles         Article[]
@@ -2132,6 +2136,135 @@ enum SignatureStatus {
 }
 
 // ─────────────────────────────────────────
+// FOURNISSEURS / BONS LIVRAISON / RÉCEPTION / RETOURS CLIENTS
+// (entités gestion historiquement en-memory, désormais persistées)
+// ─────────────────────────────────────────
+
+enum FournisseurCategorie {
+  MATIERES_PREMIERES
+  SERVICES
+  EQUIPEMENT
+  LOGISTIQUE
+  INFORMATIQUE
+  AUTRE
+}
+
+model Fournisseur {
+  id             String                @id @default(cuid())
+  companyId      String                @map("company_id")
+  company        Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId       String?               @map("agence_id")
+  agence         Agence?               @relation(fields: [agenceId], references: [id], onDelete: SetNull)
+  nom            String
+  categorie      FournisseurCategorie  @default(AUTRE)
+  email          String?
+  telephone      String?
+  adresse        String?
+  notes          String?
+  /// Compte comptable fournisseur (401xxx) — auto-généré ou saisi
+  accountingCode String?               @map("accounting_code")
+  isActive       Boolean               @default(true) @map("is_active")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([agenceId])
+  @@map("fournisseurs")
+}
+
+enum DeliveryNoteStatus {
+  EN_PREPARATION
+  EXPEDIE
+  LIVRE
+  RETOURNE
+}
+
+model DeliveryNote {
+  id               String              @id @default(cuid())
+  companyId        String              @map("company_id")
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId         String?             @map("agence_id")
+  agence           Agence?             @relation(fields: [agenceId], references: [id], onDelete: SetNull)
+  /// Référence libre (ex: commande client liée). Pas de FK car commandes encore en-memory.
+  commande         String?
+  /// Nom du client (string libre — Client model existe mais lien optionnel)
+  clientNom        String              @map("client_nom")
+  dateCreation     DateTime            @map("date_creation")
+  datePrevue       DateTime?           @map("date_prevue")
+  dateLivraison    DateTime?           @map("date_livraison")
+  statut           DeliveryNoteStatus  @default(EN_PREPARATION)
+  /// Lignes BL — JSON : Array<{ id, articleId, reference, designation, quantite, unite }>
+  lignes           Json                @default("[]")
+  adresseLivraison String?             @map("adresse_livraison")
+  notes            String?
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([agenceId])
+  @@map("delivery_notes")
+}
+
+enum GoodsReceiptStatus {
+  ATTENDU
+  RECU_PARTIEL
+  RECU
+  LITIGE
+}
+
+model GoodsReceipt {
+  id               String              @id @default(cuid())
+  companyId        String              @map("company_id")
+  company          Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId         String?             @map("agence_id")
+  agence           Agence?             @relation(fields: [agenceId], references: [id], onDelete: SetNull)
+  /// Référence libre (ex: bon de commande fournisseur lié)
+  commande         String?
+  fournisseurNom   String              @map("fournisseur_nom")
+  dateCreation     DateTime            @map("date_creation")
+  datePrevue       DateTime?           @map("date_prevue")
+  dateReception    DateTime?           @map("date_reception")
+  statut           GoodsReceiptStatus  @default(ATTENDU)
+  /// Lignes BR — JSON : Array<{ id, reference, designation, quantite, quantiteRecue, unite }>
+  lignes           Json                @default("[]")
+  notes            String?
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([agenceId])
+  @@map("goods_receipts")
+}
+
+enum CustomerReturnStatus {
+  EN_COURS
+  VALIDE
+  REMBOURSE
+  REFUSE
+}
+
+model CustomerReturn {
+  id          String                @id @default(cuid())
+  companyId   String                @map("company_id")
+  company     Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  agenceId    String?               @map("agence_id")
+  agence      Agence?               @relation(fields: [agenceId], references: [id], onDelete: SetNull)
+  /// Référence facture liée (string libre)
+  facture     String?
+  clientNom   String                @map("client_nom")
+  date        DateTime
+  motif       String?
+  montant     Decimal               @db.Decimal(15, 2) @default(0)
+  statut      CustomerReturnStatus  @default(EN_COURS)
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  @@index([companyId])
+  @@index([agenceId])
+  @@map("customer_returns")
+}
+
+// ─────────────────────────────────────────
 // AGENCES (MULTI-SITE)
 // ─────────────────────────────────────────
 
@@ -2157,6 +2290,10 @@ model Agence {
   treasurySources  TreasurySource[]
   clients          Client[]
   articles         Article[]
+  fournisseurs     Fournisseur[]
+  deliveryNotes    DeliveryNote[]
+  goodsReceipts    GoodsReceipt[]
+  customerReturns  CustomerReturn[]
 
   @@unique([companyId, code])
   @@index([companyId])

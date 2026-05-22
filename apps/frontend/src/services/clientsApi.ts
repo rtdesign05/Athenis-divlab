@@ -23,6 +23,7 @@ export interface CreateClientDto {
   phone?: string
   address?: string
   siren?: string
+  accountingCode?: string
   agenceId?: string | null
 }
 

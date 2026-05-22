@@ -4,7 +4,66 @@ import * as purchasesApi from '@/services/purchasesApi'
 import * as invoicesApi  from '@/services/invoicesApi'
 import { clientsApi }    from '@/services/clientsApi'
 import { stocksApi }     from '@/services/stocksApi'
+import { fournisseursApi, type FournisseurCategorieApi } from '@/services/fournisseursApi'
+import { deliveryNotesApi,   type DeliveryNoteStatusApi  } from '@/services/deliveryNotesApi'
+import { goodsReceiptsApi,   type GoodsReceiptStatusApi  } from '@/services/goodsReceiptsApi'
+import { customerReturnsApi, type CustomerReturnStatusApi } from '@/services/customerReturnsApi'
 import { TVA_CM }        from '@athenis/shared-types'
+
+// ── Mappings categorie/statut <-> backend enum ────────────────────────────────
+
+const FOURNISSEUR_CAT_TO_API: Record<string, FournisseurCategorieApi> = {
+  'Matières premières': 'MATIERES_PREMIERES',
+  'Services':           'SERVICES',
+  'Équipement':         'EQUIPEMENT',
+  'Logistique':         'LOGISTIQUE',
+  'Informatique':       'INFORMATIQUE',
+  'Autre':              'AUTRE',
+}
+const FOURNISSEUR_CAT_FROM_API: Record<FournisseurCategorieApi, string> = {
+  MATIERES_PREMIERES: 'Matières premières',
+  SERVICES:           'Services',
+  EQUIPEMENT:         'Équipement',
+  LOGISTIQUE:         'Logistique',
+  INFORMATIQUE:       'Informatique',
+  AUTRE:              'Autre',
+}
+const BL_STATUT_TO_API: Record<string, DeliveryNoteStatusApi> = {
+  'En préparation': 'EN_PREPARATION',
+  'Expédié':        'EXPEDIE',
+  'Livré':          'LIVRE',
+  'Retourné':       'RETOURNE',
+}
+const BL_STATUT_FROM_API: Record<DeliveryNoteStatusApi, string> = {
+  EN_PREPARATION: 'En préparation',
+  EXPEDIE:        'Expédié',
+  LIVRE:          'Livré',
+  RETOURNE:       'Retourné',
+}
+const BR_STATUT_TO_API: Record<string, GoodsReceiptStatusApi> = {
+  'Attendu':       'ATTENDU',
+  'Reçu partiel':  'RECU_PARTIEL',
+  'Reçu':          'RECU',
+  'Litige':        'LITIGE',
+}
+const BR_STATUT_FROM_API: Record<GoodsReceiptStatusApi, string> = {
+  ATTENDU:      'Attendu',
+  RECU_PARTIEL: 'Reçu partiel',
+  RECU:         'Reçu',
+  LITIGE:       'Litige',
+}
+const RETOUR_STATUT_TO_API: Record<string, CustomerReturnStatusApi> = {
+  'En cours':  'EN_COURS',
+  'Validé':    'VALIDE',
+  'Remboursé': 'REMBOURSE',
+  'Refusé':    'REFUSE',
+}
+const RETOUR_STATUT_FROM_API: Record<CustomerReturnStatusApi, string> = {
+  EN_COURS:  'En cours',
+  VALIDE:    'Validé',
+  REMBOURSE: 'Remboursé',
+  REFUSE:    'Refusé',
+}
 
 /** Taux TVA par défaut en pourcent (19,25 pour le Cameroun) — source : taxConstants. */
 const DEFAULT_VAT_PCT = TVA_CM * 100
@@ -611,6 +670,101 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       })
   }, [])
 
+  // ── Hydratation entités nouvellement persistées ─────────────────────────────
+  // Fournisseurs, BL, BR, Retours Clients : maintenant chargés depuis l'API au mount
+  // (l'API a été ajoutée par la migration 20260522240000_fournisseur_bl_br_retour).
+  useEffect(() => {
+    let cancelled = false
+
+    fournisseursApi.list()
+      .then(items => {
+        if (cancelled) return
+        setFournisseurs(items.map(f => ({
+          id:        f.id,
+          nom:       f.nom,
+          categorie: (FOURNISSEUR_CAT_FROM_API[f.categorie] ?? 'Autre') as FournisseurCategorie,
+          email:     f.email ?? '',
+          telephone: f.telephone ?? '',
+          adresse:   f.adresse ?? '',
+          agence:    f.agence?.nom ?? 'Siège',
+          notes:     f.notes ?? '',
+          ...(f.accountingCode ? { compte: f.accountingCode } : {}),
+          createdAt: f.createdAt.slice(0, 10),
+        })))
+      })
+      .catch(err => console.error('[fournisseurs] list error', err))
+
+    deliveryNotesApi.list()
+      .then(items => {
+        if (cancelled) return
+        setBonsLivraison(items.map(b => ({
+          id:               b.id,
+          commande:         b.commande ?? '',
+          client:           b.clientNom,
+          agence:           b.agence?.nom ?? 'Siège',
+          dateCreation:     b.dateCreation,
+          datePrevue:       b.datePrevue ?? '',
+          dateLivraison:    b.dateLivraison,
+          statut:           (BL_STATUT_FROM_API[b.statut] ?? 'En préparation') as BLStatut,
+          lignes:           (b.lignes ?? []).map(l => ({
+            id:          l.id,
+            articleId:   l.articleId ?? '',
+            reference:   l.reference ?? '',
+            designation: l.designation,
+            quantite:    l.quantite,
+            unite:       l.unite ?? '',
+          })),
+          adresseLivraison: b.adresseLivraison ?? '',
+          notes:            b.notes ?? '',
+        })))
+      })
+      .catch(err => console.error('[delivery-notes] list error', err))
+
+    goodsReceiptsApi.list()
+      .then(items => {
+        if (cancelled) return
+        setBonsReception(items.map(b => ({
+          id:                  b.id,
+          commande:            b.commande ?? '',
+          fournisseur:         b.fournisseurNom,
+          agence:              b.agence?.nom ?? 'Siège',
+          dateCreation:        b.dateCreation,
+          datePrevue:          b.datePrevue ?? '',
+          dateReception:       b.dateReception,
+          statut:              (BR_STATUT_FROM_API[b.statut] ?? 'Attendu') as BRStatut,
+          lignes:              (b.lignes ?? []).map(l => ({
+            id:            l.id,
+            reference:     l.reference ?? '',
+            designation:   l.designation,
+            quantite:      l.quantite,
+            quantiteRecue: l.quantiteRecue,
+            unite:         l.unite ?? '',
+          })),
+          notes:               b.notes ?? '',
+          conditionsLivraison: '',
+        })))
+      })
+      .catch(err => console.error('[goods-receipts] list error', err))
+
+    customerReturnsApi.list()
+      .then(items => {
+        if (cancelled) return
+        setRetoursClients(items.map(r => ({
+          id:      r.id,
+          facture: r.facture ?? '',
+          client:  r.clientNom,
+          agence:  r.agence?.nom ?? 'Siège',
+          date:    r.date,
+          motif:   r.motif ?? '',
+          montant: r.montant,
+          statut:  (RETOUR_STATUT_FROM_API[r.statut] ?? 'En cours') as RetourStatut,
+        })))
+      })
+      .catch(err => console.error('[customer-returns] list error', err))
+
+    return () => { cancelled = true }
+  }, [])
+
   // Factures ventes + clients DB (pour le lookup clientId)
   useEffect(() => {
     // Charger les clients en base pour la résolution nom → UUID
@@ -673,18 +827,53 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   function addBonLivraison(b: Omit<BonLivraison, 'id'>): BonLivraison {
     const last = bonsLivraison[0]?.id ?? 'BL-0000'
     const num  = parseInt(last.replace('BL-', ''), 10) + 1
-    const id   = `BL-${String(num).padStart(4, '0')}`
-    const next: BonLivraison = { id, ...b }
+    const localId = `BL-${String(num).padStart(4, '0')}`
+    const next: BonLivraison = { id: localId, ...b }
     setBonsLivraison(prev => [next, ...prev])
+    // Persistance API en background
+    deliveryNotesApi.create({
+      clientNom:        b.client,
+      dateCreation:     b.dateCreation,
+      datePrevue:       b.datePrevue || null,
+      dateLivraison:    b.dateLivraison ?? null,
+      statut:           BL_STATUT_TO_API[b.statut] ?? 'EN_PREPARATION',
+      lignes:           b.lignes.map(l => ({
+        id: l.id, articleId: l.articleId, reference: l.reference,
+        designation: l.designation, quantite: l.quantite, unite: l.unite,
+      })),
+      ...(b.commande         ? { commande:         b.commande }         : {}),
+      ...(b.adresseLivraison ? { adresseLivraison: b.adresseLivraison } : {}),
+      ...(b.notes            ? { notes:            b.notes }            : {}),
+    })
+      .then(created => {
+        setBonsLivraison(prev => prev.map(x =>
+          x.id === localId ? { ...x, id: created.id } : x,
+        ))
+      })
+      .catch(err => console.error('[delivery-notes] create error', err))
     return next
   }
 
   function addRetourClient(r: Omit<RetourClient, 'id'>): RetourClient {
     const last = retoursClients[0]?.id ?? 'RET-0000'
     const num  = parseInt(last.replace('RET-', ''), 10) + 1
-    const id   = `RET-${String(num).padStart(4, '0')}`
-    const next: RetourClient = { id, ...r }
+    const localId = `RET-${String(num).padStart(4, '0')}`
+    const next: RetourClient = { id: localId, ...r }
     setRetoursClients(prev => [next, ...prev])
+    customerReturnsApi.create({
+      clientNom: r.client,
+      date:      r.date,
+      montant:   r.montant,
+      statut:    RETOUR_STATUT_TO_API[r.statut] ?? 'EN_COURS',
+      ...(r.facture ? { facture: r.facture } : {}),
+      ...(r.motif   ? { motif:   r.motif }   : {}),
+    })
+      .then(created => {
+        setRetoursClients(prev => prev.map(x =>
+          x.id === localId ? { ...x, id: created.id } : x,
+        ))
+      })
+      .catch(err => console.error('[customer-returns] create error', err))
     return next
   }
 
@@ -738,22 +927,63 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   function addBonReception(b: Omit<BonReception, 'id'>): BonReception {
     const last = bonsReception[0]?.id ?? 'BR-0000'
     const num  = parseInt(last.replace('BR-', ''), 10) + 1
-    const id   = `BR-${String(num).padStart(4, '0')}`
-    const next: BonReception = { id, ...b }
+    const localId = `BR-${String(num).padStart(4, '0')}`
+    const next: BonReception = { id: localId, ...b }
     setBonsReception(prev => [next, ...prev])
+    goodsReceiptsApi.create({
+      fournisseurNom: b.fournisseur,
+      dateCreation:   b.dateCreation,
+      datePrevue:     b.datePrevue || null,
+      dateReception:  b.dateReception ?? null,
+      statut:         BR_STATUT_TO_API[b.statut] ?? 'ATTENDU',
+      lignes:         b.lignes.map(l => ({
+        id: l.id, reference: l.reference, designation: l.designation,
+        quantite: l.quantite, quantiteRecue: l.quantiteRecue, unite: l.unite,
+      })),
+      ...(b.commande ? { commande: b.commande } : {}),
+      ...(b.notes    ? { notes:    b.notes }    : {}),
+    })
+      .then(created => {
+        setBonsReception(prev => prev.map(x =>
+          x.id === localId ? { ...x, id: created.id } : x,
+        ))
+      })
+      .catch(err => console.error('[goods-receipts] create error', err))
     return next
   }
 
   function addMouvementStock(m: Omit<MouvementStock, 'id'>): MouvementStock {
     const last = mouvementsStock[0]?.id ?? 'MVT-000'
     const num  = parseInt(last.replace('MVT-', ''), 10) + 1
-    const id   = `MVT-${String(num).padStart(3, '0')}`
-    const next: MouvementStock = { id, ...m }
+    const localId = `MVT-${String(num).padStart(3, '0')}`
+    const next: MouvementStock = { id: localId, ...m }
     setMouvementsStock(prev => [next, ...prev])
     // Met à jour le stock de l'article correspondant
     setArticles(prev => prev.map(a =>
       a.id === m.articleId ? { ...a, stock: Math.max(0, a.stock + m.quantite) } : a
     ))
+    // Persiste via stocksApi seulement si articleId est un CUID backend (pas ART-xxx local)
+    if (!/^ART-/.test(m.articleId)) {
+      const apiType = m.type === 'Entrée'
+        ? (m.quantite >= 0 ? 'ENTREE_INVENTAIRE' : 'SORTIE_INVENTAIRE')
+        : m.type === 'Sortie'
+          ? 'SORTIE_INVENTAIRE'
+          : 'AJUSTEMENT'
+      stocksApi.createMouvement({
+        articleId:    m.articleId,
+        type:         apiType,
+        quantite:     Math.abs(m.quantite),
+        prixUnitaire: 0,
+        ...(m.reference ? { reference: m.reference } : {}),
+        ...(m.notes     ? { description: m.notes }   : {}),
+      })
+        .then(created => {
+          setMouvementsStock(prev => prev.map(x =>
+            x.id === localId ? { ...x, id: created.id } : x,
+          ))
+        })
+        .catch(err => console.error('[stocks] createMouvement error', err))
+    }
     return next
   }
 
@@ -941,41 +1171,119 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   }
 
   function addClient(c: Omit<Client, 'id' | 'createdAt'>): Client {
-    const num  = clients.length + 1
-    const id   = `CLI-${String(num).padStart(3, '0')}`
-    const next: Client = { id, ...c, createdAt: new Date().toISOString().slice(0, 10) }
-    if (c.compte) saveCompteToLS(id, c.compte)
+    const num     = clients.length + 1
+    const localId = `CLI-${String(num).padStart(3, '0')}`
+    const next: Client = { id: localId, ...c, createdAt: new Date().toISOString().slice(0, 10) }
+    if (c.compte) saveCompteToLS(localId, c.compte)
     setClients(prev => [next, ...prev])
+    // Persistance API en background (best-effort)
+    clientsApi.create({
+      name: c.nom,
+      ...(c.email     ? { email:   c.email }     : {}),
+      ...(c.telephone ? { phone:   c.telephone } : {}),
+      ...(c.adresse   ? { address: c.adresse }   : {}),
+      ...(c.compte    ? { accountingCode: c.compte } : {}),
+    })
+      .then(created => {
+        // Remplace l'id local par le CUID backend (préserve référence comptable)
+        setClients(prev => prev.map(x =>
+          x.id === localId ? { ...x, id: created.id } : x,
+        ))
+        if (c.compte) {
+          saveCompteToLS(localId, undefined)
+          saveCompteToLS(created.id, c.compte)
+        }
+        clientNomToId.current[c.nom.toLowerCase()] = created.id
+      })
+      .catch(err => console.error('[clients] addClient API error', err))
     return next
   }
 
   function updateClient(id: string, patch: Partial<Omit<Client, 'id' | 'createdAt'>>) {
     if ('compte' in patch) saveCompteToLS(id, patch.compte)
     setClients(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
+    // Persistance backend si l'id est un CUID (pas CLI-xxx local)
+    if (!/^CLI-/.test(id)) {
+      const apiPatch: Parameters<typeof clientsApi.update>[1] = {}
+      if (patch.nom       !== undefined) apiPatch.name           = patch.nom
+      if (patch.email     !== undefined) apiPatch.email          = patch.email
+      if (patch.telephone !== undefined) apiPatch.phone          = patch.telephone
+      if (patch.adresse   !== undefined) apiPatch.address        = patch.adresse
+      if (patch.compte    !== undefined) apiPatch.accountingCode = patch.compte
+      if (Object.keys(apiPatch).length > 0) {
+        clientsApi.update(id, apiPatch).catch(err =>
+          console.error('[clients] updateClient API error', err),
+        )
+      }
+    }
   }
 
   function deleteClient(id: string) {
-    saveCompteToLS(id, undefined) // supprime de localStorage
+    saveCompteToLS(id, undefined)
     setClients(prev => prev.filter(c => c.id !== id))
+    if (!/^CLI-/.test(id)) {
+      clientsApi.remove(id).catch(err =>
+        console.error('[clients] deleteClient API error', err),
+      )
+    }
   }
 
   function addFournisseur(f: Omit<Fournisseur, 'id' | 'createdAt'>): Fournisseur {
-    const num  = fournisseurs.length + 1
-    const id   = `FRN-${String(num).padStart(3, '0')}`
-    const next: Fournisseur = { id, ...f, createdAt: new Date().toISOString().slice(0, 10) }
-    if (f.compte) saveCompteToLS(id, f.compte)
+    const num     = fournisseurs.length + 1
+    const localId = `FRN-${String(num).padStart(3, '0')}`
+    const next: Fournisseur = { id: localId, ...f, createdAt: new Date().toISOString().slice(0, 10) }
+    if (f.compte) saveCompteToLS(localId, f.compte)
     setFournisseurs(prev => [next, ...prev])
+    fournisseursApi.create({
+      nom:       f.nom,
+      categorie: FOURNISSEUR_CAT_TO_API[f.categorie] ?? 'AUTRE',
+      ...(f.email     ? { email:     f.email }     : {}),
+      ...(f.telephone ? { telephone: f.telephone } : {}),
+      ...(f.adresse   ? { adresse:   f.adresse }   : {}),
+      ...(f.notes     ? { notes:     f.notes }     : {}),
+      ...(f.compte    ? { accountingCode: f.compte } : {}),
+    })
+      .then(created => {
+        setFournisseurs(prev => prev.map(x =>
+          x.id === localId ? { ...x, id: created.id } : x,
+        ))
+        if (f.compte) {
+          saveCompteToLS(localId, undefined)
+          saveCompteToLS(created.id, f.compte)
+        }
+      })
+      .catch(err => console.error('[fournisseurs] addFournisseur API error', err))
     return next
   }
 
   function updateFournisseur(id: string, patch: Partial<Omit<Fournisseur, 'id' | 'createdAt'>>) {
     if ('compte' in patch) saveCompteToLS(id, patch.compte)
     setFournisseurs(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f))
+    if (!/^FRN-/.test(id)) {
+      const apiPatch: Parameters<typeof fournisseursApi.update>[1] = {}
+      if (patch.nom       !== undefined) apiPatch.nom            = patch.nom
+      if (patch.categorie !== undefined) apiPatch.categorie      = FOURNISSEUR_CAT_TO_API[patch.categorie] ?? 'AUTRE'
+      if (patch.email     !== undefined) apiPatch.email          = patch.email
+      if (patch.telephone !== undefined) apiPatch.telephone      = patch.telephone
+      if (patch.adresse   !== undefined) apiPatch.adresse        = patch.adresse
+      if (patch.notes     !== undefined) apiPatch.notes          = patch.notes
+      if (patch.compte    !== undefined) apiPatch.accountingCode = patch.compte
+      if (Object.keys(apiPatch).length > 0) {
+        fournisseursApi.update(id, apiPatch).catch(err =>
+          console.error('[fournisseurs] updateFournisseur API error', err),
+        )
+      }
+    }
   }
 
   function deleteFournisseur(id: string) {
-    saveCompteToLS(id, undefined) // supprime de localStorage
+    saveCompteToLS(id, undefined)
     setFournisseurs(prev => prev.filter(f => f.id !== id))
+    if (!/^FRN-/.test(id)) {
+      fournisseursApi.remove(id).catch(err =>
+        console.error('[fournisseurs] deleteFournisseur API error', err),
+      )
+    }
   }
 
   function updateCommandeStatut(id: string, statut: CommandeStatut) {
