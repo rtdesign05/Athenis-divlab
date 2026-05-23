@@ -271,6 +271,29 @@ export async function postSaleInvoice(
       400, 'ALREADY_POSTED',
     )
 
+  // Contrôle de stock conforme au principe de réalité (PCG art. 121-1 /
+  // SYSCOHADA art. 35) : on ne peut comptabiliser une vente que si la
+  // marchandise existe physiquement en stock. Les services et prestations
+  // (stockTracking=false) sont exemptés — vente illimitée.
+  const stockShortages = invoice.lines
+    .filter(l => l.article && (l.article as { stockTracking?: boolean }).stockTracking !== false)
+    .map(l => ({
+      ref:      l.article!.reference,
+      nom:      l.article!.designation,
+      qteVente: Number(l.quantite),
+      dispo:    Number(l.article!.stockActuel),
+    }))
+    .filter(s => s.qteVente > s.dispo)
+  if (stockShortages.length > 0) {
+    const detail = stockShortages
+      .map(s => `${s.ref} (${s.nom}) : demandé ${s.qteVente}, dispo ${s.dispo}`)
+      .join(' ; ')
+    throw new AppError(
+      `Stock insuffisant pour comptabiliser la facture ${invoice.reference} — ${detail}`,
+      400, 'STOCK_INSUFFICIENT',
+    )
+  }
+
   const company = await prisma.company.findUniqueOrThrow({
     where: { id: companyId }, select: { accountingZone: true },
   })
@@ -371,6 +394,10 @@ export async function postSaleInvoice(
     // Pour chaque ligne avec article : mouvement stock + écritures variation
     for (const line of invoice.lines) {
       if (!line.articleId) continue
+      // Services et prestations (stockTracking=false) : pas de mouvement de
+      // stock ni d'écriture de variation. Seules les marchandises stockées
+      // donnent lieu à un déstockage et aux écritures 6031/311 associées.
+      if (line.article && (line.article as { stockTracking?: boolean }).stockTracking === false) continue
       const stockLines = await generateStockEntry(
         tx, companyId, line.articleId,
         'SORTIE_VENTE',

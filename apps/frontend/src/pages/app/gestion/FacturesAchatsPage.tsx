@@ -273,15 +273,13 @@ interface ModalFactureAchatProps {
 
 function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onSave, onClose }: ModalFactureAchatProps) {
   const today = new Date().toISOString().slice(0, 10)
-  const { articles, fournisseurs, addFournisseur } = useGestion()
+  const { articles, fournisseurs } = useGestion()
   const { agences } = useCompanySettings()
   const { fmt } = useCurrency()
   // achats prop reste passé pour compat (lien éventuel à un bon de commande dans le futur)
   void achats
 
   const [showScan, setShowScan] = useState(false)
-  const [showNewFournisseur, setShowNewFournisseur] = useState(false)
-  const [newFournisseurNom, setNewFournisseurNom] = useState('')
   /** Si true → la facture est immédiatement validée à la création
    *  (statut Validée → comptabilisation auto journal ACH + mouvement stock) */
   const [validateOnCreate, setValidateOnCreate] = useState(true)
@@ -465,68 +463,30 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
             </div>
           </div>
 
-          {/* Fournisseur — sélecteur + bouton "Nouveau" */}
+          {/* Fournisseur — sélection obligatoire depuis la liste existante.
+              Conformité contrôle interne (PCG art. 911-1 / SYSCOHADA art. 17) :
+              la création d'un tiers doit passer par le référentiel Fournisseurs
+              pour permettre la centralisation comptable et l'unicité du
+              compte 401XXX. La création inline est désactivée. */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Fournisseur *</label>
-            {!showNewFournisseur ? (
-              <div className="flex gap-2">
-                <select value={form.fournisseur}
-                  onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))}
-                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
-                  <option value="">— Sélectionner un fournisseur —</option>
-                  {fournisseurs
-                    .filter(fo => !agenceNom || fo.agence === agenceNom)
-                    .map(fo => (
-                      <option key={fo.id} value={fo.nom}>{fo.nom}</option>
-                    ))}
-                </select>
-                <button type="button"
-                  onClick={() => { setShowNewFournisseur(true); setNewFournisseurNom('') }}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-green-700 hover:bg-green-50">
-                  + Nouveau
-                </button>
-              </div>
+            {fournisseurs.filter(fo => !agenceNom || fo.agence === agenceNom).length > 0 ? (
+              <select value={form.fournisseur}
+                onChange={e => setForm(f => ({ ...f, fournisseur: e.target.value }))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
+                <option value="">— Sélectionner un fournisseur —</option>
+                {fournisseurs
+                  .filter(fo => !agenceNom || fo.agence === agenceNom)
+                  .map(fo => (
+                    <option key={fo.id} value={fo.nom}>{fo.nom}</option>
+                  ))}
+              </select>
             ) : (
-              <div className="flex gap-2">
-                <input
-                  autoFocus
-                  value={newFournisseurNom}
-                  onChange={e => setNewFournisseurNom(e.target.value)}
-                  placeholder="Nom du nouveau fournisseur"
-                  className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
-                />
-                <button type="button"
-                  onClick={() => {
-                    const nom = newFournisseurNom.trim()
-                    if (!nom) return
-                    // Évite les doublons : si un fournisseur du même nom existe déjà, on le réutilise.
-                    const existing = fournisseurs.find(fo => fo.nom.toLowerCase() === nom.toLowerCase())
-                    if (existing) {
-                      setForm(f => ({ ...f, fournisseur: existing.nom }))
-                    } else {
-                      // Persistance backend → apparaît dans le <select> au prochain ouvre/refresh.
-                      const created = addFournisseur({
-                        nom,
-                        categorie: 'Autre',
-                        email: '',
-                        telephone: '',
-                        adresse: '',
-                        agence: agenceNom ?? 'Siège',
-                        notes: '',
-                      })
-                      setForm(f => ({ ...f, fournisseur: created.nom }))
-                    }
-                    setShowNewFournisseur(false)
-                    setNewFournisseurNom('')
-                  }}
-                  className="rounded-lg bg-green-700 px-3 py-2 text-xs font-medium text-white hover:bg-green-800">
-                  Ajouter
-                </button>
-                <button type="button"
-                  onClick={() => setShowNewFournisseur(false)}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">
-                  Annuler
-                </button>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                Aucun fournisseur enregistré.{' '}
+                <a href="/app/gestion/achats/fournisseurs" className="font-semibold underline hover:text-amber-900">
+                  Créer un fournisseur →
+                </a>
               </div>
             )}
           </div>

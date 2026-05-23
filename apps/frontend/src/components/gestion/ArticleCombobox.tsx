@@ -133,9 +133,12 @@ export function ArticleCombobox({
   }
 
   // ── Validation ────────────────────────────────────────────────────────────
+  // Le contrôle de stock ne s'applique qu'aux articles suivis (marchandises).
+  // Services et prestations (stockTracking=false) : vente illimitée.
+  const isTracked      = !!selected && selected.stockTracking !== false && selected.categorie !== 'Service'
   const hasText        = text.trim().length > 0
   const isUnknown      = hasText && !selected
-  const stockShortage  = selected && quantite > selected.stock
+  const stockShortage  = isTracked && quantite > (selected?.stock ?? 0)
   const baseClass      = compact ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'
   const borderColor    =
     isUnknown     ? 'border-red-300 focus:ring-red-300/40' :
@@ -158,13 +161,19 @@ export function ArticleCombobox({
       {selected && (
         <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-1.5 text-[10px]">
           <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-gray-500">{selected.reference}</span>
-          <span className={`rounded px-1.5 py-0.5 font-semibold ${
-            stockShortage ? 'bg-amber-100 text-amber-700' :
-            selected.stock <= selected.stockMin ? 'bg-yellow-50 text-yellow-700' :
-            'bg-green-100 text-green-700'
-          }`}>
-            Stock {selected.stock}
-          </span>
+          {isTracked ? (
+            <span className={`rounded px-1.5 py-0.5 font-semibold ${
+              stockShortage ? 'bg-amber-100 text-amber-700' :
+              selected.stock <= selected.stockMin ? 'bg-yellow-50 text-yellow-700' :
+              'bg-green-100 text-green-700'
+            }`}>
+              Stock {selected.stock}
+            </span>
+          ) : (
+            <span className="rounded bg-blue-50 px-1.5 py-0.5 font-semibold text-blue-700">
+              ∞ illimité
+            </span>
+          )}
         </div>
       )}
       {isUnknown && (
@@ -199,7 +208,8 @@ export function ArticleCombobox({
             </span>
           </div>
           {filtered.map((art, i) => {
-            const isShort = quantite > art.stock
+            const artTracked = art.stockTracking !== false && art.categorie !== 'Service'
+            const isShort = artTracked && quantite > art.stock
             return (
               <button
                 key={art.id}
@@ -236,16 +246,24 @@ export function ArticleCombobox({
                     </p>
                   </div>
                   <div className="shrink-0 text-right">
-                    <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
-                      art.stock === 0  ? 'bg-red-100 text-red-700' :
-                      isShort          ? 'bg-amber-100 text-amber-700' :
-                      art.stock <= art.stockMin ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-green-100 text-green-700'
-                    }`}>
-                      {art.stock === 0 ? 'Rupture' : `${art.stock} dispo.`}
-                    </span>
-                    {art.stockMin > 0 && (
-                      <p className="mt-1 text-[10px] text-gray-400">Seuil : {art.stockMin}</p>
+                    {artTracked ? (
+                      <>
+                        <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${
+                          art.stock === 0  ? 'bg-red-100 text-red-700' :
+                          isShort          ? 'bg-amber-100 text-amber-700' :
+                          art.stock <= art.stockMin ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>
+                          {art.stock === 0 ? 'Rupture' : `${art.stock} dispo.`}
+                        </span>
+                        {art.stockMin > 0 && (
+                          <p className="mt-1 text-[10px] text-gray-400">Seuil : {art.stockMin}</p>
+                        )}
+                      </>
+                    ) : (
+                      <span className="inline-block rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-700">
+                        ∞ illimité
+                      </span>
                     )}
                   </div>
                 </div>

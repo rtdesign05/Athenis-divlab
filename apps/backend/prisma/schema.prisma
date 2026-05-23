@@ -1205,6 +1205,10 @@ model Article {
   stockMax         Decimal?     @db.Decimal(15, 4) @map("stock_max")
   valeurCmup       Decimal      @db.Decimal(15, 4) @default(0) @map("valeur_cmup")
   methodeValuation StockMethod  @default(CMUP) @map("methode_valuation")
+  // Suivi de stock activé ? Services et prestations → false (vente illimitée).
+  // Marchandises destinées à la revente → true par défaut (stock contrôlé).
+  // Choix paramétrable à la création/édition de l'article.
+  stockTracking    Boolean      @default(true) @map("stock_tracking")
   isActive         Boolean      @default(true) @map("is_active")
   compteAchat      String?      @map("compte_achat")
   compteVente      String?      @map("compte_vente")

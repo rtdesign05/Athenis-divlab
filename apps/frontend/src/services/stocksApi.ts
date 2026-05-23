@@ -48,6 +48,9 @@ export interface Article {
   emplacement?: string
   compteAchat?: string
   compteVente?: string
+  /** Si false → article non stocké (service, prestation). Vente illimitée et
+   *  pas de génération de mouvement de stock à la facturation. */
+  stockTracking?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -143,6 +146,7 @@ export const stocksApi = {
     methodeValuation?: StockMethod; description?: string; codeBarres?: string;
     fournisseur?: string; delaiAppro?: number; emplacement?: string;
     compteAchat?: string; compteVente?: string;
+    stockTracking?: boolean;
   }) => api.post<{ data: Article }>('/stocks/articles', dto).then(d),
   updateArticle: (id: string, dto: Partial<{
     designation: string; reference?: string; familleId?: string; agenceId?: string | null; unite?: string;
@@ -151,6 +155,7 @@ export const stocksApi = {
     methodeValuation?: StockMethod; description?: string; codeBarres?: string;
     fournisseur?: string; delaiAppro?: number; emplacement?: string;
     compteAchat?: string; compteVente?: string;
+    stockTracking?: boolean;
   }>) =>
     api.put<{ data: Article }>(`/stocks/articles/${id}`, dto).then(d),
   deleteArticle: (id: string) =>

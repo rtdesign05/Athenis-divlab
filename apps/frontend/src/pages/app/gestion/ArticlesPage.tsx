@@ -108,10 +108,14 @@ interface ModalArticleProps {
 
 function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: ModalArticleProps) {
   const { agences } = useCompanySettings()
+  const initialCategorie = initial?.categorie ?? (categories[0] ?? '')
+  // Services : stock non suivi (vente illimitée) ; marchandises : stock suivi par défaut.
+  const initialStockTracking = initial?.stockTracking
+    ?? (initialCategorie === 'Service' ? false : true)
   const [form, setForm] = useState({
     reference:   initial?.reference   ?? '',
     nom:         initial?.nom         ?? '',
-    categorie:   initial?.categorie   ?? (categories[0] ?? ''),
+    categorie:   initialCategorie,
     unite:       initial?.unite       ?? 'pièce' as ArticleUnite,
     prixVenteHT: initial?.prixVenteHT ?? 0,
     prixAchatHT: initial?.prixAchatHT ?? 0,
@@ -122,6 +126,7 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
     actif:       initial?.actif       ?? true,
     compteAchat: initial?.compteAchat ?? '',
     compteVente: initial?.compteVente ?? '',
+    stockTracking: initialStockTracking,
   })
 
   const set    = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -156,7 +161,18 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Catégorie</label>
-              <select value={form.categorie} onChange={set('categorie')}
+              <select value={form.categorie}
+                onChange={e => {
+                  const v = e.target.value
+                  // Service → stockTracking forcé à false (vente illimitée).
+                  // Autres catégories → on rétablit true par défaut si on revient
+                  // d'un service, mais on respecte un choix manuel ultérieur.
+                  setForm(f => ({
+                    ...f,
+                    categorie: v,
+                    stockTracking: v === 'Service' ? false : (f.categorie === 'Service' ? true : f.stockTracking),
+                  }))
+                }}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30">
                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -197,14 +213,22 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Stock actuel</label>
-              <input type="number" min={0} placeholder="0" value={form.stock || ''} onChange={setNum('stock')}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Stock actuel {!form.stockTracking && <span className="text-[10px] text-gray-400">(non suivi)</span>}
+              </label>
+              <input type="number" min={0} placeholder="0"
+                disabled={!form.stockTracking}
+                value={form.stock || ''} onChange={setNum('stock')}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 disabled:bg-gray-50 disabled:text-gray-400" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Stock minimum (alerte)</label>
-              <input type="number" min={0} placeholder="0" value={form.stockMin || ''} onChange={setNum('stockMin')}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Stock minimum {!form.stockTracking && <span className="text-[10px] text-gray-400">(non suivi)</span>}
+              </label>
+              <input type="number" min={0} placeholder="0"
+                disabled={!form.stockTracking}
+                value={form.stockMin || ''} onChange={setNum('stockMin')}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30 disabled:bg-gray-50 disabled:text-gray-400" />
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
@@ -244,6 +268,29 @@ function ModalArticle({ initial, agenceNom, categories, onSave, onClose }: Modal
                 filterClasses={['7']}
                 placeholder="701 — Ventes marchandises (par défaut)"
               />
+            </div>
+
+            {/* ── Suivi de stock ─────────────────────────────────────────── */}
+            <div className="col-span-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2.5">
+              <div className="flex items-start gap-2">
+                <input id="stockTracking" type="checkbox"
+                  checked={form.stockTracking}
+                  disabled={form.categorie === 'Service'}
+                  onChange={setBool('stockTracking')}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500 disabled:opacity-50" />
+                <div className="flex-1">
+                  <label htmlFor="stockTracking" className="text-xs font-semibold text-amber-900">
+                    Suivre cet article en stock
+                  </label>
+                  <p className="mt-0.5 text-[11px] text-amber-700 leading-snug">
+                    {form.categorie === 'Service'
+                      ? "Les services et prestations ne sont jamais stockés (vente illimitée — case forcée à décocher)."
+                      : form.stockTracking
+                        ? "Marchandise tenue en inventaire. Les quantités vendues seront limitées au stock disponible et un mouvement de déstockage sera comptabilisé."
+                        : "Article non stocké. Vente illimitée, pas de mouvement d'inventaire à la facturation."}
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="col-span-2 flex items-center gap-2">

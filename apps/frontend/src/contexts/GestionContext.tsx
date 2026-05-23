@@ -159,6 +159,9 @@ export interface Article {
   compteAchat?: string
   /** Compte de produit SYSCOHADA (classe 7) — utilisé lors des factures de vente */
   compteVente?: string
+  /** true (défaut) = stock suivi (marchandise stockée — vente limitée au stock dispo).
+   *  false = service / prestation (vente illimitée, pas de mouvement de stock). */
+  stockTracking?: boolean
 }
 
 // ── Types clients / fournisseurs ──────────────────────────────────────────────
@@ -663,6 +666,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
         createdAt:    a.createdAt ?? new Date().toISOString(),
         ...(a.compteAchat ? { compteAchat: a.compteAchat } : {}),
         ...(a.compteVente ? { compteVente: a.compteVente } : {}),
+        stockTracking: a.stockTracking ?? true,
       }))
       setArticles(list)
     } catch (err) {
@@ -1014,6 +1018,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       ...(a.compteAchat?.trim() ? { compteAchat: a.compteAchat.trim() } : {}),
       ...(a.compteVente?.trim() ? { compteVente: a.compteVente.trim() } : {}),
       ...(a.agenceId ? { agenceId: a.agenceId } : {}),
+      ...(a.stockTracking !== undefined ? { stockTracking: a.stockTracking } : {}),
     })
       .then(created => {
         // Remplace l'entrée locale par celle du backend (avec son CUID)
@@ -1052,6 +1057,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       if (patch.compteAchat !== undefined) apiPatch.compteAchat  = patch.compteAchat
       if (patch.compteVente !== undefined) apiPatch.compteVente  = patch.compteVente
       if (patch.agenceId    !== undefined) apiPatch.agenceId     = patch.agenceId ?? null
+      if (patch.stockTracking !== undefined) apiPatch.stockTracking = patch.stockTracking
       if (Object.keys(apiPatch).length > 0) {
         stocksApi.updateArticle(id, apiPatch).catch(err =>
           console.error('[articles] updateArticle API error', err),

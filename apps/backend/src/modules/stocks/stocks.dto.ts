@@ -33,6 +33,9 @@ export const CreateArticleDto = z.object({
   compteVariationStock:  z.string().max(20).optional(),
   /** Agence à laquelle rattacher l'article (multi-site). */
   agenceId:              z.string().nullable().optional(),
+  /** Suivi de stock activé. true (défaut) → marchandise stockée, vente
+   *  limitée au stock disponible. false → service/prestation, vente illimitée. */
+  stockTracking:         z.boolean().default(true).optional(),
 })
 
 export const UpdateArticleDto = CreateArticleDto.omit({ stockInitial: true }).partial()

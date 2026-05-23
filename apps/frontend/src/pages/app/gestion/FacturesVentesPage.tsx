@@ -802,7 +802,10 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
         lineErrors.push({ idx, reason: 'no-article', message: 'Article introuvable' })
         return
       }
-      if (modele !== 'avoir' && qty > art.stock) {
+      // Contrôle de stock : ignoré pour les services et articles non suivis
+      // (vente illimitée). Appliqué uniquement aux marchandises stockées.
+      const isTracked = art.stockTracking !== false && art.categorie !== 'Service'
+      if (modele !== 'avoir' && isTracked && qty > art.stock) {
         lineErrors.push({
           idx,
           reason:  'qty-stock',
@@ -966,12 +969,12 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
                       {clients.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   ) : (
-                    <input
-                      value={client}
-                      onChange={e => setClient(e.target.value)}
-                      placeholder="Nom du client"
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500/30"
-                    />
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                      Aucun client enregistré.{' '}
+                      <a href="/app/gestion/ventes/clients" className="font-semibold underline hover:text-amber-900">
+                        Créer un client →
+                      </a>
+                    </div>
                   )}
                 </div>
                 <div>
