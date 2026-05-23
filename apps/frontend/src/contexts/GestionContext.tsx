@@ -933,6 +933,12 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       factureAchatDbIds.current[order.reference] = order.id
       const realFa: FactureAchat = { ...next, id: order.reference }
       setFacturesAchats(prev => prev.map(x => x.id === localId ? realFa : x))
+      // Invalide les vues consommatrices (Accueil + Vue d'ensemble Gestion).
+      // ['purchases'] couvre ['purchases','stats',...] — sinon la stats reste
+      // stale 60s et la facture nouvellement créée n'apparaît pas dans le KPI.
+      ;['purchases', 'dashboard', 'invoices', 'fiscal-years'].forEach(k =>
+        qc.invalidateQueries({ queryKey: [k] }),
+      )
       return realFa
     } catch (err) {
       console.error('[facturesAchats] addFactureAchat API error', err)
@@ -1099,6 +1105,8 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       const achat = apiOrderToAchat(order)
       achatDbIds.current[achat.id] = order.id
       setAchats(prev => [achat, ...prev])
+      // Rafraîchit les KPI achats sur Accueil + Vue d'ensemble (sinon staleTime 60s).
+      ;['purchases', 'dashboard'].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
       return achat
     } catch (err) {
       console.error('addAchat API error', err)
@@ -1320,9 +1328,11 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     const dbId  = achatDbIds.current[reference]
     const status = purchasesApi.STATUT_TO_STATUS[statut]
     if (dbId && status) {
-      purchasesApi.updateOrder(dbId, { status }).catch(err =>
-        console.error('updateAchatStatut API error', err),
-      )
+      purchasesApi.updateOrder(dbId, { status })
+        .then(() => {
+          ;['purchases', 'dashboard'].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+        })
+        .catch(err => console.error('updateAchatStatut API error', err))
     }
   }
 
@@ -1386,6 +1396,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
             'financial-statements', 'etats-financiers', 'comptes', 'comptes-tiers',
             'billing', 'dashboard', 'invoices', 'fiscal-years',
             'stocks', 'stocks-articles',
+            'purchases',                                          // KPIs Accueil + Vue d'ensemble (stats achats / dettes fournisseurs)
           ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
           // Rafraîchit la liste articles (stockActuel modifié par postPurchaseOrder côté backend)
           void refreshArticles()

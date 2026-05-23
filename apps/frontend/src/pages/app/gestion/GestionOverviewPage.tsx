@@ -54,7 +54,12 @@ function KpiCard({ label, value, sub, accent }: {
 export function GestionOverviewPage() {
   const { fmt, currencyCode, defaultVatRate } = useCurrency()
   const { user }                              = useAuth()
-  const { commandes: allCommandes, achats: allAchats, facturesVentes: allFactures } = useGestion()
+  const {
+    commandes:      allCommandes,
+    achats:         allAchats,
+    facturesVentes: allFactures,
+    facturesAchats: allFacturesAchats,
+  } = useGestion()
   const { balances, totalSolde }              = useTresorerie()
   const { agences, country }                  = useCompanySettings()
 
@@ -77,10 +82,13 @@ export function GestionOverviewPage() {
   // purchaseOrderStats qui inclut ORDER + INVOICE documentTypes.
   // Évite la divergence avec la page Accueil et corrige le bug où les
   // factures d'achat saisies n'apparaissaient pas dans ce KPI.
+  // refetchOnMount='always' : à chaque navigation vers cette page, on revérifie
+  // les chiffres pour refléter immédiatement les saisies faites ailleurs.
   const { data: purchaseStats } = useQuery({
     queryKey: ['purchases', 'stats', periodFrom, periodTo] as const,
     queryFn:  () => getPurchaseStats({ from: periodFrom, to: periodTo }),
-    staleTime: 60_000,
+    staleTime:      0,
+    refetchOnMount: 'always',
   })
 
   // ── Filtre commandes et achats sur la période ────────────────────────────────
@@ -93,6 +101,10 @@ export function GestionOverviewPage() {
   const allVisibleAchats = agenceNom
     ? allAchats.filter(a => a.agence === agenceNom)
     : allAchats
+
+  const allVisibleFacturesAchats = agenceNom
+    ? allFacturesAchats.filter(fa => fa.agence === agenceNom)
+    : allFacturesAchats
 
   // Pour les KPIs : toutes les données de la période sélectionnée
   const commandesPeriode = allVisibleCommandes.filter(v => inPeriod(v.date))
@@ -120,7 +132,19 @@ export function GestionOverviewPage() {
   ]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5)
-  const achatsRecents = allVisibleAchats.slice(0, 5)
+  // Achats récents : fusion commandes (ORDER) + factures d'achat (INVOICE),
+  // triées par date décroissante. Top 5 — vision globale du « flux fournisseurs ».
+  type AchatRecent = { id: string; fournisseur: string; date: string; montant: number; statut: string; type: 'commande' | 'facture' }
+  const achatsRecents: AchatRecent[] = [
+    ...allVisibleAchats.map(a => ({
+      id: a.id, fournisseur: a.fournisseur, date: a.date, montant: a.montant, statut: a.statut, type: 'commande' as const,
+    })),
+    ...allVisibleFacturesAchats.map(fa => ({
+      id: fa.id, fournisseur: fa.fournisseur, date: fa.date, montant: fa.montantHT, statut: fa.statut, type: 'facture' as const,
+    })),
+  ]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5)
 
   // ── KPIs ────────────────────────────────────────────────────────────────────
   const tresors          = agenceNom ? balances.filter(b => b.agence === agenceNom) : balances
@@ -298,12 +322,15 @@ export function GestionOverviewPage() {
             {achatsRecents.length === 0
               ? <p className="px-4 py-6 text-center text-sm text-gray-400">Aucun achat pour cette agence</p>
               : achatsRecents.map(a => (
-                <div key={a.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
+                <div key={`${a.type}-${a.id}`} className="px-4 py-2.5 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono text-gray-400 shrink-0">{a.id}</span>
                       <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${STATUT_ACHAT[a.statut] ?? 'bg-gray-100 text-gray-600'}`}>
                         {a.statut}
+                      </span>
+                      <span className="shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold uppercase text-gray-400 bg-gray-50" title={a.type === 'commande' ? 'Bon de commande' : "Facture d'achat"}>
+                        {a.type === 'commande' ? 'CMD' : 'FA'}
                       </span>
                     </div>
                     <p className="text-sm text-gray-700 truncate mt-0.5">{a.fournisseur}</p>
