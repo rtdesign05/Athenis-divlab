@@ -273,7 +273,7 @@ interface ModalFactureAchatProps {
 
 function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onSave, onClose }: ModalFactureAchatProps) {
   const today = new Date().toISOString().slice(0, 10)
-  const { articles, fournisseurs } = useGestion()
+  const { articles, fournisseurs, addFournisseur } = useGestion()
   const { agences } = useCompanySettings()
   const { fmt } = useCurrency()
   // achats prop reste passé pour compat (lien éventuel à un bon de commande dans le futur)
@@ -498,10 +498,26 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
                 <button type="button"
                   onClick={() => {
                     const nom = newFournisseurNom.trim()
-                    if (nom) {
-                      setForm(f => ({ ...f, fournisseur: nom }))
-                      setShowNewFournisseur(false)
+                    if (!nom) return
+                    // Évite les doublons : si un fournisseur du même nom existe déjà, on le réutilise.
+                    const existing = fournisseurs.find(fo => fo.nom.toLowerCase() === nom.toLowerCase())
+                    if (existing) {
+                      setForm(f => ({ ...f, fournisseur: existing.nom }))
+                    } else {
+                      // Persistance backend → apparaît dans le <select> au prochain ouvre/refresh.
+                      const created = addFournisseur({
+                        nom,
+                        categorie: 'Autre',
+                        email: '',
+                        telephone: '',
+                        adresse: '',
+                        agence: agenceNom ?? 'Siège',
+                        notes: '',
+                      })
+                      setForm(f => ({ ...f, fournisseur: created.nom }))
                     }
+                    setShowNewFournisseur(false)
+                    setNewFournisseurNom('')
                   }}
                   className="rounded-lg bg-green-700 px-3 py-2 text-xs font-medium text-white hover:bg-green-800">
                   Ajouter
@@ -683,7 +699,11 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
   )
 }
 
-// ── Vue FACTURE ACHAT (document) ──────────────────────────────────────────────
+// ── Vue de saisie d'une facture fournisseur ──────────────────────────────────
+// IMPORTANT : Ce document n'est PAS la facture d'achat légale (qui doit être
+// émise par le fournisseur conformément à l'art. 153 CGI / art. 289 CGI FR).
+// Il s'agit d'un récapitulatif interne de la saisie comptable. Le PDF original
+// du fournisseur doit être attaché via le bouton "Joindre la pièce".
 
 interface FAViewProps {
   fa:           FactureAchat
@@ -774,9 +794,10 @@ function FAView({ fa, fournisseur, companyName, address, fmtCurrency, onClose, o
               📎 Joindre la pièce
             </label>
           )}
-          <button onClick={() => printDocument(printRef.current, `FACTURE ACHAT ${fa.id}`)}
-            className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800">
-            🖨️ Imprimer / PDF
+          <button onClick={() => printDocument(printRef.current, `Recapitulatif saisie ${fa.id}`)}
+            title="Imprime le récapitulatif de la saisie — pas une facture légale"
+            className="rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">
+            🖨️ Récapitulatif
           </button>
         </div>
       </div>
@@ -784,6 +805,14 @@ function FAView({ fa, fournisseur, companyName, address, fmtCurrency, onClose, o
       {/* Document */}
       <div className="flex-1 min-h-0 overflow-auto p-6">
         <div ref={printRef} className="mx-auto max-w-2xl bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+
+          {/* Bandeau d'avertissement — ce document n'est pas la facture légale */}
+          <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5">
+            <p className="text-[11px] text-amber-900">
+              <span className="font-semibold">Récapitulatif interne de saisie</span> — ce document n'est pas la facture
+              légale. La facture d'achat originale doit être émise par le fournisseur et attachée via «&nbsp;Joindre la pièce&nbsp;».
+            </p>
+          </div>
 
           {/* En-tête FOURNISSEUR (émetteur de la facture d'achat) */}
           <div className="bg-[#1a3a2a] px-8 py-6">
@@ -799,8 +828,11 @@ function FAView({ fa, fournisseur, companyName, address, fmtCurrency, onClose, o
                 )}
               </div>
               <div className="text-right">
-                <p className="text-xs font-bold text-white/80 uppercase tracking-wider">Facture Achat</p>
+                <p className="text-xs font-bold text-white/80 uppercase tracking-wider">Saisie facture fournisseur</p>
                 <p className="mt-1 text-lg font-mono font-bold text-white">{fa.id}</p>
+                {fa.commande && (
+                  <p className="mt-1 text-[10px] text-white/70">N° fournisseur : <span className="font-mono">{fa.commande}</span></p>
+                )}
                 <p className="mt-1 text-xs text-white/70">Date : {fmtDate(fa.date)}</p>
               </div>
             </div>

@@ -1581,6 +1581,16 @@ export function FacturesVentesPage() {
   const [dateFrom,        setDateFrom]        = useState('')
   const [dateTo,          setDateTo]          = useState('')
 
+  // Deep-link : ?invoice=<reference> ouvre directement la facture
+  // (utilisé par la pièce 📎 attachée aux écritures du journal VTE)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const ref = params.get('invoice')
+    if (!ref) return
+    const f = facturesVentes.find(x => x.id === ref || x.commande === ref)
+    if (f) setSelectedId(f.id)
+  }, [facturesVentes])
+
   const items = useMemo(() => {
     let list = agenceNom ? facturesVentes.filter(f => f.agence === agenceNom) : facturesVentes
     if (statutFilter !== 'all') list = list.filter(f => f.statut === statutFilter)

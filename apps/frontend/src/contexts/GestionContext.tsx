@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useMemo, useEffect, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useState, useMemo, useEffect, useRef, useCallback, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import * as purchasesApi from '@/services/purchasesApi'
 import * as invoicesApi  from '@/services/invoicesApi'
@@ -642,33 +642,36 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   // Articles : chargés depuis l'API. Si succès → uniquement les vrais articles
   // backend (CUIDs valides pour les FK et le décrément de stock). Si échec
   // (offline, démo) → fallback sur INIT_ARTICLES.
-  useEffect(() => {
-    stocksApi.listArticles({ limit: 100 })
-      .then(({ items }) => {
-        const list: Article[] = (items ?? []).map(a => ({
-          id:           a.id,                                          // ← CUID backend (valide pour FK)
-          reference:    a.reference ?? '',
-          nom:          a.designation,
-          categorie:    (a.famille?.nom ?? 'Marchandise') as ArticleCategorie,
-          unite:        (a.unite ?? 'pièce') as ArticleUnite,
-          prixVenteHT:  Number(a.prixVente ?? 0),
-          prixAchatHT:  Number(a.prixAchat ?? 0),
-          stock:        Number(a.stockActuel ?? 0),
-          stockMin:     Number(a.stockMin ?? 0),
-          agence:       'Siège',
-          description:  a.description ?? '',
-          actif:        a.isActive ?? true,
-          createdAt:    a.createdAt ?? new Date().toISOString(),
-          ...(a.compteAchat ? { compteAchat: a.compteAchat } : {}),
-          ...(a.compteVente ? { compteVente: a.compteVente } : {}),
-        }))
-        setArticles(list)  // toujours définir, même si liste vide (DB sans articles)
-      })
-      .catch(err => {
-        console.error('[articles] listArticles API error', err)
-        setArticles([])
-      })
+  // Fonction extraite pour pouvoir être appelée après une mutation qui change
+  // le stock (validation facture, achat reçu, ajustement manuel).
+  const refreshArticles = useCallback(async () => {
+    try {
+      const { items } = await stocksApi.listArticles({ limit: 100 })
+      const list: Article[] = (items ?? []).map(a => ({
+        id:           a.id,
+        reference:    a.reference ?? '',
+        nom:          a.designation,
+        categorie:    (a.famille?.nom ?? 'Marchandise') as ArticleCategorie,
+        unite:        (a.unite ?? 'pièce') as ArticleUnite,
+        prixVenteHT:  Number(a.prixVente ?? 0),
+        prixAchatHT:  Number(a.prixAchat ?? 0),
+        stock:        Number(a.stockActuel ?? 0),
+        stockMin:     Number(a.stockMin ?? 0),
+        agence:       'Siège',
+        description:  a.description ?? '',
+        actif:        a.isActive ?? true,
+        createdAt:    a.createdAt ?? new Date().toISOString(),
+        ...(a.compteAchat ? { compteAchat: a.compteAchat } : {}),
+        ...(a.compteVente ? { compteVente: a.compteVente } : {}),
+      }))
+      setArticles(list)
+    } catch (err) {
+      console.error('[articles] listArticles API error', err)
+      setArticles([])
+    }
   }, [])
+
+  useEffect(() => { void refreshArticles() }, [refreshArticles])
 
   // ── Hydratation entités nouvellement persistées ─────────────────────────────
   // Fournisseurs, BL, BR, Retours Clients : maintenant chargés depuis l'API au mount
@@ -1334,6 +1337,8 @@ export function GestionProvider({ children }: { children: ReactNode }) {
         'billing', 'dashboard', 'invoices', 'fiscal-years',
         'stocks', 'stocks-articles',
       ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+      // Rafraîchit la liste articles (stockActuel modifié par postSaleInvoice côté backend)
+      void refreshArticles()
     } catch (err) {
       console.error('[invoices] updateFactureVenteStatut API error', err)
       // Rollback : restaure l'ancien statut local (cohérence UI ↔ DB)
@@ -1367,6 +1372,8 @@ export function GestionProvider({ children }: { children: ReactNode }) {
             'billing', 'dashboard', 'invoices', 'fiscal-years',
             'stocks', 'stocks-articles',
           ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+          // Rafraîchit la liste articles (stockActuel modifié par postPurchaseOrder côté backend)
+          void refreshArticles()
         })
         .catch(err =>
           console.error('[facturesAchats] updateFactureAchatStatut API error', err),

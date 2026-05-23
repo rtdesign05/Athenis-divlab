@@ -308,11 +308,16 @@ export async function postSaleInvoice(
   // 5. Création de la pièce dans le journal VTE
   const pieceId = `INV-${invoice.reference}-${Date.now().toString(36)}`
   const reference = `FA-${invoice.reference}`
+  // Lien profond vers la facture (la pièce justificative légale est la facture
+  // émise par l'entreprise — accessible via le module Gestion). Cliquer sur 📎
+  // dans le journal ouvre la facture dans un nouvel onglet.
+  const pieceUrl  = `/app/gestion/ventes/factures?invoice=${encodeURIComponent(invoice.reference)}`
+  const pieceName = `Facture ${invoice.reference}`
   const lines: Prisma.JournalEntryCreateManyInput[] = [
     {
       companyId, fiscalYearId: fyId, date: invoice.issuedAt,
       journal:   def.journalVente,
-      pieceId,
+      pieceId, pieceUrl, pieceName,
       compte:    clientAccount,
       libelle:   `Vente ${invoice.reference} — ${invoice.client.nom}`,
       debit:     Number(invoice.amountTTC),
@@ -322,7 +327,7 @@ export async function postSaleInvoice(
     ...Array.from(productGroups.entries()).map(([acct, amount]) => ({
       companyId, fiscalYearId: fyId, date: invoice.issuedAt,
       journal:   def.journalVente,
-      pieceId,
+      pieceId, pieceUrl, pieceName,
       compte:    acct,
       libelle:   `Vente ${invoice.reference} — ${invoice.client.nom}`,
       debit:     0,
@@ -334,7 +339,7 @@ export async function postSaleInvoice(
     lines.push({
       companyId, fiscalYearId: fyId, date: invoice.issuedAt,
       journal:   def.journalVente,
-      pieceId,
+      pieceId, pieceUrl, pieceName,
       compte:    tvaAcct,
       libelle:   `TVA collectée ${invoice.reference}`,
       debit:     0,
@@ -381,7 +386,7 @@ export async function postSaleInvoice(
           data: stockLines.map(sl => ({
             companyId, fiscalYearId: fyId, date: invoice.issuedAt,
             journal: def.journalVente,
-            pieceId,
+            pieceId, pieceUrl, pieceName,
             compte: sl.compte,
             libelle: `Déstockage vente ${invoice.reference} — ${line.description}`,
             debit:  sl.debit,
