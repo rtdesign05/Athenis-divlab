@@ -1,7 +1,11 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useTresorerie } from '@/contexts/TresorerieContext'
 import { useEmployees } from '@/hooks/useHr'
+import { useDashboardStats, useCashFlow } from '@/hooks/useBilling'
+import { useCompteResultat } from '@/hooks/useAccounting'
+import { getStats as getPurchaseStats } from '@/services/purchasesApi'
 import { pdf } from '@react-pdf/renderer'
 import { saveAs } from 'file-saver'
 import React from 'react'
@@ -169,28 +173,34 @@ function monthVal(base: number, monthIdx: number, yearOffset: number, annualRate
   return Math.round(base * sf * growth)
 }
 
-function generateMatrix(horizon: Horizon, scenario: Scenario, hyp: HypothesesConfig): Record<string, number[]> {
+function generateMatrix(
+  horizon:    Horizon,
+  scenario:   Scenario,
+  hyp:        HypothesesConfig,
+  baseValues: Record<string, number>,        // valeurs mensuelles réelles (issues des modules Gestion/RH/Compta)
+): Record<string, number[]> {
   const rates    = hyp.growth[scenario]
   const colCount = getColumns(horizon).length
   const matrix: Record<string, number[]> = {}
 
   for (const row of ROWS) {
-    if ((row.type !== 'data' && row.type !== 'memo') || row.baseMonthly === undefined || !row.growth) continue
+    if ((row.type !== 'data' && row.type !== 'memo') || !row.growth) continue
+    const base = baseValues[row.id] ?? row.baseMonthly ?? 0          // priorité aux valeurs réelles
     const rate = rates[row.growth]
     const vals: number[] = []
 
     for (let c = 0; c < colCount; c++) {
       if (horizon === '6m') {
-        vals.push(monthVal(row.baseMonthly, c + 4, 0, rate, hyp.seasonal))
+        vals.push(monthVal(base, c + 4, 0, rate, hyp.seasonal))
       } else if (horizon === '1y') {
-        vals.push(monthVal(row.baseMonthly, c, 0, rate, hyp.seasonal))
+        vals.push(monthVal(base, c, 0, rate, hyp.seasonal))
       } else if (horizon === '3y') {
         const yearOffset = Math.floor(c / 4)
         const qtr        = c % 4
-        const sum = [0,1,2].reduce((s, m) => s + monthVal(row.baseMonthly!, qtr * 3 + m, yearOffset, rate, hyp.seasonal), 0)
+        const sum = [0,1,2].reduce((s, m) => s + monthVal(base, qtr * 3 + m, yearOffset, rate, hyp.seasonal), 0)
         vals.push(sum)
       } else {
-        const sum = Array.from({ length: 12 }, (_, m) => monthVal(row.baseMonthly!, m, c, rate, hyp.seasonal)).reduce((s, v) => s + v, 0)
+        const sum = Array.from({ length: 12 }, (_, m) => monthVal(base, m, c, rate, hyp.seasonal)).reduce((s, v) => s + v, 0)
         vals.push(sum)
       }
     }
@@ -566,7 +576,46 @@ export function PrevisionsPage() {
 
   const employees      = useEmployees()
   const masseSalReelle = employees.data?.masseSalarialeMonth ?? 0
-  const masseSalModele = 8_500_000
+
+  // ── Données réelles pour pré-remplissage du prévisionnel ────────────────────
+  // Conformément à la pratique comptable (SYSCOHADA art. 38 / PCG art. 512-1),
+  // les bases mensuelles sont calculées sur le CA HT et les achats HT —
+  // la TVA n'étant ni un produit ni une charge.
+  const currentYear = new Date().getFullYear()
+  // Exercice courant : sert à calculer les moyennes mensuelles sur la période écoulée.
+  const yearFrom = `${currentYear}-01-01`
+  const yearTo   = new Date().toISOString().slice(0, 10)
+  const monthsElapsed = Math.max(1, new Date().getMonth() + 1)         // ≥ 1 pour éviter div/0
+  const { data: dashStats }     = useDashboardStats({ from: yearFrom, to: yearTo })
+  const { data: cashFlow }      = useCashFlow()
+  const { data: cr }            = useCompteResultat(currentYear)
+  const { data: purchaseStats } = useQuery({
+    queryKey: ['purchases', 'stats', yearFrom, yearTo] as const,
+    queryFn:  () => getPurchaseStats({ from: yearFrom, to: yearTo }),
+    staleTime:      0,
+    refetchOnMount: 'always',
+  })
+
+  // Recettes mensuelles : CA HT YTD / mois écoulés. Si on a un cash-flow
+  // forecast (90j), on garde la même base — le forecast guide l'évolution.
+  const avgCAMonthHT       = (dashStats?.revenue.current ?? 0) / monthsElapsed
+  const avgAchatsMonthHT   = (purchaseStats?.periodMontantHT ?? 0) / monthsElapsed
+  const avgChargesExpMonth = (cr?.charges?.chargesExploitation ?? 0) / monthsElapsed
+  // Décaissements négatifs en sortie (convention prévisionnel : tot_enc + tot_dec)
+  const baseValues = useMemo<Record<string, number>>(() => ({
+    // ── Recettes ───────────────────────────────────────────────────────────
+    r_ventes: avgCAMonthHT,                                            // par défaut, on attribue le CA aux ventes (l'utilisateur peut le ventiler)
+    // ── Décaissements (montants négatifs) ──────────────────────────────────
+    d_achat:  -avgAchatsMonthHT,                                       // achats marchandises HT
+    d_salai:  -(masseSalReelle * 0.70),                                // estimation : 70% net / 30% cotisations
+    d_cnps:   -(masseSalReelle * 0.30),
+    // Charges externes diverses calées sur le compte de résultat — l'utilisateur ajuste librement.
+    d_loyer:  -Math.max(0, avgChargesExpMonth * 0.15 - avgAchatsMonthHT * 0.05),
+    d_util:   -Math.max(0, avgChargesExpMonth * 0.05),
+  }), [avgCAMonthHT, avgAchatsMonthHT, avgChargesExpMonth, masseSalReelle])
+
+  // Indicateur cohérence avec la masse salariale réelle pour bannière.
+  const masseSalModele = masseSalReelle > 0 ? masseSalReelle : 8_500_000
   const ecartSal       = masseSalReelle > 0 ? Math.abs(masseSalReelle - masseSalModele) / masseSalModele * 100 : 0
 
   const [horizon,   setHorizon]   = useState<Horizon>('1y')
@@ -592,7 +641,10 @@ export function PrevisionsPage() {
   const columns  = useMemo(() => getColumns(horizon), [horizon])
   const colCount = columns.length
 
-  const generated = useMemo(() => generateMatrix(horizon, scenario, hypotheses), [horizon, scenario, hypotheses])
+  const generated = useMemo(
+    () => generateMatrix(horizon, scenario, hypotheses, baseValues),
+    [horizon, scenario, hypotheses, baseValues],
+  )
 
   const dataMatrix = useMemo(() => {
     const m: Record<string, number[]> = {}
@@ -872,11 +924,30 @@ export function PrevisionsPage() {
         </div>
       </div>
 
+      {/* ── Bandeau « Données pré-remplies » ── */}
+      <div className="shrink-0 rounded-lg px-4 py-2.5 bg-blue-50 border border-blue-200 text-xs text-blue-800 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <span className="font-semibold">📊 Pré-remplissage automatique :</span>
+        <span title="Chiffre d'affaires mensuel moyen YTD (HT)">CA/mois HT : <strong>{fmt(avgCAMonthHT)}</strong></span>
+        <span title="Achats mensuels moyens YTD (HT)">Achats/mois HT : <strong>{fmt(avgAchatsMonthHT)}</strong></span>
+        <span title="Masse salariale brute mensuelle issue du module RH">Masse sal./mois : <strong>{fmt(masseSalReelle)}</strong></span>
+        <span className="ml-auto text-blue-600">Cliquez sur une cellule pour personnaliser</span>
+      </div>
+
       {/* ── Bannière RH ── */}
-      {masseSalReelle > 0 && (
+      {masseSalReelle > 0 && ecartSal > 5 && (
         <div className={`shrink-0 rounded-lg px-4 py-2.5 flex items-center justify-between text-xs border ${ecartSal > 20 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
           <span>👥 <strong>RH — Masse salariale réelle :</strong> {fmt(masseSalReelle)}/mois{' '}<span className="text-gray-500">· Modèle : {fmt(masseSalModele)}</span></span>
-          {ecartSal > 5 && <span className={`font-semibold ${ecartSal > 20 ? 'text-amber-700' : 'text-blue-700'}`}>Écart {ecartSal.toFixed(0)}% — ajustez les hypothèses si nécessaire</span>}
+          <span className={`font-semibold ${ecartSal > 20 ? 'text-amber-700' : 'text-blue-700'}`}>Écart {ecartSal.toFixed(0)}% — ajustez les hypothèses si nécessaire</span>
+        </div>
+      )}
+
+      {/* Affichage du résumé du cashflow 90j (info contextuelle) */}
+      {cashFlow && (
+        <div className="shrink-0 text-[11px] text-gray-500">
+          🔮 Cash-flow 90j (données factures + dettes) :{' '}
+          <span className={cashFlow.summary.netCashFlow >= 0 ? 'text-green-700 font-semibold' : 'text-red-600 font-semibold'}>
+            {fmt(cashFlow.summary.netCashFlow)}
+          </span> de flux net cumulé
         </div>
       )}
 

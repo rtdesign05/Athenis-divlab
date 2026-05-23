@@ -23,7 +23,8 @@ const S = StyleSheet.create({
 const fmt = (v: string | number) => Number(v).toLocaleString('fr-FR') + ' F CFA'
 
 export function ResultatPdf({ cr }: { cr: CompteResultat }) {
-  const resultat = Number(cr.resultatNet)
+  // Le résultat brut (avant IS) est l'indicateur principal du CR backend.
+  const resultat = cr.resultatBrut
 
   return (
     <Document>
@@ -35,9 +36,9 @@ export function ResultatPdf({ cr }: { cr: CompteResultat }) {
         <Text style={S.section}>PRODUITS</Text>
         <View style={S.table}>
           {([
-            ["Chiffre d'affaires total", cr.produits.caTotal],
-            ['Autres produits',           cr.produits.autresProduits],
-          ] as [string, string][]).map(([label, value], i) => (
+            ["Chiffre d'affaires (HT)", cr.produits.chiffreAffaires],
+            ['TVA collectée',           cr.produits.tvaCollectee],
+          ] as [string, number][]).map(([label, value], i) => (
             <View key={label} style={i % 2 === 0 ? S.row : S.rowAlt}>
               <Text style={S.lbl}>{label}</Text>
               <Text style={S.val}>{fmt(value)}</Text>
@@ -45,7 +46,7 @@ export function ResultatPdf({ cr }: { cr: CompteResultat }) {
           ))}
           <View style={S.rowTotal}>
             <Text style={S.lblBold}>TOTAL PRODUITS</Text>
-            <Text style={S.valBold}>{fmt(cr.produits.total)}</Text>
+            <Text style={S.valBold}>{fmt(cr.produits.totalProduits)}</Text>
           </View>
         </View>
 
@@ -53,13 +54,10 @@ export function ResultatPdf({ cr }: { cr: CompteResultat }) {
         <Text style={S.section}>CHARGES</Text>
         <View style={S.table}>
           {([
-            ['Achats marchandises',   cr.charges.achatsMarchandises],
-            ['Services extérieurs',   cr.charges.servicesExterieurs],
-            ['Charges de personnel',  cr.charges.chargesPersonnel],
-            ['Impôts et taxes',       cr.charges.impots],
-            ['Dotations amortiss.',   cr.charges.dotations],
-            ['Autres charges',        cr.charges.autresCharges],
-          ] as [string, string][]).map(([label, value], i) => (
+            ["Achats & charges d'exploitation", cr.charges.chargesExploitation],
+            ['  dont achats fournisseurs (HT)', cr.charges.chargesAchats],
+            ['Masse salariale',                 cr.charges.masseSalariale],
+          ] as [string, number][]).map(([label, value], i) => (
             <View key={label} style={i % 2 === 0 ? S.row : S.rowAlt}>
               <Text style={S.lbl}>{label}</Text>
               <Text style={S.val}>{fmt(value)}</Text>
@@ -67,17 +65,17 @@ export function ResultatPdf({ cr }: { cr: CompteResultat }) {
           ))}
           <View style={S.rowTotal}>
             <Text style={S.lblBold}>TOTAL CHARGES</Text>
-            <Text style={S.valBold}>{fmt(cr.charges.total)}</Text>
+            <Text style={S.valBold}>{fmt(cr.charges.chargesTotal)}</Text>
           </View>
         </View>
 
-        {/* Résultat net */}
+        {/* Résultat brut (avant IS) */}
         <View style={{ ...S.resultat, backgroundColor: resultat >= 0 ? '#E8F5E9' : '#FFEBEE' }}>
           <Text style={{ flex: 1, fontSize: 10, fontFamily: 'Helvetica-Bold', color: resultat >= 0 ? GREEN : '#CE1126' }}>
-            RÉSULTAT NET {resultat >= 0 ? 'BÉNÉFICIAIRE' : 'DÉFICITAIRE'}
+            RÉSULTAT BRUT {resultat >= 0 ? 'BÉNÉFICIAIRE' : 'DÉFICITAIRE'}
           </Text>
           <Text style={{ width: 120, textAlign: 'right', fontSize: 11, fontFamily: 'Helvetica-Bold', color: resultat >= 0 ? GREEN : '#CE1126' }}>
-            {fmt(cr.resultatNet)}
+            {fmt(resultat)}
           </Text>
         </View>
 

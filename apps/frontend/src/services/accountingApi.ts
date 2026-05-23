@@ -8,19 +8,24 @@ export interface Bilan {
   year: number
 }
 
+/** Compte de résultat retourné par /accounting/compte-de-resultat.
+ *  Conforme SYSCOHADA art. 38 / PCG art. 512-1 : produits HT (CA hors TVA
+ *  collectée) et charges HT (chargesExploitation inclut les achats postés). */
 export interface CompteResultat {
-  produits: { caTotal: string; autresProduits: string; total: string }
-  charges: {
-    achatsMarchandises: string
-    servicesExterieurs: string
-    chargesPersonnel: string
-    impots: string
-    dotations: string
-    autresCharges: string
-    total: string
-  }
-  resultatNet: string
   year: number
+  produits: {
+    chiffreAffaires: number
+    tvaCollectee:    number
+    totalProduits:   number
+  }
+  charges: {
+    chargesExploitation: number              // expenses + achats postés HT
+    chargesAchats:       number              // détail : achats postés HT seulement
+    masseSalariale:      number
+    chargesTotal:        number
+  }
+  resultatBrut: number
+  margeNette:   number
 }
 
 export interface GrandLivreEntry {
