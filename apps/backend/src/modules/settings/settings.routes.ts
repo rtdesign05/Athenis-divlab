@@ -55,6 +55,11 @@ const UpdateCompanySchema = z.object({
   paymentTerms:     optInt,
   lateInterestRate: optNum,
   discountRate:     optNum,
+  // Localisation : locale BCP-47 (ex: 'fr-FR', 'en-US'). Détermine aussi la
+  // langue d'interface côté frontend (fr-* → français, en-* → anglais).
+  locale:           z.string().min(2).max(10).optional(),
+  timezone:         z.string().min(1).max(64).optional(),
+  accountNumberLength: z.number().int().refine(n => [3,4,5,6,7,9].includes(n)).optional(),
 })
 
 const PermissionLevelSchema = z.enum(['none', 'read', 'write', 'admin'])

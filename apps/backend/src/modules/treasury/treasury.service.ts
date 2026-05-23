@@ -36,20 +36,59 @@ export async function listEntries(companyId: string, query: ListTreasuryInput, u
 
 // Soldes agrégés par compte (sourceName) — pour TresoreriePage
 export async function getBalances(companyId: string, user?: JwtPayload) {
-  const where: Prisma.TreasuryEntryWhereInput = {
+  // Le solde réel d'un compte de trésorerie = solde initial saisi à la
+  // création de la source (banque, caisse, mobile money) + somme des
+  // mouvements (TreasuryEntry). Les anciennes implémentations n'agrégeaient
+  // que les TreasuryEntry → les nouveaux comptes créés depuis le module
+  // Gestion (avec solde initial > 0) n'apparaissaient pas sur le dashboard.
+  const baseWhere = {
     companyId,
     ...(user ? getAgenceFilter(user) : {}),
+  } as const
+
+  const [sources, entriesAgg] = await Promise.all([
+    prisma.treasurySource.findMany({
+      where: { ...baseWhere, isActive: true },
+      select: { type: true, nom: true, solde: true },
+    }),
+    prisma.treasuryEntry.groupBy({
+      by:    ['sourceName', 'sourceType'],
+      where: baseWhere,
+      _sum:  { montant: true },
+    }),
+  ])
+
+  // Index des mouvements par (type|nom) — clé composite car le même nom peut
+  // exister sur deux types différents (ex: « Wave » mobile_money et caisse).
+  const movementByKey = new Map<string, number>()
+  for (const r of entriesAgg) {
+    movementByKey.set(`${r.sourceType}|${r.sourceName}`, Number(r._sum.montant ?? 0))
   }
-  const agg = await prisma.treasuryEntry.groupBy({
-    by:    ['sourceName', 'sourceType'],
-    where,
-    _sum:  { montant: true },
+
+  // 1) D'abord toutes les sources actives (solde initial + mouvements)
+  const out = sources.map(s => {
+    const key  = `${s.type}|${s.nom}`
+    const move = movementByKey.get(key) ?? 0
+    movementByKey.delete(key)
+    return {
+      sourceName: s.nom,
+      sourceType: s.type as Prisma.TreasuryEntryGroupByOutputType['sourceType'],
+      solde:      Number(s.solde ?? 0) + move,
+    }
   })
-  return agg.map(r => ({
-    sourceName: r.sourceName,
-    sourceType: r.sourceType,
-    solde:      Number(r._sum.montant ?? 0),
-  }))
+
+  // 2) Puis les mouvements « orphelins » dont la source n'existe plus
+  //    (ou n'a jamais été créée en TreasurySource) — rétro-compat.
+  for (const [key, sum] of movementByKey) {
+    const [type, name] = key.split('|', 2) as [string, string]
+    out.push({
+      sourceName: name,
+      sourceType: type as Prisma.TreasuryEntryGroupByOutputType['sourceType'],
+      solde:      sum,
+    })
+  }
+
+  return out
 }
 
 // ── Mutations ────────────────────────────────────────────────────────────────

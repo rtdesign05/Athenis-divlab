@@ -1,10 +1,12 @@
 import { useMemo }          from 'react'
 import { Link }             from 'react-router-dom'
+import { useQuery }         from '@tanstack/react-query'
 import { useCurrency }      from '@/hooks/useCurrency'
 import { useAuth }          from '@/features/auth/useAuth'
 import { useTresorerie }    from '@/contexts/TresorerieContext'
 import { useGestion }       from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
+import { getStats as getPurchaseStats } from '@/services/purchasesApi'
 import { PeriodBar, usePeriod, MONTH_LABELS } from '@/shared/components/ui/PeriodBar'
 
 // ── Styles statut ─────────────────────────────────────────────────────────────
@@ -71,6 +73,16 @@ export function GestionOverviewPage() {
     return 'cette semaine'
   }, [periodMode, selectedYear, selectedMonth])
 
+  // ── Stats achats (commandes + factures d'achat) — alimenté par l'API
+  // purchaseOrderStats qui inclut ORDER + INVOICE documentTypes.
+  // Évite la divergence avec la page Accueil et corrige le bug où les
+  // factures d'achat saisies n'apparaissaient pas dans ce KPI.
+  const { data: purchaseStats } = useQuery({
+    queryKey: ['purchases', 'stats', periodFrom, periodTo] as const,
+    queryFn:  () => getPurchaseStats({ from: periodFrom, to: periodTo }),
+    staleTime: 60_000,
+  })
+
   // ── Filtre commandes et achats sur la période ────────────────────────────────
   const inPeriod = (date: string) => date >= periodFrom && date <= periodTo
 
@@ -120,7 +132,10 @@ export function GestionOverviewPage() {
   const caFactures       = facturesPeriode.reduce((s, f) => s + f.montantHT, 0)
   const caPeriode        = caCommandes + caFactures
   const commandesActives = commandesPeriode.filter(v => v.statut === 'En cours').length
-  const achatsPeriodeCA  = achatsPeriode.reduce((s, a) => s + a.montant, 0)
+  // Source de vérité côté API (commandes ORDER + factures INVOICE non annulées).
+  // Le fallback sur le contexte couvre l'état de chargement initial.
+  const achatsPeriodeCA  = purchaseStats?.periodMontantTTC ?? achatsPeriode.reduce((s, a) => s + a.montant, 0)
+  const achatsPeriodeNb  = purchaseStats?.periodCount      ?? achatsPeriode.length
   const enAttente        = achatsPeriode.filter(a => a.statut === 'En attente' || a.statut === 'En cours').length
   const encours          = commandesPeriode.filter(v => v.statut === 'En cours').reduce((s, v) => s + v.montant, 0)
 
@@ -218,7 +233,9 @@ export function GestionOverviewPage() {
         <KpiCard
           label={`Achats — ${periodLabel}`}
           value={fmt(achatsPeriodeCA)}
-          sub="Dépenses fournisseurs"
+          sub={achatsPeriodeNb > 0
+            ? `${achatsPeriodeNb} pièce${achatsPeriodeNb > 1 ? 's' : ''} (commandes + factures)`
+            : 'Aucun achat sur la période'}
           accent="amber"
         />
         <KpiCard

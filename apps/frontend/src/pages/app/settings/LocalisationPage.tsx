@@ -68,6 +68,9 @@ export function LocalisationPage() {
   const [uiLang, setUiLang]     = useState<'fr' | 'en'>('fr')
   const [savingLength, setSavingLength] = useState(false)
   const [lengthSaved,  setLengthSaved]  = useState(false)
+  const [savingLang,   setSavingLang]   = useState(false)
+  const [langSaved,    setLangSaved]    = useState(false)
+  const [langError,    setLangError]    = useState<string | null>(null)
 
   async function loadData() {
     setLoading(true)
@@ -75,6 +78,9 @@ export function LocalisationPage() {
     try {
       const data = await settingsApi.getCompany()
       setCompany(data)
+      // Initialise la langue d'interface depuis la locale stockée en base.
+      // Convention BCP-47 : fr-* → français, en-* → anglais.
+      setUiLang(data.locale?.startsWith('en') ? 'en' : 'fr')
     } catch {
       setError('Impossible de charger les paramètres de localisation.')
     } finally {
@@ -83,6 +89,26 @@ export function LocalisationPage() {
   }
 
   useEffect(() => { loadData() }, [])
+
+  async function saveLang(lang: 'fr' | 'en') {
+    if (lang === uiLang) return
+    setSavingLang(true)
+    setLangError(null)
+    try {
+      // Mapping langue → locale BCP-47 (fr-FR pour France/OHADA, en-US par défaut anglais)
+      const locale = lang === 'fr' ? 'fr-FR' : 'en-US'
+      const updated = await settingsApi.updateCompany({ locale })
+      setCompany(updated)
+      setUiLang(lang)
+      qc.invalidateQueries({ queryKey: ['company'] })
+      setLangSaved(true)
+      setTimeout(() => setLangSaved(false), 2500)
+    } catch {
+      setLangError("Impossible d'enregistrer la langue.")
+    } finally {
+      setSavingLang(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -218,11 +244,17 @@ export function LocalisationPage() {
 
       {/* ── SECTION 3 : Langue de l'interface ── */}
       <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-4">
-        <h2 className="text-sm font-semibold text-gray-800 mb-3">Langue de l'interface</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-gray-800">Langue de l'interface</h2>
+          {savingLang && <span className="text-xs text-gray-400">Sauvegarde…</span>}
+          {langSaved && !savingLang && <span className="text-xs text-forest-600 font-medium">✓ Enregistré</span>}
+        </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setUiLang('fr')}
-            className={`rounded-lg px-5 py-2 text-sm font-medium transition-colors ${
+            type="button"
+            disabled={savingLang}
+            onClick={() => saveLang('fr')}
+            className={`rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
               uiLang === 'fr'
                 ? 'bg-forest-900 text-white'
                 : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
@@ -231,8 +263,10 @@ export function LocalisationPage() {
             🇫🇷 Français
           </button>
           <button
-            onClick={() => setUiLang('en')}
-            className={`rounded-lg px-5 py-2 text-sm font-medium transition-colors ${
+            type="button"
+            disabled={savingLang}
+            onClick={() => saveLang('en')}
+            className={`rounded-lg px-5 py-2 text-sm font-medium transition-colors disabled:opacity-60 ${
               uiLang === 'en'
                 ? 'bg-forest-900 text-white'
                 : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
@@ -243,9 +277,10 @@ export function LocalisationPage() {
         </div>
         <p className="text-xs text-gray-400">
           {uiLang === 'fr'
-            ? "L\u2019interface est affich\u00e9e en fran\u00e7ais."
-            : 'The interface is displayed in English.'}
+            ? "L\u2019interface est affich\u00e9e en fran\u00e7ais. La traduction compl\u00e8te en anglais est en cours."
+            : 'The interface is displayed in English. Full English UI translation is in progress.'}
         </p>
+        {langError && <p className="text-xs text-red-600">{langError}</p>}
       </div>
 
       {/* ── SECTION 4 : Modification du pays ── */}

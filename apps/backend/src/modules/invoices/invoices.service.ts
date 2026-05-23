@@ -308,7 +308,7 @@ export async function dashboardStats(
     }),
     prisma.invoice.aggregate({
       where: { companyId, ...af, status: { in: [...SALES_STATUSES] }, issuedAt: { gte: prevFrom, lte: prevTo } },
-      _sum: { amountTTC: true },
+      _sum: { amountTTC: true, amountHT: true },
     }),
     prisma.expense.aggregate({
       where: { companyId, ...af, date: { gte: from, lte: to } },
@@ -335,8 +335,11 @@ export async function dashboardStats(
     }),
   ])
 
-  const revenueCurr   = Number(salesCurr._sum?.amountTTC   ?? 0)
-  const revenuePrev   = Number(salesPrev._sum?.amountTTC   ?? 0)
+  // Chiffre d'affaires = montant HT (conforme SYSCOHADA art. 38 / PCG France
+  // art. 512-1 : le CA est défini hors taxes récupérables). La TVA n'est pas
+  // un produit pour l'entreprise — elle est collectée pour le compte de l'État.
+  const revenueCurr   = Number(salesCurr._sum?.amountHT  ?? 0)
+  const revenuePrev   = Number(salesPrev._sum?.amountHT  ?? 0)
   const revenueGrowth = revenuePrev > 0 ? ((revenueCurr - revenuePrev) / revenuePrev) * 100 : null
   const cashedAmount  = Number(cashedCurr._sum?.amountTTC ?? 0)
   const totalExpenses = Number(expenses._sum?.amount  ?? 0)
@@ -399,15 +402,40 @@ export async function cashFlowForecast(companyId: string, user?: JwtPayload) {
   const end90  = new Date(now.getTime() + 90 * 86_400_000)
   const af     = user ? getAgenceFilter(user) : {}
 
-  const [pendingInvoices, recentExpenses] = await Promise.all([
+  // Sources gestion :
+  // - Entrées attendues : factures de vente SENT/OVERDUE avec dueAt dans 90j
+  //   (encaissement TTC à la date d'échéance — convention conservatrice).
+  // - Sorties attendues : factures d'achat SENT/RECEIVED/PARTIAL postées
+  //   (= dettes fournisseurs comptabilisées) avec dueDate dans 90j.
+  // - Si pas d'échéances futures explicites (cas typique en démarrage), on
+  //   complète avec la moyenne hebdo des dépenses des 90 derniers jours
+  //   (proxy comptable des charges fixes — loyers, paie, services).
+  // Délai de paiement standard de l'entreprise (jours) — proxy pour estimer
+  // l'échéance d'une facture d'achat quand le modèle n'a pas de dueDate
+  // explicite. À défaut, 30 jours (norme commerciale OHADA / PCG).
+  const companyForTerms = await prisma.company.findUnique({
+    where: { id: companyId }, select: { paymentTerms: true },
+  })
+  const supplierPaymentDays = companyForTerms?.paymentTerms ?? 30
+
+  const [pendingInvoices, pendingPurchases, recentExpenses] = await Promise.all([
     prisma.invoice.findMany({
       where: {
         companyId,
         ...af,
         status: { in: ['SENT', 'OVERDUE'] },
-        dueAt: { lte: end90 },
+        dueAt:  { lte: end90 },
       },
       select: { dueAt: true, amountTTC: true },
+    }),
+    prisma.purchaseOrder.findMany({
+      where: {
+        companyId,
+        ...af,
+        posted: true,
+        status: { in: ['SENT', 'RECEIVED', 'PARTIAL'] },
+      },
+      select: { date: true, montantTTC: true },
     }),
     prisma.expense.findMany({
       where: { companyId, ...af, date: { gte: new Date(now.getTime() - 90 * 86_400_000) } },
@@ -436,12 +464,24 @@ export async function cashFlowForecast(companyId: string, user?: JwtPayload) {
       })
       .reduce((s, inv) => s + Number(inv.amountTTC), 0)
 
+    const purchaseExpense = pendingPurchases
+      .filter((po) => {
+        // Échéance estimée = date facture d'achat + délai paiement standard
+        const due = new Date(new Date(po.date).getTime() + supplierPaymentDays * 86_400_000)
+        return due >= weekStart && due < weekEnd
+      })
+      .reduce((s, po) => s + Number(po.montantTTC), 0)
+
+    // Dépense hebdo = dettes fournisseurs échues sur la semaine, OU à défaut
+    // la moyenne des charges récurrentes (proxy si pas de dettes explicites).
+    const expenses = purchaseExpense > 0 ? purchaseExpense : avgWeeklyExpense
+
     weeks.push({
       label:            `S${w + 1}`,
       startDate:        weekStart.toISOString().slice(0, 10),
       expectedIncome:   Math.round(income),
-      expectedExpenses: Math.round(avgWeeklyExpense),
-      balance:          Math.round(income - avgWeeklyExpense),
+      expectedExpenses: Math.round(expenses),
+      balance:          Math.round(income - expenses),
     })
   }
 
