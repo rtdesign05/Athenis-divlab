@@ -35,6 +35,10 @@ export function useCompteResultat(year?: number) {
   return useQuery({
     queryKey: ACCOUNTING_KEYS.compteResultat(year),
     queryFn:  () => accountingApi.compteResultat(year),
+    // Le compte de résultat alimente les SIG du tableau de bord ; doit
+    // refléter immédiatement toute facture émise / achat comptabilisé.
+    staleTime:      0,
+    refetchOnMount: 'always',
   })
 }
 

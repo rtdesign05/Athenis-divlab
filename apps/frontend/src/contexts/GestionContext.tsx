@@ -936,7 +936,9 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       // Invalide les vues consommatrices (Accueil + Vue d'ensemble Gestion).
       // ['purchases'] couvre ['purchases','stats',...] — sinon la stats reste
       // stale 60s et la facture nouvellement créée n'apparaît pas dans le KPI.
-      ;['purchases', 'dashboard', 'invoices', 'fiscal-years'].forEach(k =>
+      // 'accounting' rafraîchit le compte de résultat (SIG) qui inclut désormais
+      // les achats comptabilisés dans les charges d'exploitation.
+      ;['purchases', 'dashboard', 'invoices', 'fiscal-years', 'accounting'].forEach(k =>
         qc.invalidateQueries({ queryKey: [k] }),
       )
       return realFa
@@ -1105,8 +1107,9 @@ export function GestionProvider({ children }: { children: ReactNode }) {
       const achat = apiOrderToAchat(order)
       achatDbIds.current[achat.id] = order.id
       setAchats(prev => [achat, ...prev])
-      // Rafraîchit les KPI achats sur Accueil + Vue d'ensemble (sinon staleTime 60s).
-      ;['purchases', 'dashboard'].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+      // Rafraîchit les KPI achats sur Accueil + Vue d'ensemble (sinon staleTime 60s)
+      // + le compte de résultat (SIG inclut désormais les achats postés).
+      ;['purchases', 'dashboard', 'accounting'].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
       return achat
     } catch (err) {
       console.error('addAchat API error', err)
@@ -1330,7 +1333,7 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     if (dbId && status) {
       purchasesApi.updateOrder(dbId, { status })
         .then(() => {
-          ;['purchases', 'dashboard'].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+          ;['purchases', 'dashboard', 'accounting'].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
         })
         .catch(err => console.error('updateAchatStatut API error', err))
     }

@@ -62,14 +62,26 @@ export async function getCompteDeResultat(companyId: string, year: number, user?
   const end   = new Date(`${year}-12-31T23:59:59.999Z`)
   const af    = user ? getAgenceFilter(user) : {}
 
-  const [invoiceTotals, expenseTotals, salaryTotals] = await Promise.all([
+  // Conformément à SYSCOHADA art. 38 / PCG art. 512-1 :
+  // - CA : produits reconnus à la date d'émission (issuedAt) — SENT/PAID/OVERDUE.
+  //   Le statut DRAFT (brouillon) et CANCELLED (annulée) sont exclus.
+  // - Charges d'exploitation : dépenses du compte Expense + achats fournisseurs
+  //   comptabilisés (PurchaseOrder posted=true). Les achats sont reconnus en HT
+  //   (la TVA est un crédit déductible 4452, pas une charge).
+  // - Statut cohérent avec dashboardStats pour que CA Accueil = CA SIG.
+  const [invoiceTotals, expenseTotals, purchaseTotals, salaryTotals] = await Promise.all([
     prisma.invoice.aggregate({
-      where: { companyId, ...af, status: 'PAID', issuedAt: { gte: start, lte: end } },
+      where: { companyId, ...af, status: { in: ['SENT', 'PAID', 'OVERDUE'] }, issuedAt: { gte: start, lte: end } },
       _sum: { amountHT: true, amountTTC: true },
     }),
     prisma.expense.aggregate({
       where: { companyId, ...af, date: { gte: start, lte: end } },
       _sum: { amount: true },
+    }),
+    // Achats comptabilisés (posted=true) sur l'exercice — montants HT.
+    prisma.purchaseOrder.aggregate({
+      where: { companyId, ...af, posted: true, date: { gte: start, lte: end } },
+      _sum: { montantHT: true },
     }),
     // La masse salariale est une donnée entreprise (pas par agence)
     prisma.employee.aggregate({
@@ -80,7 +92,8 @@ export async function getCompteDeResultat(companyId: string, year: number, user?
 
   const chiffreAffaires     = toNum(invoiceTotals._sum?.amountHT)
   const tvaCollectee        = toNum(invoiceTotals._sum?.amountTTC) - chiffreAffaires
-  const chargesExploitation = toNum(expenseTotals._sum?.amount)
+  const chargesAchats       = toNum(purchaseTotals._sum?.montantHT)
+  const chargesExploitation = toNum(expenseTotals._sum?.amount) + chargesAchats
   const masseSalariale      = toNum(salaryTotals._sum?.salaireBrut)
   const chargesTotal        = chargesExploitation + masseSalariale
   const resultatBrut        = chiffreAffaires - chargesTotal
@@ -88,7 +101,7 @@ export async function getCompteDeResultat(companyId: string, year: number, user?
   return {
     year,
     produits: { chiffreAffaires, tvaCollectee, totalProduits: chiffreAffaires },
-    charges:  { chargesExploitation, masseSalariale, chargesTotal },
+    charges:  { chargesExploitation, chargesAchats, masseSalariale, chargesTotal },
     resultatBrut,
     margeNette: chiffreAffaires > 0 ? (resultatBrut / chiffreAffaires) * 100 : 0,
   }
