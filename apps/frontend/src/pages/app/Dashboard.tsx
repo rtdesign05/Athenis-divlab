@@ -2,6 +2,7 @@ import { useState, useMemo }      from 'react'
 import { PeriodBar, MONTH_LABELS, getMonday, type PeriodMode } from '@/shared/components/ui/PeriodBar'
 import { useQuery }               from '@tanstack/react-query'
 import { useDashboardStats, useCashFlow, useReminders } from '@/hooks/useBilling'
+import { getStats as getPurchaseStats } from '@/services/purchasesApi'
 import { useLeaveStats, useEmployeeStats }              from '@/hooks/useHr'
 import { useFiscalDashboard }                          from '@/hooks/useFiscal'
 import { useEsgScore }                                 from '@/hooks/useEsg'
@@ -298,6 +299,12 @@ export function AppDashboard() {
   const { data: reminders }                = useReminders()
   const { totalSolde }                     = useTresorerie()
   const { data: cr,       isLoading: crL } = useCompteResultat(selectedYear)
+  // Achats et dettes fournisseurs — même période que les KPIs ventes
+  const { data: purchaseStats, isLoading: psL } = useQuery({
+    queryKey: ['purchases', 'stats', periodParams.from, periodParams.to] as const,
+    queryFn:  () => getPurchaseStats(periodParams),
+    staleTime: 60_000,
+  })
 
   const firstName   = (user as { firstName?: string } | null)?.firstName || user?.email?.split('@')[0] || 'vous'
   const companyName = (user as { companyName?: string } | null)?.companyName ?? null
@@ -371,7 +378,7 @@ export function AppDashboard() {
         />
 
         {/* ── KPI row ─────────────────────────────────────────────────────── */}
-        <div className="shrink-0 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="shrink-0 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <Kpi
             label={periodMode === 'full' ? 'CA exercice' : periodMode === 'month' ? `CA — ${MONTH_LABELS[selectedMonth - 1]}` : 'CA semaine'}
             value={stL ? '…' : fmt(stats?.revenue.current ?? 0)}
@@ -383,6 +390,21 @@ export function AppDashboard() {
                   : undefined
             }
             accent={stats?.revenue.growth != null && stats.revenue.growth >= 0 ? 'green' : 'red'}
+          />
+          <Kpi
+            label={periodMode === 'full' ? 'Achats exercice' : periodMode === 'month' ? `Achats — ${MONTH_LABELS[selectedMonth - 1]}` : 'Achats semaine'}
+            value={psL ? '…' : fmt(purchaseStats?.periodMontantTTC ?? 0)}
+            sub={purchaseStats?.periodCount
+              ? `${purchaseStats.periodCount} commande${purchaseStats.periodCount > 1 ? 's' : ''}`
+              : 'Aucun achat sur la période'}
+          />
+          <Kpi
+            label="Dettes fournisseurs"
+            value={psL ? '…' : fmt(purchaseStats?.dettesFournisseurs ?? 0)}
+            sub={purchaseStats?.dettesCount
+              ? `${purchaseStats.dettesCount} facture${purchaseStats.dettesCount > 1 ? 's' : ''} à régler`
+              : 'Aucune dette'}
+            {...(purchaseStats?.dettesFournisseurs ? { accent: 'red' as const } : {})}
           />
           <Kpi
             label="Marge brute"

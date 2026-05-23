@@ -21,7 +21,13 @@ purchasesRouter.get(
   checkModule('gestion', 'read'),
   async (req, res, next) => {
     try {
-      const data = await svc.purchaseOrderStats(getCompanyId(req), req.user)
+      const from = req.query.from ? new Date(String(req.query.from)) : undefined
+      const to   = req.query.to   ? new Date(String(req.query.to))   : undefined
+      const opts = {
+        ...(from && !isNaN(from.getTime()) ? { from } : {}),
+        ...(to   && !isNaN(to.getTime())   ? { to }   : {}),
+      }
+      const data = await svc.purchaseOrderStats(getCompanyId(req), req.user, opts)
       res.json({ success: true, data })
     } catch (e) { next(e) }
   },

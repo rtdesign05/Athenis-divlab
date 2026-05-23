@@ -260,13 +260,24 @@ export async function deletePurchaseOrder(companyId: string, id: string) {
   await prisma.purchaseOrder.delete({ where: { id } })
 }
 
-export async function purchaseOrderStats(companyId: string, user?: JwtPayload) {
+export async function purchaseOrderStats(
+  companyId: string,
+  user?: JwtPayload,
+  opts: { from?: Date; to?: Date } = {},
+) {
   const baseWhere: Prisma.PurchaseOrderWhereInput = {
     companyId,
     ...(user ? getAgenceFilter(user) : {}),
   }
+  // Filtre date : si fourni, applique sur baseWhere.date
+  const dateFilter: Prisma.PurchaseOrderWhereInput = (opts.from || opts.to)
+    ? { date: {
+        ...(opts.from ? { gte: opts.from } : {}),
+        ...(opts.to   ? { lte: opts.to }   : {}),
+      }}
+    : {}
 
-  const [total, draft, sent, received, partial, cancelled, amountAgg] = await Promise.all([
+  const [total, draft, sent, received, partial, cancelled, amountAgg, periodAgg, dettesAgg] = await Promise.all([
     prisma.purchaseOrder.count({ where: baseWhere }),
     prisma.purchaseOrder.count({ where: { ...baseWhere, status: 'DRAFT' } }),
     prisma.purchaseOrder.count({ where: { ...baseWhere, status: 'SENT' } }),
@@ -277,11 +288,34 @@ export async function purchaseOrderStats(companyId: string, user?: JwtPayload) {
       where:  { ...baseWhere, status: { not: 'CANCELLED' } },
       _sum:   { montantTTC: true },
     }),
+    // Total achats de la période demandée (status non annulés)
+    prisma.purchaseOrder.aggregate({
+      where:  { ...baseWhere, ...dateFilter, status: { not: 'CANCELLED' } },
+      _sum:   { montantTTC: true },
+      _count: true,
+    }),
+    // Dettes fournisseurs : commandes validées (SENT/RECEIVED/PARTIAL),
+    // posted=true (comptabilisées en charge donc créant la dette 401),
+    // non encore réglées (paidAt null sur la pièce comptable associée).
+    // Approximation : on prend les RECEIVED/SENT/PARTIAL postés.
+    prisma.purchaseOrder.aggregate({
+      where:  {
+        ...baseWhere,
+        posted: true,
+        status: { in: ['SENT', 'RECEIVED', 'PARTIAL'] },
+      },
+      _sum:   { montantTTC: true },
+      _count: true,
+    }),
   ])
 
   return {
     total,
     byStatus: { draft, sent, received, partial, cancelled },
     totalMontantTTC: Number(amountAgg._sum.montantTTC ?? 0),
+    periodMontantTTC: Number(periodAgg._sum.montantTTC ?? 0),
+    periodCount:      periodAgg._count,
+    dettesFournisseurs: Number(dettesAgg._sum.montantTTC ?? 0),
+    dettesCount:        dettesAgg._count,
   }
 }

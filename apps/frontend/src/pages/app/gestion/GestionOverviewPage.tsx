@@ -95,9 +95,20 @@ export function GestionOverviewPage() {
     (f.statut === 'Envoyée' || f.statut === 'Payée' || f.statut === 'En retard'),
   )
 
-  // Pour les listes récentes : les 5 plus récentes (toutes périodes confondues)
-  const commandesRecentes = allVisibleCommandes.slice(0, 5)
-  const achatsRecents     = allVisibleAchats.slice(0, 5)
+  // Pour les listes récentes : fusion commandes + factures, triées par date,
+  // top 5. Une "vente" peut être une commande client OU une facture directe.
+  type VenteRecente = { id: string; client: string; date: string; montant: number; statut: string; type: 'commande' | 'facture' }
+  const ventesRecentes: VenteRecente[] = [
+    ...allVisibleCommandes.map(c => ({
+      id: c.id, client: c.client, date: c.date, montant: c.montant, statut: c.statut, type: 'commande' as const,
+    })),
+    ...visibleFactures.map(f => ({
+      id: f.id, client: f.client, date: f.date, montant: f.montantHT, statut: f.statut, type: 'facture' as const,
+    })),
+  ]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5)
+  const achatsRecents = allVisibleAchats.slice(0, 5)
 
   // ── KPIs ────────────────────────────────────────────────────────────────────
   const tresors          = agenceNom ? balances.filter(b => b.agence === agenceNom) : balances
@@ -236,16 +247,17 @@ export function GestionOverviewPage() {
             </Link>
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-50">
-            {commandesRecentes.length === 0
+            {ventesRecentes.length === 0
               ? <p className="px-4 py-6 text-center text-sm text-gray-400">Aucune vente pour cette agence</p>
-              : commandesRecentes.map(v => (
-                <div key={v.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
+              : ventesRecentes.map(v => (
+                <div key={`${v.type}-${v.id}`} className="px-4 py-2.5 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-mono text-gray-400 shrink-0">{v.id}</span>
                       <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${STATUT_VENTE[v.statut] ?? 'bg-gray-100 text-gray-600'}`}>
                         {v.statut}
                       </span>
+                      {v.type === 'facture' && <span className="shrink-0 text-[9px] text-gray-400">📄</span>}
                     </div>
                     <p className="text-sm text-gray-700 truncate mt-0.5">{v.client}</p>
                     <p className="text-[10px] text-gray-400">{new Date(v.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</p>

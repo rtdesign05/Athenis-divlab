@@ -121,3 +121,21 @@ export function updateOrder(dbId: string, payload: UpdateOrderPayload) {
 export function deleteOrder(dbId: string) {
   return api.delete(`/purchases/${dbId}`)
 }
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+export interface PurchaseStats {
+  total: number
+  byStatus: { draft: number; sent: number; received: number; partial: number; cancelled: number }
+  totalMontantTTC: number
+  periodMontantTTC: number
+  periodCount: number
+  dettesFournisseurs: number
+  dettesCount: number
+}
+
+export function getStats(params?: { from?: string; to?: string }) {
+  return api
+    .get<{ success: true; data: PurchaseStats }>('/purchases/stats', { params })
+    .then(r => r.data.data)
+}
