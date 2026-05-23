@@ -52,7 +52,7 @@ function KpiCard({ label, value, sub, accent }: {
 export function GestionOverviewPage() {
   const { fmt, currencyCode, defaultVatRate } = useCurrency()
   const { user }                              = useAuth()
-  const { commandes: allCommandes, achats: allAchats } = useGestion()
+  const { commandes: allCommandes, achats: allAchats, facturesVentes: allFactures } = useGestion()
   const { balances, totalSolde }              = useTresorerie()
   const { agences, country }                  = useCompanySettings()
 
@@ -86,6 +86,15 @@ export function GestionOverviewPage() {
   const commandesPeriode = allVisibleCommandes.filter(v => inPeriod(v.date))
   const achatsPeriode    = allVisibleAchats.filter(a => inPeriod(a.date))
 
+  // Factures de vente visibles par agence + période. Le CA est calculé sur les
+  // factures Envoyée / Payée / En retard (conforme SYSCOHADA — reconnaissance
+  // à l'émission). Les brouillons sont exclus comme dans le tableau de bord.
+  const visibleFactures = agenceNom ? allFactures.filter(f => f.agence === agenceNom) : allFactures
+  const facturesPeriode = visibleFactures.filter(f =>
+    inPeriod(f.date) &&
+    (f.statut === 'Envoyée' || f.statut === 'Payée' || f.statut === 'En retard'),
+  )
+
   // Pour les listes récentes : les 5 plus récentes (toutes périodes confondues)
   const commandesRecentes = allVisibleCommandes.slice(0, 5)
   const achatsRecents     = allVisibleAchats.slice(0, 5)
@@ -93,7 +102,12 @@ export function GestionOverviewPage() {
   // ── KPIs ────────────────────────────────────────────────────────────────────
   const tresors          = agenceNom ? balances.filter(b => b.agence === agenceNom) : balances
   const tresoNette       = tresors.reduce((s, t) => s + t.solde, 0)
-  const caPeriode        = commandesPeriode.reduce((s, v) => s + v.montant, 0)
+  // CA = commandes (montant prévisionnel) + factures émises (montant facturé).
+  // Inclut les deux sources car certaines ventes passent par commande, d'autres
+  // directement par facture sans commande préalable.
+  const caCommandes      = commandesPeriode.reduce((s, v) => s + v.montant, 0)
+  const caFactures       = facturesPeriode.reduce((s, f) => s + f.montantHT, 0)
+  const caPeriode        = caCommandes + caFactures
   const commandesActives = commandesPeriode.filter(v => v.statut === 'En cours').length
   const achatsPeriodeCA  = achatsPeriode.reduce((s, a) => s + a.montant, 0)
   const enAttente        = achatsPeriode.filter(a => a.statut === 'En attente' || a.statut === 'En cours').length

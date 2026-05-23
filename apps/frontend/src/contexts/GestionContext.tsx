@@ -569,7 +569,7 @@ interface GestionContextValue {
   deleteFournisseur(id: string): void
   updateCommandeStatut(id: string, statut: CommandeStatut): void
   updateAchatStatut(id: string, statut: AchatStatut): void
-  updateFactureVenteStatut(id: string, statut: FactureVenteStatut): void
+  updateFactureVenteStatut(id: string, statut: FactureVenteStatut): Promise<void>
   updateBLStatut(id: string, statut: BLStatut): void
   updateRetourStatut(id: string, statut: RetourStatut): void
   updateFactureAchatStatut(id: string, statut: FactureAchatStatut): void
@@ -1308,26 +1308,39 @@ export function GestionProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  function updateFactureVenteStatut(id: string, statut: FactureVenteStatut) {
+  async function updateFactureVenteStatut(id: string, statut: FactureVenteStatut): Promise<void> {
+    // Sauvegarde du statut précédent pour rollback en cas d'échec API
+    const previousStatut = facturesVentes.find(f => f.id === id)?.statut
     setFacturesVentes(prev => prev.map(f => f.id === id ? { ...f, statut } : f))
+
     const dbId  = invoiceDbIds.current[id]
     const status = invoicesApi.STATUT_TO_STATUS[statut]
-    if (dbId && status) {
-      invoicesApi.updateInvoiceStatus(dbId, status)
-        .then(() => {
-          // Le passage en SENT/PAID déclenche la comptabilisation (postSaleInvoice)
-          // côté backend → on rafraîchit toutes les vues comptables, dashboard et stocks.
-          ;[
-            'journal', 'balance-journal', 'grand-livre-journal', 'grand-livre-situation',
-            'financial-statements', 'etats-financiers', 'comptes', 'comptes-tiers',
-            'accounting',  // ['accounting','compte-resultat',year] → SIG du tableau de bord
-            'billing', 'dashboard', 'invoices', 'fiscal-years',
-            'stocks', 'stocks-articles',  // stock peut bouger via inventaire permanent
-          ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
-        })
-        .catch(err =>
-          console.error('[invoices] updateFactureVenteStatut API error', err),
-        )
+    if (!dbId || !status) {
+      // Pas de lien backend (création locale non synchronisée) — pas d'API.
+      return
+    }
+    try {
+      const updated = await invoicesApi.updateInvoiceStatus(dbId, status)
+      // Resync à partir de la réponse API (au cas où le backend renvoie un statut
+      // différent — ex : OVERDUE auto-calculé). Source de vérité = backend.
+      const apiStatut = (invoicesApi.STATUS_TO_STATUT[updated.status] ?? 'Brouillon') as FactureVenteStatut
+      setFacturesVentes(prev => prev.map(f => f.id === id ? { ...f, statut: apiStatut } : f))
+      // Le passage en SENT/PAID déclenche la comptabilisation (postSaleInvoice)
+      // côté backend → on rafraîchit toutes les vues comptables, dashboard et stocks.
+      ;[
+        'journal', 'balance-journal', 'grand-livre-journal', 'grand-livre-situation',
+        'financial-statements', 'etats-financiers', 'comptes', 'comptes-tiers',
+        'accounting',
+        'billing', 'dashboard', 'invoices', 'fiscal-years',
+        'stocks', 'stocks-articles',
+      ].forEach(k => qc.invalidateQueries({ queryKey: [k] }))
+    } catch (err) {
+      console.error('[invoices] updateFactureVenteStatut API error', err)
+      // Rollback : restaure l'ancien statut local (cohérence UI ↔ DB)
+      if (previousStatut) {
+        setFacturesVentes(prev => prev.map(f => f.id === id ? { ...f, statut: previousStatut } : f))
+      }
+      throw err
     }
   }
 

@@ -858,11 +858,18 @@ function ModalNouvelleFacture({ onClose, onCreated, agenceNom, clients, agences,
       // Si l'utilisateur a coché "Valider et comptabiliser", on passe la facture
       // immédiatement en Envoyée pour déclencher la comptabilisation backend
       // (création des écritures dans le journal VTE).
+      // IMPORTANT : await pour s'assurer que le statut SENT est bien persisté
+      // en base avant de fermer le modal. Sans await, l'utilisateur peut
+      // rafraîchir avant que l'API n'ait répondu → status reste DRAFT en DB.
       if (validateOnCreate) {
         try {
-          updateFactureVenteStatut(result.id, 'Envoyée')
+          await updateFactureVenteStatut(result.id, 'Envoyée')
         } catch (e) {
           console.error('[invoices] auto-validation failed', e)
+          setSubmitError("La facture a été créée mais la validation a échoué. Vous pouvez la valider manuellement.")
+          // On ne ferme pas le modal pour que l'utilisateur voie le message
+          setSubmitting(false)
+          return
         }
       }
 
