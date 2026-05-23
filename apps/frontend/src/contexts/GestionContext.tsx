@@ -308,7 +308,8 @@ export type FactureAchatStatut = 'À valider' | 'Validée' | 'Payée' | 'En reta
 export interface LigneFactureAchat {
   id:             string
   /** ID de l'article backend (CUID) — déclenche un mouvement de stock ENTREE_ACHAT
-   *  lors de la comptabilisation. Optionnel pour les achats de services. */
+   *  lors de la comptabilisation. Absent pour les achats libres (services
+   *  généraux, prestations, frais divers sans référence article). */
   articleId?:     string
   description:    string
   quantite:       number
@@ -316,6 +317,9 @@ export interface LigneFactureAchat {
   prixUnitaireHT: number
   tvaRate:        number
   montantHT:      number
+  /** Compte de charge SYSCOHADA (classe 6) — utilisé pour les achats libres
+   *  qui ne référencent pas un article (saisie manuelle d'un compte 6XXX). */
+  compteAchat?:   string
 }
 
 export interface FactureAchat {
@@ -917,6 +921,11 @@ export function GestionProvider({ children }: { children: ReactNode }) {
         ...((l as LigneFactureAchat & { articleId?: string }).articleId
           && !/^ART-/i.test((l as LigneFactureAchat & { articleId?: string }).articleId!)
           ? { articleId: (l as LigneFactureAchat & { articleId?: string }).articleId! }
+          : {}),
+        // Compte de charge — saisi sur les lignes libres (sans articleId).
+        // Pour les lignes article, le compte vient de l'article (priorité ligne > article > défaut).
+        ...((l as LigneFactureAchat & { compteAchat?: string }).compteAchat?.trim()
+          ? { compteAchat: (l as LigneFactureAchat & { compteAchat?: string }).compteAchat!.trim() }
           : {}),
       })),
       })

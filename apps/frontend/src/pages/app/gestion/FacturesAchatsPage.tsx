@@ -253,13 +253,23 @@ function ImportModal({ defaultVat, defaultAgence, onImport, onClose }: ImportMod
 
 // ── Modal nouvelle facture achat ──────────────────────────────────────────────
 
+/** Type de ligne d'achat :
+ *  - 'article' : référence un article du catalogue (déstockage si suivi).
+ *  - 'libre'   : saisie libre (services généraux, frais divers, prestations
+ *                hors catalogue). Le compte de charge est à saisir manuellement. */
+type PurchaseLineKind = 'article' | 'libre'
+
 interface LineForm {
   id:             string
+  kind:           PurchaseLineKind
   articleId:      string
   description:    string
   quantite:       string
   unite:          string
   prixUnitaireHT: string
+  /** Compte de charge 6XXX — obligatoire pour les lignes libres, optionnel pour
+   *  les lignes article (hérité du compteAchat de l'article si non saisi). */
+  compteAchat:    string
 }
 
 interface ModalFactureAchatProps {
@@ -301,7 +311,7 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
   })
 
   const [lignes, setLignes] = useState<LineForm[]>([
-    { id: `ln-${Date.now()}`, articleId: '', description: '', quantite: '1', unite: 'pièce', prixUnitaireHT: '' },
+    { id: `ln-${Date.now()}`, kind: 'article', articleId: '', description: '', quantite: '1', unite: 'pièce', prixUnitaireHT: '', compteAchat: '' },
   ])
 
   /** Pré-remplissage depuis ScanAI */
@@ -319,10 +329,12 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
     if (data.subtotal != null && data.subtotal > 0) {
       setLignes([{
         id: `ln-${Date.now()}`,
+        kind: 'libre',                    // scan d'une facture externe → ligne libre par défaut
         articleId: '',
         description: data.notes ?? 'Facture importée',
         quantite: '1', unite: 'pièce',
         prixUnitaireHT: String(Math.round(data.subtotal)),
+        compteAchat: '',
       }])
     }
   }
@@ -337,8 +349,12 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
   function updateLigne(idx: number, patch: Partial<LineForm>) {
     setLignes(prev => prev.map((l, i) => i === idx ? { ...l, ...patch } : l))
   }
-  function addLigne() {
-    setLignes(prev => [...prev, { id: `ln-${Date.now()}-${prev.length}`, articleId: '', description: '', quantite: '1', unite: 'pièce', prixUnitaireHT: '' }])
+  function addLigne(kind: PurchaseLineKind = 'article') {
+    setLignes(prev => [...prev, {
+      id: `ln-${Date.now()}-${prev.length}`,
+      kind, articleId: '', description: '',
+      quantite: '1', unite: 'pièce', prixUnitaireHT: '', compteAchat: '',
+    }])
   }
   function removeLigne(idx: number) {
     setLignes(prev => prev.filter((_, i) => i !== idx))
@@ -352,14 +368,24 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
     })
   }
 
-  // Validation
+  // Validation — règles distinctes selon le type de ligne :
+  // - 'article' : articleId requis (sélection depuis la liste du catalogue)
+  // - 'libre'   : description manuelle + compte de charge 6XXX requis
+  // - Tous types : quantité > 0 et prix unitaire > 0
   const lineErrors: { idx: number; msg: string }[] = []
   lignes.forEach((l, idx) => {
     const qty = parseFloat(l.quantite) || 0
     const pu  = parseFloat(l.prixUnitaireHT) || 0
-    if (qty <= 0)            lineErrors.push({ idx, msg: 'Quantité requise' })
-    else if (!l.articleId)   lineErrors.push({ idx, msg: 'Article non sélectionné' })
-    else if (pu <= 0)        lineErrors.push({ idx, msg: 'Prix unitaire requis' })
+    if (qty <= 0) { lineErrors.push({ idx, msg: 'Quantité requise' }); return }
+    if (pu <= 0)  { lineErrors.push({ idx, msg: 'Prix unitaire requis' }); return }
+    if (l.kind === 'article') {
+      if (!l.articleId) lineErrors.push({ idx, msg: 'Article non sélectionné' })
+    } else {
+      if (!l.description.trim()) lineErrors.push({ idx, msg: 'Désignation requise' })
+      else if (!l.compteAchat.trim() || !/^6\d{1,8}$/.test(l.compteAchat.trim())) {
+        lineErrors.push({ idx, msg: 'Compte de charge (6XXX) requis' })
+      }
+    }
   })
   const hasErrors = lineErrors.length > 0
                  || !form.fournisseur.trim()
@@ -386,7 +412,10 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
       statut,
       lignes:      lignes.map((l, i) => ({
         id:             `l${i + 1}`,
-        ...(l.articleId ? { articleId: l.articleId } : {}),
+        // Article : ID conservé, déclenche l'éventuel déstockage si tracé.
+        // Libre   : pas d'articleId, comptabilisation sur le compte saisi.
+        ...(l.kind === 'article' && l.articleId ? { articleId: l.articleId } : {}),
+        ...(l.compteAchat.trim() ? { compteAchat: l.compteAchat.trim() } : {}),
         description:    l.description,
         quantite:       parseFloat(l.quantite) || 0,
         unite:          l.unite,
@@ -491,15 +520,19 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
             )}
           </div>
 
-          {/* Lignes d'articles */}
+          {/* Lignes — deux types possibles selon SYSCOHADA art. 17 :
+              • Article : référence catalogue avec déstockage si suivi
+              • Libre   : services généraux / frais divers — saisie + compte 6XXX */}
           <div>
-            <p className="text-xs font-semibold text-gray-600 mb-2">Lignes d'articles</p>
+            <p className="text-xs font-semibold text-gray-600 mb-2">Lignes d'achat</p>
             <div className="rounded-lg border border-gray-200 overflow-visible">
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr className="text-left text-gray-500">
-                    <th className="px-3 py-2 font-semibold min-w-[340px]">Article</th>
-                    <th className="px-2 py-2 font-semibold w-16">Qté</th>
+                    <th className="px-2 py-2 font-semibold w-24">Type</th>
+                    <th className="px-3 py-2 font-semibold min-w-[280px]">Désignation / Article</th>
+                    <th className="px-2 py-2 font-semibold w-20">Compte</th>
+                    <th className="px-2 py-2 font-semibold w-14">Qté</th>
                     <th className="px-2 py-2 font-semibold w-20">Unité</th>
                     <th className="px-2 py-2 font-semibold w-24">P.U. HT</th>
                     <th className="px-2 py-2 font-semibold w-24 text-right">Total HT</th>
@@ -511,31 +544,71 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
                     const lineError = lineErrors.find(e => e.idx === idx)
                     const qtyNum = parseFloat(l.quantite) || 0
                     const total  = qtyNum * (parseFloat(l.prixUnitaireHT) || 0)
+                    const isFree = l.kind === 'libre'
                     return (
                       <tr key={l.id} className={lineError ? 'bg-red-50/30' : ''}>
+                        <td className="px-2 py-1.5">
+                          <select value={l.kind}
+                            onChange={e => {
+                              const newKind = e.target.value as PurchaseLineKind
+                              // Bascule article→libre : on garde la description (texte affiché)
+                              //   mais on efface l'articleId pour éviter un déstockage involontaire.
+                              // Bascule libre→article : on efface description + compte pour
+                              //   forcer une nouvelle sélection propre depuis le catalogue.
+                              updateLigne(idx, newKind === 'libre'
+                                ? { kind: 'libre', articleId: '' }
+                                : { kind: 'article', description: '', compteAchat: '' })
+                            }}
+                            className="w-full rounded border border-gray-200 px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-green-500/30">
+                            <option value="article">📦 Article</option>
+                            <option value="libre">📝 Libre</option>
+                          </select>
+                        </td>
                         <td className="px-3 py-1.5 pb-5">
-                          <ArticleCombobox
-                            articles={articles}
-                            selectedId={l.articleId}
-                            text={l.description}
-                            quantite={qtyNum}
-                            onSelect={art => selectArticle(idx, art)}
-                            onTextChange={t => updateLigne(idx, { description: t, articleId: '' })}
-                            placeholder="Tapez les premières lettres…"
-                            compact
-                            mode="purchase"
-                          />
+                          {isFree ? (
+                            <input type="text"
+                              value={l.description}
+                              onChange={e => updateLigne(idx, { description: e.target.value })}
+                              placeholder="Ex : Loyer mai 2026, Honoraires consultant, Fournitures bureau…"
+                              className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
+                          ) : (
+                            <ArticleCombobox
+                              articles={articles}
+                              selectedId={l.articleId}
+                              text={l.description}
+                              quantite={qtyNum}
+                              onSelect={art => selectArticle(idx, art)}
+                              onTextChange={t => updateLigne(idx, { description: t, articleId: '' })}
+                              placeholder="Tapez les premières lettres…"
+                              compact
+                              mode="purchase"
+                            />
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {isFree ? (
+                            <input type="text"
+                              value={l.compteAchat}
+                              onChange={e => updateLigne(idx, { compteAchat: e.target.value.replace(/\D/g, '').slice(0, 9) })}
+                              placeholder="6XXX"
+                              title="Compte de charge SYSCOHADA classe 6 (ex : 6041 sous-traitance, 613 locations, 622 honoraires…)"
+                              className="w-full rounded border border-gray-200 px-1.5 py-1 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-green-500/30" />
+                          ) : (
+                            <span className="text-[11px] text-gray-400 italic" title="Le compte est défini sur la fiche article">
+                              auto
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5">
                           <input type="number" min={0} step="any" placeholder="0" value={l.quantite || ''}
                             onChange={e => updateLigne(idx, { quantite: e.target.value })}
-                            className="w-full rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
+                            className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30" />
                         </td>
                         <td className="px-2 py-1.5">
                           <select value={l.unite}
                             onChange={e => updateLigne(idx, { unite: e.target.value })}
                             className="w-full rounded border border-gray-200 px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-green-500/30">
-                            {['pièce', 'kg', 'litre', 'm²', 'heure', 'forfait'].map(u => <option key={u}>{u}</option>)}
+                            {['pièce', 'kg', 'litre', 'm²', 'heure', 'forfait', 'mois'].map(u => <option key={u}>{u}</option>)}
                           </select>
                         </td>
                         <td className="px-2 py-1.5">
@@ -556,10 +629,15 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
                   })}
                 </tbody>
               </table>
-              <div className="border-t border-gray-100 px-3 py-2">
-                <button type="button" onClick={addLigne}
+              <div className="border-t border-gray-100 px-3 py-2 flex items-center gap-3">
+                <button type="button" onClick={() => addLigne('article')}
                   className="text-xs text-green-700 font-medium hover:text-green-800">
-                  + Ajouter une ligne
+                  + Ligne article
+                </button>
+                <span className="text-gray-300">·</span>
+                <button type="button" onClick={() => addLigne('libre')}
+                  className="text-xs text-blue-700 font-medium hover:text-blue-800">
+                  + Ligne libre (service, frais)
                 </button>
               </div>
             </div>
