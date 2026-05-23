@@ -36,11 +36,16 @@ interface ArticleComboboxProps {
   disabled?:        boolean
   /** Compact mode (utilisé dans les tableaux) */
   compact?:         boolean
+  /** Contexte d'utilisation. 'sale' (défaut) : contrôle de stock activé pour
+   *  les marchandises tracées. 'purchase' : aucun contrôle (un achat alimente
+   *  le stock, on peut toujours acheter quelle que soit la qté en main). */
+  mode?:            'sale' | 'purchase'
 }
 
 export function ArticleCombobox({
   articles, selectedId, text, quantite, onlyAvailable,
   onSelect, onTextChange, placeholder, disabled, compact,
+  mode = 'sale',
 }: ArticleComboboxProps) {
   const [open,        setOpen]        = useState(false)
   const [highlight,   setHighlight]   = useState(0)
@@ -133,12 +138,13 @@ export function ArticleCombobox({
   }
 
   // ── Validation ────────────────────────────────────────────────────────────
-  // Le contrôle de stock ne s'applique qu'aux articles suivis (marchandises).
-  // Services et prestations (stockTracking=false) : vente illimitée.
+  // Le contrôle de stock ne s'applique qu'aux articles suivis (marchandises)
+  // en contexte de VENTE. En achat, on peut toujours commander — l'opération
+  // alimente le stock — donc on n'affiche aucune alerte de rupture.
   const isTracked      = !!selected && selected.stockTracking !== false && selected.categorie !== 'Service'
   const hasText        = text.trim().length > 0
   const isUnknown      = hasText && !selected
-  const stockShortage  = isTracked && quantite > (selected?.stock ?? 0)
+  const stockShortage  = mode === 'sale' && isTracked && quantite > (selected?.stock ?? 0)
   const baseClass      = compact ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm'
   const borderColor    =
     isUnknown     ? 'border-red-300 focus:ring-red-300/40' :
@@ -209,7 +215,8 @@ export function ArticleCombobox({
           </div>
           {filtered.map((art, i) => {
             const artTracked = art.stockTracking !== false && art.categorie !== 'Service'
-            const isShort = artTracked && quantite > art.stock
+            // En achat : pas d'alerte rupture (l'achat alimente le stock).
+            const isShort = mode === 'sale' && artTracked && quantite > art.stock
             return (
               <button
                 key={art.id}

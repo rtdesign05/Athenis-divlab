@@ -523,6 +523,7 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
                             onTextChange={t => updateLigne(idx, { description: t, articleId: '' })}
                             placeholder="Tapez les premières lettres…"
                             compact
+                            mode="purchase"
                           />
                         </td>
                         <td className="px-2 py-1.5">

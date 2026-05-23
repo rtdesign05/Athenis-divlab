@@ -546,9 +546,12 @@ export async function postPurchaseOrder(
     // Lignes principales (D 6xx / D 4452 / C 401)
     await tx.journalEntry.createMany({ data: lines })
 
-    // Mouvements de stock + écritures de variation pour chaque article
+    // Mouvements de stock + écritures de variation pour chaque article.
+    // Services et articles non suivis (stockTracking=false) : pas d'écriture
+    // de mise en stock — la charge est constatée directement sans 311/6031.
     for (const line of order.lines) {
       if (!line.articleId) continue
+      if (line.article && (line.article as { stockTracking?: boolean }).stockTracking === false) continue
       const stockLines = await generateStockEntry(
         tx, companyId, line.articleId,
         'ENTREE_ACHAT',
