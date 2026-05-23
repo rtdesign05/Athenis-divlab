@@ -541,7 +541,7 @@ export function BanquesPage() {
   const { fmt } = useCurrency()
   const { user } = useAuth()
   const agenceNom = user?.agenceNom ?? null
-  const { addTransaction } = useTresorerie()
+  const { addTransaction, refresh: refreshTresorerie } = useTresorerie()
   const { agences } = useCompanySettings()
   const agenceIdByName = useMemo(
     () => Object.fromEntries(agences.map(a => [a.nom, a.id])) as Record<string, string>,
@@ -691,6 +691,9 @@ export function BanquesPage() {
       }
       setComptes(cs => [...cs, nc])
       setSelectedId(nc.id)
+      // Met à jour la trésorerie consolidée (Accueil + Vue d'ensemble) :
+      // le solde initial du nouveau compte alimente immédiatement le total.
+      void refreshTresorerie()
     } catch (e) {
       console.error('createSource banque', e)
       alert('Erreur lors de la création du compte bancaire')

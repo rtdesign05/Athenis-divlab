@@ -129,6 +129,9 @@ export interface PurchaseStats {
   byStatus: { draft: number; sent: number; received: number; partial: number; cancelled: number }
   totalMontantTTC: number
   periodMontantTTC: number
+  /** Montant HT des achats de la période — conforme SYSCOHADA art. 38 / PCG :
+   *  les achats sont reconnus en HT, la TVA étant un crédit déductible. */
+  periodMontantHT:  number
   periodCount: number
   dettesFournisseurs: number
   dettesCount: number

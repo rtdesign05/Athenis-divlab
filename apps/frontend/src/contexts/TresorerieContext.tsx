@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import * as treasuryApi from '@/services/treasuryApi'
 
 // ── Types partagés ─────────────────────────────────────────────────────────────
@@ -135,6 +135,11 @@ interface TresorerieContextValue {
   ): void
   /** Appelé depuis TransactionsPage lors de la validation d'une contrepartie */
   validateTransaction(id: string, contrepartie: Contrepartie, newPieces: PieceJustificative[]): void
+  /** Force le rechargement des soldes + transactions depuis l'API.
+   *  À appeler par les pages Banques / Caisses / Mobile Money après la
+   *  création d'un nouveau compte (avec son solde initial) pour que la
+   *  trésorerie consolidée (Accueil + Vue d'ensemble) reflète l'apport. */
+  refresh(): Promise<void>
 }
 
 const TresorerieContext = createContext<TresorerieContextValue | null>(null)
@@ -147,33 +152,34 @@ export function TresorerieProvider({ children }: { children: ReactNode }) {
 
   const totalSolde = balances.reduce((s, b) => s + b.solde, 0)
 
-  // ── Chargement initial depuis l'API ────────────────────────────────────────
-  useEffect(() => {
-    // Soldes agrégés par compte
-    treasuryApi.getBalances()
-      .then(data => {
-        const newBal: AccountBalance[] = data.map(b => {
-          const existing = INITIAL_BALANCE_BY_NAME.get(b.sourceName)
-          const acc      = accountInfo(b.sourceName)
-          return {
-            name:   b.sourceName,
-            label:  (acc.label !== b.sourceName ? acc.label : null) ?? existing?.label ?? b.sourceName,
-            type:   apiSourceType(b.sourceType),
-            agence: existing?.agence ?? 'Siège',
-            solde:  b.solde,
-          }
-        })
-        setBalances(newBal)
+  // ── Chargement / rechargement depuis l'API ─────────────────────────────────
+  const refresh = useCallback(async () => {
+    try {
+      const data = await treasuryApi.getBalances()
+      const newBal: AccountBalance[] = data.map(b => {
+        const existing = INITIAL_BALANCE_BY_NAME.get(b.sourceName)
+        const acc      = accountInfo(b.sourceName)
+        return {
+          name:   b.sourceName,
+          label:  (acc.label !== b.sourceName ? acc.label : null) ?? existing?.label ?? b.sourceName,
+          type:   apiSourceType(b.sourceType),
+          agence: existing?.agence ?? 'Siège',
+          solde:  b.solde,
+        }
       })
-      .catch(() => setBalances([]))
-
-    // Mouvements détaillés
-    treasuryApi.listEntries({ limit: 500 })
-      .then(({ items }) => {
-        setTransactions(items.map(apiEntryToTx))
-      })
-      .catch(() => setTransactions([]))
+      setBalances(newBal)
+    } catch {
+      setBalances([])
+    }
+    try {
+      const { items } = await treasuryApi.listEntries({ limit: 500 })
+      setTransactions(items.map(apiEntryToTx))
+    } catch {
+      setTransactions([])
+    }
   }, [])
+
+  useEffect(() => { void refresh() }, [refresh])
 
   function addTransaction(
     op:         { date: string; libelle: string; montant: number },
@@ -249,7 +255,7 @@ export function TresorerieProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <TresorerieContext.Provider value={{ transactions, balances, totalSolde, addTransaction, validateTransaction }}>
+    <TresorerieContext.Provider value={{ transactions, balances, totalSolde, addTransaction, validateTransaction, refresh }}>
       {children}
     </TresorerieContext.Provider>
   )

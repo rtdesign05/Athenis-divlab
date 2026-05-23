@@ -289,9 +289,11 @@ export async function purchaseOrderStats(
       _sum:   { montantTTC: true },
     }),
     // Total achats de la période demandée (status non annulés)
+    // SYSCOHADA art. 38 / PCG art. 512-1 : les achats sont reconnus en HT,
+    // la TVA n'étant pas une charge mais un crédit de TVA déductible.
     prisma.purchaseOrder.aggregate({
       where:  { ...baseWhere, ...dateFilter, status: { not: 'CANCELLED' } },
-      _sum:   { montantTTC: true },
+      _sum:   { montantTTC: true, montantHT: true },
       _count: true,
     }),
     // Dettes fournisseurs : commandes validées (SENT/RECEIVED/PARTIAL),
@@ -314,6 +316,7 @@ export async function purchaseOrderStats(
     byStatus: { draft, sent, received, partial, cancelled },
     totalMontantTTC: Number(amountAgg._sum.montantTTC ?? 0),
     periodMontantTTC: Number(periodAgg._sum.montantTTC ?? 0),
+    periodMontantHT:  Number(periodAgg._sum.montantHT  ?? 0),
     periodCount:      periodAgg._count,
     dettesFournisseurs: Number(dettesAgg._sum.montantTTC ?? 0),
     dettesCount:        dettesAgg._count,

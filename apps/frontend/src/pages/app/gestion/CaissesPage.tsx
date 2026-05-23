@@ -258,7 +258,7 @@ export function CaissesPage() {
   const { fmt } = useCurrency()
   const { user } = useAuth()
   const agenceNom = user?.agenceNom ?? null
-  const { addTransaction } = useTresorerie()
+  const { addTransaction, refresh: refreshTresorerie } = useTresorerie()
   const { agences } = useCompanySettings()
   const agenceIdByName = useMemo(
     () => Object.fromEntries(agences.map(a => [a.nom, a.id])) as Record<string, string>,
@@ -359,6 +359,8 @@ export function CaissesPage() {
       }
       setCaisses(cs => [...cs, nc])
       setSelectedId(nc.id)
+      // Met à jour la trésorerie consolidée (Accueil + Vue d'ensemble).
+      void refreshTresorerie()
     } catch (e) {
       console.error('createSource caisse', e)
       alert('Erreur lors de la création de la caisse')

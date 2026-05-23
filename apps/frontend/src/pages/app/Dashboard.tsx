@@ -299,11 +299,14 @@ export function AppDashboard() {
   const { data: reminders }                = useReminders()
   const { totalSolde }                     = useTresorerie()
   const { data: cr,       isLoading: crL } = useCompteResultat(selectedYear)
-  // Achats et dettes fournisseurs — même période que les KPIs ventes
+  // Achats et dettes fournisseurs — même période que les KPIs ventes.
+  // staleTime=0 + refetchOnMount='always' : le KPI doit refléter immédiatement
+  // toute saisie faite ailleurs (factures d'achat, commandes, paiements).
   const { data: purchaseStats, isLoading: psL } = useQuery({
     queryKey: ['purchases', 'stats', periodParams.from, periodParams.to] as const,
     queryFn:  () => getPurchaseStats(periodParams),
-    staleTime: 60_000,
+    staleTime:      0,
+    refetchOnMount: 'always',
   })
 
   const firstName   = (user as { firstName?: string } | null)?.firstName || user?.email?.split('@')[0] || 'vous'
@@ -393,9 +396,9 @@ export function AppDashboard() {
           />
           <Kpi
             label={periodMode === 'full' ? 'Achats exercice' : periodMode === 'month' ? `Achats — ${MONTH_LABELS[selectedMonth - 1]}` : 'Achats semaine'}
-            value={psL ? '…' : fmt(purchaseStats?.periodMontantTTC ?? 0)}
+            value={psL ? '…' : fmt(purchaseStats?.periodMontantHT ?? 0)}
             sub={purchaseStats?.periodCount
-              ? `${purchaseStats.periodCount} commande${purchaseStats.periodCount > 1 ? 's' : ''}`
+              ? `HT · ${purchaseStats.periodCount} pièce${purchaseStats.periodCount > 1 ? 's' : ''}`
               : 'Aucun achat sur la période'}
           />
           <Kpi

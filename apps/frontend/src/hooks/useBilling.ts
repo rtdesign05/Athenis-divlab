@@ -44,7 +44,10 @@ export function useDashboardStats(params?: { from?: string; to?: string }) {
   return useQuery({
     queryKey: [...BILLING_KEYS.dashboard, params?.from, params?.to] as const,
     queryFn:  () => billingApi.dashboard(params),
-    staleTime: 60_000,
+    // Le tableau de bord est la première vue consultée — il doit refléter
+    // immédiatement les écritures comptables et les factures saisies ailleurs.
+    staleTime:      0,
+    refetchOnMount: 'always',
   })
 }
 
@@ -52,7 +55,10 @@ export function useCashFlow() {
   return useQuery({
     queryKey: BILLING_KEYS.cashFlow,
     queryFn:  () => billingApi.cashFlow(),
-    staleTime: 5 * 60_000,
+    // Idem cash-flow prévisionnel : doit refléter immédiatement toute nouvelle
+    // dette fournisseur ou créance client.
+    staleTime:      0,
+    refetchOnMount: 'always',
   })
 }
 
