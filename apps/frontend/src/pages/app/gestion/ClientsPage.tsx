@@ -4,6 +4,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type Client, type ClientType } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { CompteCombobox } from '@/components/accounting/CompteCombobox'
+import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
 
 const TYPE_STYLE: Record<ClientType, string> = {
   entreprise:  'bg-indigo-50 text-indigo-700 ring-indigo-200',
@@ -141,7 +142,10 @@ function ModalClient({ initial, agenceNom, onSave, onClose }: ModalClientProps) 
 export function ClientsPage() {
   const { fmt }  = useCurrency()
   const { user } = useAuth()
-  const { clients, commandes, addClient, updateClient, deleteClient } = useGestion()
+  const {
+    clients, commandes, facturesVentes,
+    addClient, updateClient, deleteClient,
+  } = useGestion()
 
   const agenceNom = user?.agenceNom ?? null
 
@@ -150,20 +154,67 @@ export function ClientsPage() {
   const [showModal,  setShowModal]  = useState(false)
   const [editing,    setEditing]    = useState<Client | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  // Détail client : drawer drill-down avec liste des ventes sur la période
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null)
+  const [drawerDateFrom, setDrawerDateFrom] = useState('')
+  const [drawerDateTo,   setDrawerDateTo]   = useState('')
 
+  // CA agrégé client = commandes + factures émises (SENT/PAID/OVERDUE),
+  // cohérent avec la convention CA HT du tableau de bord (SYSCOHADA art. 38).
   const caMap = useMemo(() => {
     const m: Record<string, number> = {}
     for (const c of commandes) {
       if (c.statut !== 'Annulée') m[c.client] = (m[c.client] ?? 0) + c.montant
     }
+    for (const f of facturesVentes) {
+      if (f.statut === 'Envoyée' || f.statut === 'Payée' || f.statut === 'En retard') {
+        m[f.client] = (m[f.client] ?? 0) + f.montantHT
+      }
+    }
     return m
-  }, [commandes])
+  }, [commandes, facturesVentes])
 
   const nbCmdMap = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const c of commandes) m[c.client] = (m[c.client] ?? 0) + 1
+    for (const c of commandes)      m[c.client] = (m[c.client] ?? 0) + 1
+    for (const f of facturesVentes) m[f.client] = (m[f.client] ?? 0) + 1
     return m
-  }, [commandes])
+  }, [commandes, facturesVentes])
+
+  // Lignes du drawer : fusion commandes + factures du client sélectionné.
+  type LigneDetail = {
+    id: string; type: 'commande' | 'facture'; date: string;
+    montant: number; statut: string; objet: string
+  }
+  const drawerLignes = useMemo<LigneDetail[]>(() => {
+    if (!selectedClient) return []
+    const nom = selectedClient.nom
+    const fromOrders = commandes
+      .filter(c => c.client === nom)
+      .map<LigneDetail>(c => ({
+        id: c.id, type: 'commande',
+        date: c.date, montant: c.montant, statut: c.statut,
+        objet: c.livraison ? `Livraison ${new Date(c.livraison).toLocaleDateString('fr-FR')}` : '—',
+      }))
+    const fromInvoices = facturesVentes
+      .filter(f => f.client === nom)
+      .map<LigneDetail>(f => ({
+        id: f.id, type: 'facture',
+        date: f.date, montant: f.montantHT, statut: f.statut, objet: f.commande || '—',
+      }))
+    const merged = [...fromOrders, ...fromInvoices]
+    const filtered = filterByDateRange(merged, l => l.date, drawerDateFrom, drawerDateTo)
+    return filtered.sort((a, b) => b.date.localeCompare(a.date))
+  }, [selectedClient, commandes, facturesVentes, drawerDateFrom, drawerDateTo])
+
+  const drawerSummary = useMemo(() => {
+    // Total client = commandes non-annulées + factures émises (CA conforme SIG).
+    const validStatuses = new Set(['En cours', 'Livrée', 'Envoyée', 'Payée', 'En retard'])
+    const total = drawerLignes
+      .filter(l => validStatuses.has(l.statut))
+      .reduce((s, l) => s + l.montant, 0)
+    return { total, count: drawerLignes.length }
+  }, [drawerLignes])
 
   const visible = useMemo(() => {
     let list = agenceNom ? clients.filter(c => c.agence === agenceNom) : clients
@@ -247,7 +298,10 @@ export function ClientsPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {visible.map(c => (
-                  <tr key={c.id} className="hover:bg-gray-50/60">
+                  <tr key={c.id}
+                    onClick={() => setSelectedClient(c)}
+                    className="hover:bg-gray-50/60 cursor-pointer transition-colors"
+                    title="Voir le détail des ventes">
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset shrink-0 ${TYPE_STYLE[c.type]}`}>
@@ -280,8 +334,8 @@ export function ClientsPage() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-1 justify-end">
-                        <button onClick={() => setEditing(c)} className="rounded px-2 py-1 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600">✏️</button>
-                        <button onClick={() => setConfirmDel(c.id)} className="rounded px-2 py-1 text-[10px] text-gray-400 hover:bg-red-50 hover:text-red-500">🗑️</button>
+                        <button onClick={e => { e.stopPropagation(); setEditing(c) }} className="rounded px-2 py-1 text-[10px] text-gray-400 hover:bg-gray-100 hover:text-gray-600">✏️</button>
+                        <button onClick={e => { e.stopPropagation(); setConfirmDel(c.id) }} className="rounded px-2 py-1 text-[10px] text-gray-400 hover:bg-red-50 hover:text-red-500">🗑️</button>
                       </div>
                     </td>
                   </tr>
@@ -299,6 +353,117 @@ export function ClientsPage() {
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditing(null) }}
         />
+      )}
+
+      {/* ── Drawer : détail des ventes du client sélectionné ──────────────── */}
+      {selectedClient && (
+        <div className="fixed inset-0 z-40 flex">
+          <div className="flex-1 bg-black/30" onClick={() => setSelectedClient(null)} />
+          <aside className="w-full max-w-2xl bg-white shadow-2xl flex flex-col overflow-hidden">
+            {/* En-tête drawer */}
+            <div className="shrink-0 border-b border-gray-100 px-5 py-4 flex items-start justify-between bg-gradient-to-r from-indigo-50/40 to-white">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-base font-semibold text-gray-900 truncate">{selectedClient.nom}</h2>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${TYPE_STYLE[selectedClient.type]}`}>
+                    {selectedClient.type === 'entreprise' ? '🏢 Entreprise' : '👤 Particulier'}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {selectedClient.email || '—'}
+                  {selectedClient.telephone && <span> · {selectedClient.telephone}</span>}
+                  {selectedClient.compte && (
+                    <span className="ml-2 font-mono text-[10px] text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5">
+                      {selectedClient.compte}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <button onClick={() => setSelectedClient(null)}
+                className="ml-3 text-gray-400 hover:text-gray-600 text-lg leading-none shrink-0"
+                title="Fermer">
+                ×
+              </button>
+            </div>
+
+            {/* Filtre de période + résumé */}
+            <div className="shrink-0 border-b border-gray-100 px-5 py-3 bg-gray-50/40 space-y-3">
+              <PeriodFilter
+                dateFrom={drawerDateFrom}
+                dateTo={drawerDateTo}
+                onChange={({ dateFrom, dateTo }) => { setDrawerDateFrom(dateFrom); setDrawerDateTo(dateTo) }}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">CA HT</p>
+                  <p className="mt-0.5 text-base font-bold text-gray-900 tabular-nums">{fmt(drawerSummary.total)}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">Pièces</p>
+                  <p className="mt-0.5 text-base font-bold text-gray-900 tabular-nums">
+                    {drawerSummary.count}
+                    {drawerSummary.count > 0 && <span className="ml-1 text-[10px] font-normal text-gray-400">cmd + facture</span>}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Liste des ventes */}
+            <div className="flex-1 min-h-0 overflow-auto">
+              {drawerLignes.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full py-16 text-gray-400">
+                  <span className="text-3xl mb-2">🧾</span>
+                  <p className="text-sm font-medium">Aucune vente enregistrée</p>
+                  <p className="text-xs mt-1">
+                    {drawerDateFrom || drawerDateTo ? 'sur la période sélectionnée' : 'pour ce client'}
+                  </p>
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-gray-50 border-b border-gray-100 z-10">
+                    <tr className="text-left text-[11px] font-semibold text-gray-500">
+                      <th className="px-4 py-2 w-20">Type</th>
+                      <th className="px-4 py-2">Référence</th>
+                      <th className="px-4 py-2">Objet</th>
+                      <th className="px-4 py-2 w-24">Date</th>
+                      <th className="px-4 py-2 w-20 text-center">Statut</th>
+                      <th className="px-4 py-2 w-28 text-right">Montant HT</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {drawerLignes.map(l => (
+                      <tr key={`${l.type}-${l.id}`} className="hover:bg-gray-50/60">
+                        <td className="px-4 py-2">
+                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase ${
+                            l.type === 'commande' ? 'bg-blue-50 text-blue-700' : 'bg-green-50 text-green-700'
+                          }`}>
+                            {l.type === 'commande' ? 'CMD' : 'FV'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 font-mono text-[11px] text-gray-700">{l.id}</td>
+                        <td className="px-4 py-2 text-gray-600 truncate max-w-[200px]" title={l.objet}>{l.objet}</td>
+                        <td className="px-4 py-2 text-gray-500">{new Date(l.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })}</td>
+                        <td className="px-4 py-2 text-center">
+                          <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${
+                            l.statut === 'Annulée' ? 'bg-red-50 text-red-500' :
+                            l.statut === 'Payée' || l.statut === 'Livrée' ? 'bg-green-50 text-green-700' :
+                            l.statut === 'En retard' ? 'bg-orange-50 text-orange-700' :
+                            'bg-amber-50 text-amber-700'
+                          }`}>
+                            {l.statut}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-right font-semibold tabular-nums text-gray-900">
+                          {fmt(l.montant)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </aside>
+        </div>
       )}
 
       {confirmDel && (
