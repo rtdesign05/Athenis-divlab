@@ -7,6 +7,7 @@ import {
   type LigneBR,
 } from '@/contexts/GestionContext'
 import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
+import { getCountryConfig } from '@athenis/shared-types'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
 import { SendEmailModal } from '@/components/gestion/SendEmailModal'
 import { printDocument } from '@/lib/printDocument'
@@ -356,11 +357,19 @@ function BRView({ br, allBR, currentIndex, onClose, onNavigate, onStatut, onEdit
     generateQRDataUrl(buildBRQR(br)).then(setQrDataUrl).catch(() => setQrDataUrl(''))
   }, [br.id, br.statut])
 
-  const companyName    = company?.name         ?? 'Société Athenis'
-  const companyAddress = company?.address      ?? '12 Rue Bonanjo'
-  const companyCity    = company?.city         ?? 'Douala'
-  const companyPhone   = company?.phone        ?? ''
-  const companyEmail   = company?.contactEmail ?? ''
+  // Coordonnées entreprise — uniquement ce qui a été renseigné dans
+  // Paramètres → Entreprise (aucun fallback hardcodé).
+  const companyName       = (company?.name        ?? '').trim()
+  const companyAddress    = (company?.address     ?? '').trim()
+  const companyPostalCode = (company?.postalCode  ?? '').trim()
+  const companyCity       = (company?.city        ?? '').trim()
+  const companyCountry    = company?.country ? getCountryConfig(company.country).name : ''
+  const companyPhone      = (company?.phone        ?? '').trim()
+  const companyEmail      = (company?.contactEmail ?? '').trim()
+  const companyCityLine = [
+    [companyPostalCode, companyCity].filter(Boolean).join(' '),
+    companyCountry,
+  ].filter(Boolean).join(', ')
 
   const prev = currentIndex > 0                 ? allBR[currentIndex - 1] : null
   const next = currentIndex < allBR.length - 1  ? allBR[currentIndex + 1] : null
@@ -471,14 +480,14 @@ function BRView({ br, allBR, currentIndex, onClose, onNavigate, onStatut, onEdit
       <div className="flex-1 min-h-0 overflow-y-auto bg-gray-100 p-6">
         <div ref={docRef} className="max-w-3xl mx-auto bg-white shadow-sm rounded-lg p-10 print:shadow-none print:rounded-none">
 
-          {/* En-tête */}
+          {/* En-tête — coordonnées issues de Paramètres → Entreprise */}
           <div className="flex justify-between items-start mb-8">
             <div>
-              <p className="text-lg font-bold text-gray-900">{companyName}</p>
-              <p className="text-sm text-gray-600">{companyAddress}</p>
-              <p className="text-sm text-gray-600">{companyCity}, Cameroun</p>
-              {companyPhone && <p className="text-sm text-gray-600">Tél : {companyPhone}</p>}
-              {companyEmail && <p className="text-sm text-gray-600">{companyEmail}</p>}
+              {companyName     && <p className="text-lg font-bold text-gray-900">{companyName}</p>}
+              {companyAddress  && <p className="text-sm text-gray-600">{companyAddress}</p>}
+              {companyCityLine && <p className="text-sm text-gray-600">{companyCityLine}</p>}
+              {companyPhone    && <p className="text-sm text-gray-600">Tél : {companyPhone}</p>}
+              {companyEmail    && <p className="text-sm text-gray-600">{companyEmail}</p>}
             </div>
             <div className="text-right">
               <p className="text-2xl font-bold text-gray-900 uppercase tracking-wide">BON DE RÉCEPTION</p>
@@ -648,7 +657,7 @@ function BRView({ br, allBR, currentIndex, onClose, onNavigate, onStatut, onEdit
           {/* Pied de page */}
           <div className="mt-10 pt-4 border-t border-gray-100 text-center">
             <p className="text-[10px] text-gray-400">
-              Document généré par Athenis — {companyName} — {companyCity}, Cameroun
+              Document généré par Athenis{[companyName, companyCityLine].filter(Boolean).map(s => ` — ${s}`).join('')}
             </p>
           </div>
         </div>

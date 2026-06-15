@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
-import { TVA_CM_PCT } from '@athenis/shared-types'
+import { TVA_CM_PCT, getCountryConfig } from '@athenis/shared-types'
 import {
   useGestion,
   type FactureVente,
@@ -228,11 +228,34 @@ function InvoiceView({
     generateQRDataUrl(buildFactureVenteQR(facture)).then(setQrDataUrl).catch(() => setQrDataUrl(''))
   }, [facture.id, facture.statut])
 
-  const companyName    = company?.name    ?? 'Société Athenis'
-  const companyAddress = company?.address ?? '12 Rue Bonanjo'
-  const companyCity    = company?.city    ?? 'Douala'
-  const companyPhone   = company?.phone   ?? ''
-  const companyEmail   = company?.contactEmail ?? ''
+  // ── Coordonnées entreprise depuis Paramètres → Entreprise ─────────────────
+  // Aucun fallback hardcodé : on affiche EXACTEMENT ce que l'utilisateur a
+  // renseigné. Si un champ est vide, la ligne correspondante n'apparaît pas
+  // dans l'en-tête (évite d'imprimer « 12 Rue Bonanjo » sur la facture d'un
+  // utilisateur qui n'a pas saisi son adresse).
+  const companyName       = (company?.name        ?? '').trim()
+  const companyLegalForm  = (company?.legalForm   ?? '').trim()
+  const companyAddress    = (company?.address     ?? '').trim()
+  const companyPostalCode = (company?.postalCode  ?? '').trim()
+  const companyCity       = (company?.city        ?? '').trim()
+  const companyCountry    = company?.country
+    ? getCountryConfig(company.country).name
+    : ''
+  const companyPhone      = (company?.phone        ?? '').trim()
+  const companyEmail      = (company?.contactEmail ?? '').trim()
+  const companyWebsite    = (company?.website      ?? '').trim()
+  const companyVatNumber  = (company?.vatNumber    ?? '').trim()
+  // Ligne « postal_code city, pays » : montée à partir des morceaux non vides.
+  const companyCityLine = [
+    [companyPostalCode, companyCity].filter(Boolean).join(' '),
+    companyCountry,
+  ].filter(Boolean).join(', ')
+  // Identifiants légaux (SIREN/SIRET pour France, NIU/RC pour OHADA).
+  const companyLegalIds = [
+    company?.siren  ? `SIREN ${company.siren}`  : null,
+    company?.siret  ? `SIRET ${company.siret}`  : null,
+    companyVatNumber ? `N° TVA ${companyVatNumber}` : null,
+  ].filter(Boolean).join(' · ')
 
   // Cherche l'e-mail du client correspondant à la facture
   const clientEmail = clients.find(c => c.nom === facture.client)?.email ?? ''
@@ -440,11 +463,17 @@ function InvoiceView({
                   />
                 )}
                 <div className="min-w-0">
-                  <p className="text-lg font-bold truncate" style={{ color: tplCfg.headerText }}>{companyName}</p>
-                  <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.75 }}>{companyAddress}</p>
-                  <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.75 }}>{companyCity}, Cameroun</p>
-                  {companyPhone && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.65 }}>Tél : {companyPhone}</p>}
-                  {companyEmail && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.65 }}>{companyEmail}</p>}
+                  {companyName && (
+                    <p className="text-lg font-bold truncate" style={{ color: tplCfg.headerText }}>
+                      {companyName}{companyLegalForm && <span className="text-sm font-normal opacity-80"> · {companyLegalForm}</span>}
+                    </p>
+                  )}
+                  {companyAddress  && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.75 }}>{companyAddress}</p>}
+                  {companyCityLine && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.75 }}>{companyCityLine}</p>}
+                  {companyPhone    && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.65 }}>Tél : {companyPhone}</p>}
+                  {companyEmail    && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.65 }}>{companyEmail}</p>}
+                  {companyWebsite  && <p className="text-sm" style={{ color: tplCfg.headerText, opacity: 0.65 }}>{companyWebsite}</p>}
+                  {companyLegalIds && <p className="text-[11px] mt-1" style={{ color: tplCfg.headerText, opacity: 0.6 }}>{companyLegalIds}</p>}
                 </div>
               </div>
               <div className="text-right shrink-0">
@@ -467,11 +496,17 @@ function InvoiceView({
                   <img src={logoUrl} alt="Logo" className="h-10 max-w-[100px] object-contain" />
                 )}
                 <div>
-                  <p className="text-lg font-bold text-gray-900">{companyName}</p>
-                  <p className="text-sm text-gray-600">{companyAddress}</p>
-                  <p className="text-sm text-gray-600">{companyCity}, Cameroun</p>
-                  {companyPhone && <p className="text-sm text-gray-600">Tél : {companyPhone}</p>}
-                  {companyEmail && <p className="text-sm text-gray-600">{companyEmail}</p>}
+                  {companyName && (
+                    <p className="text-lg font-bold text-gray-900">
+                      {companyName}{companyLegalForm && <span className="text-sm font-normal text-gray-500"> · {companyLegalForm}</span>}
+                    </p>
+                  )}
+                  {companyAddress  && <p className="text-sm text-gray-600">{companyAddress}</p>}
+                  {companyCityLine && <p className="text-sm text-gray-600">{companyCityLine}</p>}
+                  {companyPhone    && <p className="text-sm text-gray-600">Tél : {companyPhone}</p>}
+                  {companyEmail    && <p className="text-sm text-gray-600">{companyEmail}</p>}
+                  {companyWebsite  && <p className="text-sm text-gray-600">{companyWebsite}</p>}
+                  {companyLegalIds && <p className="text-[11px] text-gray-400 mt-1">{companyLegalIds}</p>}
                 </div>
               </div>
               <div className="text-right">
@@ -635,7 +670,8 @@ function InvoiceView({
           <div className="mt-8 pt-4 border-t border-gray-100 flex items-end justify-between gap-4">
             <div>
               <p className="text-xs text-gray-400">
-                {invoiceCfg.footerText || `${companyName} — ${companyAddress}, ${companyCity}`}
+                {invoiceCfg.footerText
+                  || [companyName, companyAddress, companyCityLine].filter(Boolean).join(' — ')}
               </p>
               {invoiceCfg.display.showVatNumber && company?.vatNumber && (
                 <p className="text-xs text-gray-400 mt-0.5">N° TVA : {company.vatNumber}</p>
