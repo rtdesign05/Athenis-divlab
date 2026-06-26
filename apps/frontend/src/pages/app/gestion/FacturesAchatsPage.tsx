@@ -1051,6 +1051,30 @@ export function FacturesAchatsPage() {
     }
   }, [addFactureAchat, agenceNom, effectiveVat])
 
+  // ── Upload pièce justificative pour une facture d'achat ─────────────────────
+  // Réutilisable depuis l'icône inline du tableau ET depuis la fiche FAView.
+  // N'écrase JAMAIS de pièce existante sans confirmation explicite via le
+  // bouton Retirer de la fiche — préserve les données déjà attachées.
+  const uploadAndAttachFA = useCallback(async (faId: string, file: File): Promise<void> => {
+    const ALLOWED = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp']
+    if (!ALLOWED.includes(file.type)) {
+      alert('Format non supporté — PDF, PNG, JPG ou WEBP uniquement')
+      return
+    }
+    try {
+      const [att] = await attachmentsApi.upload([file], {})
+      if (!att) throw new Error('Upload failed')
+      await attachPieceToFactureAchat(
+        faId,
+        attachmentsApi.fileUrl(att.id),
+        att.fileName,
+      )
+    } catch (e) {
+      console.error('[FA] attach piece failed', e)
+      alert("Échec de l'upload de la pièce")
+    }
+  }, [attachPieceToFactureAchat])
+
   function handleImport(rows: Omit<FactureAchat, 'id'>[]) {
     rows.forEach(r => addFactureAchat(r))
     setImportToast(`${rows.length} facture${rows.length > 1 ? 's' : ''} importée${rows.length > 1 ? 's' : ''} avec succès`)
@@ -1234,12 +1258,13 @@ export function FacturesAchatsPage() {
                     <th className="px-4 py-2.5">Date</th>
                     <th className="px-4 py-2.5">Échéance</th>
                     <th className="px-4 py-2.5 text-right">Montant TTC</th>
+                    <th className="px-2 py-2.5 text-center w-14" title="Pièce justificative (facture reçue du fournisseur)">📎</th>
                     <th className="px-4 py-2.5">Statut</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {items.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-400">Aucune facture trouvée</td></tr>
+                    <tr><td colSpan={agenceNom ? 8 : 9} className="px-4 py-8 text-center text-sm text-gray-400">Aucune facture trouvée</td></tr>
                   ) : items.map(f => (
                     <tr key={f.id}
                       onClick={() => setSelected(f)}
@@ -1251,6 +1276,31 @@ export function FacturesAchatsPage() {
                       <td className="px-4 py-2.5 text-xs text-gray-500">{new Date(f.date).toLocaleDateString('fr-FR')}</td>
                       <td className="px-4 py-2.5 text-xs text-gray-500">{new Date(f.echeance).toLocaleDateString('fr-FR')}</td>
                       <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{fmt(f.montantTTC)}</td>
+                      {/* ── Pièce justificative inline ── */}
+                      {/*   - Présente : icône verte → clic ouvre le PDF dans un nouvel onglet */}
+                      {/*   - Absente  : icône bleue → clic ouvre le sélecteur de fichier */}
+                      <td className="px-2 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                        {f.pieceUrl ? (
+                          <a href={f.pieceUrl} target="_blank" rel="noreferrer"
+                            title={`Ouvrir : ${f.pieceName ?? 'pièce jointe'}`}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
+                            📎
+                          </a>
+                        ) : (
+                          <label
+                            title="Joindre la facture reçue du fournisseur (PDF, image)"
+                            className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-dashed border-blue-300 text-blue-500 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-colors">
+                            <input type="file" className="sr-only"
+                              accept=".pdf,.png,.jpg,.jpeg,.webp"
+                              onChange={ev => {
+                                const file = ev.target.files?.[0]
+                                if (file) void uploadAndAttachFA(f.id, file)
+                                ev.target.value = ''
+                              }} />
+                            +
+                          </label>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                         <select value={f.statut}
                           onChange={e => updateFactureAchatStatut(f.id, e.target.value as FactureAchatStatut)}
@@ -1276,20 +1326,7 @@ export function FacturesAchatsPage() {
             fmtCurrency={fmt}
             onClose={() => setSelected(null)}
             onChangeStatut={s => updateFactureAchatStatut(selectedLive.id, s)}
-            onAttachPiece={async file => {
-              try {
-                const [att] = await attachmentsApi.upload([file], {})
-                if (!att) throw new Error('Upload failed')
-                await attachPieceToFactureAchat(
-                  selectedLive.id,
-                  attachmentsApi.fileUrl(att.id),
-                  att.fileName,
-                )
-              } catch (e) {
-                console.error('[FA] attach piece failed', e)
-                alert('Échec de l\'upload de la pièce')
-              }
-            }}
+            onAttachPiece={file => uploadAndAttachFA(selectedLive.id, file)}
             onRemovePiece={() => attachPieceToFactureAchat(selectedLive.id, null, null)}
           />
         )}
