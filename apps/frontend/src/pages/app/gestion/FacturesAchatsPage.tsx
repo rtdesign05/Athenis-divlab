@@ -1,10 +1,8 @@
-import { useMemo, useState, useRef, useEffect, useCallback } from 'react'
+import { useMemo, useState, useRef, useCallback } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type FactureAchatStatut, type FactureAchat } from '@/contexts/GestionContext'
 import { useCompanySettings } from '@/contexts/CompanySettingsContext'
-import { printDocument } from '@/lib/printDocument'
-import { generateQRDataUrl, buildFactureAchatQR } from '@/lib/qrCode'
 import { ScanAiModal } from '@/features/scan/ScanAiModal'
 import { uploadFileForScan, type ScannedInvoice } from '@/services/scanApi'
 import { PeriodFilter, filterByDateRange } from '@/components/gestion/PeriodFilter'
@@ -738,15 +736,21 @@ function ModalFactureAchat({ achats, agenceNom, defaultVatRate, initialScan, onS
   )
 }
 
-// ── Vue de saisie d'une facture fournisseur ──────────────────────────────────
-// IMPORTANT : Ce document n'est PAS la facture d'achat légale (qui doit être
-// émise par le fournisseur conformément à l'art. 153 CGI / art. 289 CGI FR).
-// Il s'agit d'un récapitulatif interne de la saisie comptable. Le PDF original
-// du fournisseur doit être attaché via le bouton "Joindre la pièce".
+// ── Fiche de saisie d'une facture fournisseur (vue back-office) ──────────────
+// IMPORTANT : Cette vue n'imprime AUCUN document. La facture d'achat légale
+// doit être émise exclusivement par le fournisseur (art. 153 CGI Cameroun /
+// art. 289 CGI France). Notre rôle se limite à :
+//   1. Enregistrer comptablement les informations de la facture reçue
+//   2. Permettre à l'utilisateur d'attacher le PDF original du fournisseur
+// La vue est volontairement traitée comme un formulaire administratif sans
+// mise en forme « document » pour éviter toute confusion avec une facture.
 
 interface FAViewProps {
   fa:           FactureAchat
   fournisseur?: { nom: string; adresse?: string; telephone?: string; email?: string; siren?: string; vatNumber?: string } | null
+  // companyName et address ne sont pas affichés sur la vue — l'acquéreur
+  // n'a pas à figurer sur sa propre saisie comptable. On les garde dans
+  // l'interface pour rétro-compatibilité d'appel.
   companyName:  string
   address:      string
   fmtCurrency:  (n: number) => string
@@ -756,22 +760,7 @@ interface FAViewProps {
   onRemovePiece?: () => Promise<void>
 }
 
-function FAView({ fa, fournisseur, companyName, address, fmtCurrency, onClose, onChangeStatut, onAttachPiece, onRemovePiece }: FAViewProps) {
-  const printRef = useRef<HTMLDivElement>(null)
-  const [qrDataUrl, setQrDataUrl] = useState<string>('')
-  useEffect(() => {
-    generateQRDataUrl(buildFactureAchatQR({
-      id:         fa.id,
-      fournisseur: fa.fournisseur,
-      date:       fa.date,
-      echeance:   fa.echeance,
-      montantHT:  fa.montantHT,
-      tva:        fa.tva,
-      montantTTC: fa.montantTTC,
-      statut:     fa.statut,
-    })).then(setQrDataUrl).catch(() => setQrDataUrl(''))
-  }, [fa.id, fa.statut])
-
+function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttachPiece, onRemovePiece }: FAViewProps) {
   const lignes  = fa.lignes ?? []
   const totalHT = lignes.length > 0
     ? lignes.reduce((s, l) => s + l.montantHT, 0)
@@ -783,46 +772,76 @@ function FAView({ fa, fournisseur, companyName, address, fmtCurrency, onClose, o
     : 0
 
   const statutBadge = STATUT_STYLE[fa.statut] ?? 'bg-gray-100 text-gray-600'
+  const hasPiece    = !!fa.pieceUrl
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
-      {/* Toolbar */}
+
+      {/* ── Toolbar (pas de bouton imprimer — voir commentaire au-dessus) ── */}
       <div className="shrink-0 flex items-center justify-between gap-2 border-b border-gray-200 bg-white px-4 py-2.5">
         <div className="flex items-center gap-2">
           <button onClick={onClose}
             className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
             ← Retour
           </button>
+          <span className="text-xs text-gray-400 font-mono">{fa.id}</span>
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statutBadge}`}>{fa.statut}</span>
           <select value={fa.statut} onChange={e => onChangeStatut(e.target.value as FactureAchatStatut)}
             className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30">
             {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Pièce justificative (PDF/image de la facture fournisseur) */}
-          {fa.pieceUrl ? (
-            <div className="flex items-center gap-1 rounded-lg border border-green-200 bg-green-50 px-2 py-1">
-              <a href={fa.pieceUrl} target="_blank" rel="noreferrer"
-                title={`Ouvrir : ${fa.pieceName ?? 'pièce'}`}
-                className="text-xs font-medium text-green-700 hover:underline">
-                📎 {fa.pieceName?.slice(0, 20) ?? 'Pièce jointe'}
-              </a>
-              {onRemovePiece && (
-                <button
-                  onClick={() => {
-                    if (confirm(`Retirer la pièce "${fa.pieceName}" ?`)) {
-                      void onRemovePiece()
-                    }
-                  }}
-                  title="Retirer la pièce"
-                  className="text-gray-400 hover:text-red-500 text-xs">×</button>
-              )}
+      </div>
+
+      {/* ── Corps fiche ─────────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 overflow-auto p-6">
+        <div className="mx-auto max-w-3xl space-y-4">
+
+          {/* ── Bandeau réglementaire ───────────────────────────────────── */}
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+            <p className="text-xs text-amber-900 leading-relaxed">
+              <span className="font-semibold">📋 Enregistrement comptable d'une facture reçue.</span>{' '}
+              Conformément à l'art. 153 CGI Cameroun / art. 289 CGI France, la facture d'achat est obligatoirement
+              émise par le fournisseur. Cette vue ne génère <strong>aucun document à valeur légale</strong> — elle
+              sert uniquement à enregistrer les informations de la facture reçue et à conserver le justificatif
+              transmis par le fournisseur.
+            </p>
+          </div>
+
+          {/* ── Zone pièce justificative (très visible) ─────────────────── */}
+          {hasPiece ? (
+            <div className="rounded-xl border border-green-300 bg-green-50/60 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-2xl">📎</span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-green-700">Justificatif fournisseur attaché</p>
+                    <a href={fa.pieceUrl!} target="_blank" rel="noreferrer"
+                      className="text-sm font-medium text-green-800 hover:underline truncate block">
+                      {fa.pieceName ?? 'Pièce jointe'}
+                    </a>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a href={fa.pieceUrl!} target="_blank" rel="noreferrer"
+                    className="rounded-lg border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50">
+                    Ouvrir
+                  </a>
+                  {onRemovePiece && (
+                    <button onClick={() => {
+                      if (confirm(`Retirer la pièce "${fa.pieceName}" ? La saisie comptable est conservée.`)) {
+                        void onRemovePiece()
+                      }
+                    }}
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200">
+                      Retirer
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-          ) : onAttachPiece && (
-            <label
-              title="Attacher la facture du fournisseur (PDF, image)"
-              className="cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100">
+          ) : onAttachPiece ? (
+            <label className="block rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/40 p-6 cursor-pointer hover:bg-blue-50 transition-colors">
               <input type="file" className="sr-only"
                 accept=".pdf,.png,.jpg,.jpeg,.webp"
                 onChange={ev => {
@@ -830,177 +849,126 @@ function FAView({ fa, fournisseur, companyName, address, fmtCurrency, onClose, o
                   if (f) void onAttachPiece(f)
                   ev.target.value = ''
                 }} />
-              📎 Joindre la pièce
+              <div className="flex flex-col items-center gap-2 text-center">
+                <span className="text-3xl">📎</span>
+                <p className="text-sm font-semibold text-blue-800">Joindre la facture du fournisseur</p>
+                <p className="text-xs text-blue-700">
+                  Cliquez pour téléverser le PDF, l'image ou le scan transmis par le fournisseur.<br />
+                  Vous pouvez l'attacher dès maintenant ou plus tard, à votre rythme.
+                </p>
+                <p className="text-[10px] text-blue-500 mt-1">PDF · PNG · JPG · WEBP</p>
+              </div>
             </label>
+          ) : (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-center text-xs text-gray-400">
+              ⚠ Aucun justificatif fournisseur — en attente de transmission
+            </div>
           )}
-          <button onClick={() => printDocument(printRef.current, `Recapitulatif saisie ${fa.id}`)}
-            title="Imprime le récapitulatif de la saisie — pas une facture légale"
-            className="rounded-lg bg-gray-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-gray-800">
-            🖨️ Récapitulatif
-          </button>
-        </div>
-      </div>
 
-      {/* Document */}
-      <div className="flex-1 min-h-0 overflow-auto p-6">
-        <div ref={printRef} className="mx-auto max-w-2xl bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-
-          {/* Bandeau d'avertissement — ce document n'est pas la facture légale */}
-          <div className="bg-amber-50 border-b border-amber-200 px-8 py-2.5">
-            <p className="text-[11px] text-amber-900">
-              <span className="font-semibold">Récapitulatif interne de saisie</span> — ce document n'est pas la facture
-              légale. La facture d'achat originale doit être émise par le fournisseur et attachée via «&nbsp;Joindre la pièce&nbsp;».
-            </p>
-          </div>
-
-          {/* En-tête FOURNISSEUR (émetteur de la facture d'achat) */}
-          <div className="bg-[#1a3a2a] px-8 py-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/60 mb-1">Émetteur — Fournisseur</p>
-                <p className="text-xl font-bold text-white">{fournisseur?.nom ?? fa.fournisseur}</p>
-                {fournisseur?.adresse && <p className="mt-1 text-xs text-white/70">{fournisseur.adresse}</p>}
-                {(fournisseur?.telephone || fournisseur?.email) && (
-                  <p className="mt-0.5 text-[11px] text-white/60">
-                    {fournisseur?.telephone}{fournisseur?.telephone && fournisseur?.email ? ' · ' : ''}{fournisseur?.email}
-                  </p>
-                )}
+          {/* ── Informations de saisie (cards) ──────────────────────────── */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Fournisseur</p>
+              <p className="text-sm font-semibold text-gray-900">{fournisseur?.nom ?? fa.fournisseur}</p>
+              {fournisseur?.adresse && <p className="text-xs text-gray-500">{fournisseur.adresse}</p>}
+              {(fournisseur?.telephone || fournisseur?.email) && (
+                <p className="text-[11px] text-gray-500">
+                  {fournisseur?.telephone}{fournisseur?.telephone && fournisseur?.email ? ' · ' : ''}{fournisseur?.email}
+                </p>
+              )}
+              <p className="text-[11px] text-gray-400 pt-1">Agence : {fa.agence}</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Données saisies</p>
+              {fa.commande && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">N° facture fournisseur</span>
+                  <span className="font-mono font-medium text-gray-800">{fa.commande}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Date facture</span>
+                <span className="font-medium text-gray-800">{fmtDate(fa.date)}</span>
               </div>
-              <div className="text-right">
-                <p className="text-xs font-bold text-white/80 uppercase tracking-wider">Saisie facture fournisseur</p>
-                <p className="mt-1 text-lg font-mono font-bold text-white">{fa.id}</p>
-                {fa.commande && (
-                  <p className="mt-1 text-[10px] text-white/70">N° fournisseur : <span className="font-mono">{fa.commande}</span></p>
-                )}
-                <p className="mt-1 text-xs text-white/70">Date : {fmtDate(fa.date)}</p>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Échéance</span>
+                <span className="font-medium text-gray-800">{fmtDate(fa.echeance)}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">TVA</span>
+                <span className="font-medium text-gray-800">{fa.tva} %</span>
               </div>
             </div>
           </div>
 
-          {/* Bandeau acquéreur (notre société) */}
-          <div className="bg-gray-50 border-b border-gray-200 px-8 py-3">
-            <div className="flex items-center justify-between gap-4 text-xs">
-              <div>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Acquéreur</span>
-                <span className="ml-2 font-semibold text-gray-800">{companyName}</span>
-                {address && <span className="ml-2 text-gray-500">— {address}</span>}
-              </div>
+          {/* ── Lignes de saisie ────────────────────────────────────────── */}
+          <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+            <div className="border-b border-gray-100 bg-gray-50 px-4 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Lignes saisies</p>
             </div>
-          </div>
-
-          {/* Corps */}
-          <div className="px-8 py-6 space-y-6">
-
-            {/* Infos fournisseur + facture */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-lg bg-gray-50 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Fournisseur</p>
-                <p className="text-sm font-bold text-gray-900">{fa.fournisseur}</p>
-                <p className="text-xs text-gray-500 mt-1">{fa.agence}</p>
-              </div>
-              <div className="rounded-lg bg-gray-50 p-4 space-y-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Détails facture</p>
-                {fa.commande && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-gray-500">Commande réf.</span>
-                    <span className="font-mono font-medium text-gray-800">{fa.commande}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Date facture</span>
-                  <span className="font-medium text-gray-800">{fmtDate(fa.date)}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">Échéance</span>
-                  <span className="font-medium text-gray-800">{fmtDate(fa.echeance)}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">TVA</span>
-                  <span className="font-medium text-gray-800">{fa.tva} %</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Table lignes */}
-            <div className="rounded-lg border border-gray-200 overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-                    <th className="px-3 py-2.5">N°</th>
-                    <th className="px-3 py-2.5">Description</th>
-                    <th className="px-3 py-2.5 text-right">Qté</th>
-                    <th className="px-3 py-2.5">Unité</th>
-                    <th className="px-3 py-2.5 text-right">P.U. HT</th>
-                    <th className="px-3 py-2.5 text-right">TVA %</th>
-                    <th className="px-3 py-2.5 text-right">Montant HT</th>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                  <th className="px-3 py-2 w-10">N°</th>
+                  <th className="px-3 py-2">Description</th>
+                  <th className="px-3 py-2 text-right w-16">Qté</th>
+                  <th className="px-3 py-2 w-16">Unité</th>
+                  <th className="px-3 py-2 text-right w-24">P.U. HT</th>
+                  <th className="px-3 py-2 text-right w-16">TVA %</th>
+                  <th className="px-3 py-2 text-right w-28">Montant HT</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {lignes.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-3 py-4 text-center text-xs text-gray-400">
+                      Aucune ligne de détail — montant global : {fmtCurrency(fa.montantHT)} HT
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {lignes.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="px-3 py-4 text-center text-xs text-gray-400">
-                        Aucune ligne de détail — montant global : {fmtCurrency(fa.montantHT)} HT
-                      </td>
-                    </tr>
-                  ) : lignes.map((l, i) => (
-                    <tr key={l.id} className="hover:bg-gray-50/50">
-                      <td className="px-3 py-2.5 text-xs text-gray-400">{i + 1}</td>
-                      <td className="px-3 py-2.5 text-sm text-gray-900">{l.description}</td>
-                      <td className="px-3 py-2.5 text-right text-sm text-gray-700">{l.quantite}</td>
-                      <td className="px-3 py-2.5 text-xs text-gray-500">{l.unite}</td>
-                      <td className="px-3 py-2.5 text-right text-sm text-gray-700">
-                        {l.prixUnitaireHT.toLocaleString('fr-FR')}
-                      </td>
-                      <td className="px-3 py-2.5 text-right text-xs text-gray-500">{l.tvaRate} %</td>
-                      <td className="px-3 py-2.5 text-right font-semibold text-gray-900">
-                        {l.montantHT.toLocaleString('fr-FR')}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Totaux */}
-            <div className="flex justify-end">
+                ) : lignes.map((l, i) => (
+                  <tr key={l.id} className="hover:bg-gray-50/50">
+                    <td className="px-3 py-2 text-xs text-gray-400">{i + 1}</td>
+                    <td className="px-3 py-2 text-sm text-gray-900">{l.description}</td>
+                    <td className="px-3 py-2 text-right text-sm text-gray-700">{l.quantite}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{l.unite}</td>
+                    <td className="px-3 py-2 text-right text-sm text-gray-700 tabular-nums">
+                      {l.prixUnitaireHT.toLocaleString('fr-FR')}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-gray-500">{l.tvaRate} %</td>
+                    <td className="px-3 py-2 text-right font-semibold text-gray-900 tabular-nums">
+                      {l.montantHT.toLocaleString('fr-FR')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {/* Totaux dans la même card */}
+            <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 flex justify-end">
               <div className="w-64 space-y-1.5">
                 <div className="flex justify-between text-xs text-gray-600">
                   <span>Total HT</span>
-                  <span className="font-medium">{fmtCurrency(totalHT)}</span>
+                  <span className="font-medium tabular-nums">{fmtCurrency(totalHT)}</span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-600">
                   <span>TVA {fa.tva} %</span>
-                  <span className="font-medium">{fmtCurrency(Math.round(tvaMontant))}</span>
+                  <span className="font-medium tabular-nums">{fmtCurrency(Math.round(tvaMontant))}</span>
                 </div>
-                <div className="border-t border-gray-200 pt-1.5 flex justify-between text-sm font-bold text-gray-900">
+                <div className="border-t border-gray-300 pt-1.5 flex justify-between text-sm font-bold text-gray-900">
                   <span>Total TTC</span>
-                  <span>{fmtCurrency(fa.montantTTC)}</span>
+                  <span className="tabular-nums">{fmtCurrency(fa.montantTTC)}</span>
                 </div>
               </div>
-            </div>
-
-            {/* Notes */}
-            {fa.notes && (
-              <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 mb-1">Notes</p>
-                <p className="text-xs text-gray-700">{fa.notes}</p>
-              </div>
-            )}
-
-            {/* Pied de page + QR Code */}
-            <div className="mt-8 pt-4 border-t border-gray-100 flex items-end justify-between gap-4">
-              <p className="text-xs text-gray-400">
-                Document enregistré le {fmtDate(fa.date)} par {companyName} — Athenis
-              </p>
-              {qrDataUrl && (
-                <div className="flex flex-col items-center shrink-0">
-                  <img src={qrDataUrl} alt="QR Code" className="w-20 h-20 border border-gray-200 rounded p-0.5" />
-                  <p className="mt-1 text-[10px] text-gray-400 font-semibold uppercase tracking-wide">Vérification</p>
-                  <p className="text-[10px] text-gray-400 font-mono">{fa.id}</p>
-                </div>
-              )}
             </div>
           </div>
+
+          {/* ── Notes ───────────────────────────────────────────────────── */}
+          {fa.notes && (
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Notes internes</p>
+              <p className="text-xs text-gray-700 whitespace-pre-wrap">{fa.notes}</p>
+            </div>
+          )}
+
         </div>
       </div>
     </div>
@@ -1298,7 +1266,7 @@ export function FacturesAchatsPage() {
           </div>
         </div>
 
-        {/* Document FACTURE ACHAT */}
+        {/* Fiche back-office d'enregistrement de la facture reçue */}
         {selectedLive && (
           <FAView
             fa={selectedLive}
