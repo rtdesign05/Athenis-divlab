@@ -10,6 +10,7 @@ import { usePermissions }                              from '@/features/auth/use
 import { useCurrency }                                 from '@/hooks/useCurrency'
 import { toSafeAmount }                                from '@/shared/utils/currency'
 import { useTresorerie }                               from '@/contexts/TresorerieContext'
+import { useCompanySettings }                          from '@/contexts/CompanySettingsContext'
 import { useAuth }                                     from '@/features/auth/useAuth'
 import { AtheisId }                                    from '@/shared/components/ui/AtheisId'
 import { ErrorBoundary }                               from '@/shared/components/feedback/ErrorBoundary'
@@ -309,8 +310,13 @@ export function AppDashboard() {
     refetchOnMount: 'always',
   })
 
+  const { company } = useCompanySettings()
   const firstName   = (user as { firstName?: string } | null)?.firstName || user?.email?.split('@')[0] || 'vous'
-  const companyName = (user as { companyName?: string } | null)?.companyName ?? null
+  // Priorité au nom saisi dans Paramètres → Entreprise (à jour si modification
+  // récente), repli sur le nom embarqué dans le JWT à la connexion.
+  const companyName = (company?.name ?? '').trim()
+    || (user as { companyName?: string } | null)?.companyName
+    || null
   const hasReminders = (reminders?.length ?? 0) > 0
 
   // ── SIG ─────────────────────────────────────────────────────────────────────
@@ -351,9 +357,13 @@ export function AppDashboard() {
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="shrink-0 flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold text-gray-900">Bonjour, {firstName}</h1>
+            <h1 className="text-base font-semibold text-gray-900">
+              Bonjour, {firstName}
+              {companyName && (
+                <span className="font-normal text-gray-500"> — {companyName}</span>
+              )}
+            </h1>
             <p className="text-xs text-gray-400 flex items-center gap-1.5">
-              {companyName && <>{companyName} · </>}
               {user?.atheisNumber && <AtheisId number={user.atheisNumber} size="sm" />}
               {user?.isRestricted && user?.agenceNom && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
