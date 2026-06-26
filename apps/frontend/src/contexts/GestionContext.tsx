@@ -1461,7 +1461,61 @@ export function GestionProvider({ children }: { children: ReactNode }) {
   }
 
   function updateFactureAchat(id: string, patch: Partial<Omit<FactureAchat, 'id'>>) {
+    // Optimistic update local
+    const previous = facturesAchats.find(f => f.id === id)
     setFacturesAchats(prev => prev.map(f => f.id === id ? { ...f, ...patch } : f))
+
+    const dbId = factureAchatDbIds.current[id]
+    if (!dbId) {
+      // Facture non persistée (création locale en attente) → pas d'appel API
+      return
+    }
+
+    // Construit le payload purchasesApi à partir des champs modifiés.
+    // Conservation des données : on n'envoie QUE les clés présentes dans le patch.
+    const apiPatch: purchasesApi.UpdateOrderPayload = {}
+    if (patch.fournisseur !== undefined) apiPatch.fournisseur = patch.fournisseur
+    if (patch.commande    !== undefined) apiPatch.reference   = patch.commande
+    if (patch.date        !== undefined) apiPatch.date        = patch.date
+    if (patch.echeance    !== undefined) apiPatch.receptionAt = patch.echeance
+    if (patch.tva         !== undefined) apiPatch.vatRate     = patch.tva
+    if (patch.montantHT   !== undefined) apiPatch.montantHT   = patch.montantHT
+    if (patch.montantTTC  !== undefined) apiPatch.montantTTC  = patch.montantTTC
+    if (patch.notes       !== undefined) apiPatch.notes       = patch.notes
+    if (patch.notes       !== undefined) apiPatch.objet       = patch.notes?.trim() || (previous?.fournisseur ? `Facture ${previous.fournisseur}` : 'Facture')
+    if (patch.lignes !== undefined) {
+      apiPatch.lines = patch.lignes.map(l => ({
+        designation:    l.description,
+        quantite:       l.quantite,
+        unite:          l.unite,
+        prixUnitaireHT: l.prixUnitaireHT,
+        montantHT:      l.montantHT,
+        ...((l as LigneFactureAchat & { articleId?: string }).articleId
+          && !/^ART-/i.test((l as LigneFactureAchat & { articleId?: string }).articleId!)
+          ? { articleId: (l as LigneFactureAchat & { articleId?: string }).articleId! }
+          : {}),
+        ...((l as LigneFactureAchat & { compteAchat?: string }).compteAchat?.trim()
+          ? { compteAchat: (l as LigneFactureAchat & { compteAchat?: string }).compteAchat!.trim() }
+          : {}),
+      }))
+    }
+
+    if (Object.keys(apiPatch).length === 0) return
+
+    purchasesApi.updateOrder(dbId, apiPatch)
+      .then(() => {
+        // Rafraîchit les KPI achats sur Accueil + Vue d'ensemble + SIG.
+        ;['purchases', 'dashboard', 'invoices', 'fiscal-years', 'accounting'].forEach(k =>
+          qc.invalidateQueries({ queryKey: [k] }),
+        )
+      })
+      .catch(err => {
+        console.error('[facturesAchats] updateFactureAchat API error', err)
+        // Rollback si possible — préserve les données du serveur en cas d'échec.
+        if (previous) {
+          setFacturesAchats(prev => prev.map(f => f.id === id ? previous : f))
+        }
+      })
   }
 
   function deleteFactureAchat(id: string) {

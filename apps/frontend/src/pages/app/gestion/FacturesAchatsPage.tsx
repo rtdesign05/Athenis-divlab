@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useCallback } from 'react'
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { useCurrency } from '@/hooks/useCurrency'
 import { useAuth } from '@/features/auth/useAuth'
 import { useGestion, type FactureAchatStatut, type FactureAchat } from '@/contexts/GestionContext'
@@ -24,6 +24,50 @@ const STATUTS: FactureAchatStatut[] = ['À valider', 'Validée', 'Payée', 'En r
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })
+}
+
+// ── Cellule inline pièce justificative ────────────────────────────────────────
+// • Si une pièce est attachée → lien direct vers le PDF/image (nouvel onglet).
+// • Sinon → bouton qui déclenche le sélecteur de fichier via ref (plus fiable
+//   qu'un <label> avec sr-only, insensible aux stopPropagation parents).
+// L'icône inline NE PERMET QUE D'AJOUTER : remplacement/suppression d'une pièce
+// existante passe obligatoirement par la fiche détail (bouton Retirer) — évite
+// l'écrasement involontaire d'un justificatif déjà attaché en production.
+
+interface PieceInlineCellProps {
+  pieceUrl?: string | undefined
+  pieceName?: string | undefined
+  onPick:    (file: File) => void
+}
+
+function PieceInlineCell({ pieceUrl, pieceName, onPick }: PieceInlineCellProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  if (pieceUrl) {
+    return (
+      <a href={pieceUrl} target="_blank" rel="noreferrer"
+        title={`Ouvrir : ${pieceName ?? 'pièce jointe'}`}
+        className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
+        📎
+      </a>
+    )
+  }
+  return (
+    <>
+      <input ref={inputRef} type="file" hidden
+        accept=".pdf,.png,.jpg,.jpeg,.webp"
+        onChange={ev => {
+          const file = ev.target.files?.[0]
+          if (file) onPick(file)
+          ev.target.value = ''
+        }} />
+      <button type="button"
+        title="Joindre la facture reçue du fournisseur (PDF, image)"
+        onClick={() => inputRef.current?.click()}
+        className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-dashed border-blue-300 text-blue-500 hover:bg-blue-50 hover:border-blue-500 transition-colors">
+        +
+      </button>
+    </>
+  )
 }
 
 // ── Import CSV ────────────────────────────────────────────────────────────────
@@ -758,9 +802,12 @@ interface FAViewProps {
   onChangeStatut: (statut: FactureAchatStatut) => void
   onAttachPiece?: (file: File) => Promise<void>
   onRemovePiece?: () => Promise<void>
+  /** Persistance d'une modification (date, échéance, TVA, montants, notes,
+   *  N° facture fournisseur). Si non fourni → mode lecture seule. */
+  onUpdate?:    (patch: Partial<Omit<FactureAchat, 'id'>>) => void
 }
 
-function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttachPiece, onRemovePiece }: FAViewProps) {
+function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttachPiece, onRemovePiece, onUpdate }: FAViewProps) {
   const lignes  = fa.lignes ?? []
   const totalHT = lignes.length > 0
     ? lignes.reduce((s, l) => s + l.montantHT, 0)
@@ -774,6 +821,65 @@ function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttac
   const statutBadge = STATUT_STYLE[fa.statut] ?? 'bg-gray-100 text-gray-600'
   const hasPiece    = !!fa.pieceUrl
 
+  // ── Mode édition ─────────────────────────────────────────────────────────
+  // Lecture seule par défaut. Bouton « ✏️ Modifier » dans la toolbar bascule
+  // en édition. « Enregistrer » valide les changements via onUpdate (persisté
+  // côté API par GestionContext.updateFactureAchat — aucune donnée écrasée
+  // tant qu'on n'a pas validé). « Annuler » revient à l'état initial.
+  // Les lignes restent lecture seule pour éviter de casser la cohérence
+  // articleId/stock — pour modifier les lignes, l'utilisateur peut créer
+  // une nouvelle facture et annuler l'ancienne.
+  const [isEditing, setIsEditing] = useState(false)
+  const [editForm,  setEditForm]  = useState({
+    commande:   fa.commande   ?? '',
+    date:       fa.date,
+    echeance:   fa.echeance,
+    tva:        fa.tva,
+    montantHT:  fa.montantHT,
+    montantTTC: fa.montantTTC,
+    notes:      fa.notes      ?? '',
+  })
+  // Sync editForm si la facture change (ex : refetch après save).
+  useEffect(() => {
+    setEditForm({
+      commande:   fa.commande ?? '',
+      date:       fa.date,
+      echeance:   fa.echeance,
+      tva:        fa.tva,
+      montantHT:  fa.montantHT,
+      montantTTC: fa.montantTTC,
+      notes:      fa.notes ?? '',
+    })
+  }, [fa.id, fa.commande, fa.date, fa.echeance, fa.tva, fa.montantHT, fa.montantTTC, fa.notes])
+
+  function startEdit() { setIsEditing(true) }
+  function cancelEdit() {
+    setEditForm({
+      commande:   fa.commande ?? '',
+      date:       fa.date,
+      echeance:   fa.echeance,
+      tva:        fa.tva,
+      montantHT:  fa.montantHT,
+      montantTTC: fa.montantTTC,
+      notes:      fa.notes ?? '',
+    })
+    setIsEditing(false)
+  }
+  function saveEdit() {
+    if (!onUpdate) return
+    // N'envoie que les champs réellement modifiés — préserve les autres données.
+    const patch: Partial<Omit<FactureAchat, 'id'>> = {}
+    if (editForm.commande   !== (fa.commande ?? '')) patch.commande   = editForm.commande
+    if (editForm.date       !==  fa.date)            patch.date       = editForm.date
+    if (editForm.echeance   !==  fa.echeance)        patch.echeance   = editForm.echeance
+    if (editForm.tva        !==  fa.tva)             patch.tva        = editForm.tva
+    if (editForm.montantHT  !==  fa.montantHT)       patch.montantHT  = editForm.montantHT
+    if (editForm.montantTTC !==  fa.montantTTC)      patch.montantTTC = editForm.montantTTC
+    if (editForm.notes      !== (fa.notes ?? ''))    patch.notes      = editForm.notes
+    if (Object.keys(patch).length > 0) onUpdate(patch)
+    setIsEditing(false)
+  }
+
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
 
@@ -786,11 +892,35 @@ function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttac
           </button>
           <span className="text-xs text-gray-400 font-mono">{fa.id}</span>
           <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statutBadge}`}>{fa.statut}</span>
-          <select value={fa.statut} onChange={e => onChangeStatut(e.target.value as FactureAchatStatut)}
-            className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30">
-            {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          {!isEditing && (
+            <select value={fa.statut} onChange={e => onChangeStatut(e.target.value as FactureAchatStatut)}
+              className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500/30">
+              {STATUTS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
         </div>
+        {/* Actions édition */}
+        {onUpdate && (
+          <div className="flex items-center gap-2">
+            {!isEditing ? (
+              <button onClick={startEdit}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                ✏️ Modifier
+              </button>
+            ) : (
+              <>
+                <button onClick={cancelEdit}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
+                  Annuler
+                </button>
+                <button onClick={saveEdit}
+                  className="rounded-lg bg-green-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-800">
+                  💾 Enregistrer
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Corps fiche ─────────────────────────────────────────────────── */}
@@ -878,28 +1008,83 @@ function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttac
               )}
               <p className="text-[11px] text-gray-400 pt-1">Agence : {fa.agence}</p>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-1">
+            <div className="rounded-lg border border-gray-200 bg-white p-4 space-y-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Données saisies</p>
-              {fa.commande && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">N° facture fournisseur</span>
-                  <span className="font-mono font-medium text-gray-800">{fa.commande}</span>
-                </div>
+              {isEditing ? (
+                <>
+                  <label className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500">N° facture fournisseur</span>
+                    <input value={editForm.commande}
+                      onChange={e => setEditForm(f => ({ ...f, commande: e.target.value }))}
+                      placeholder="ex : FA-2026-001"
+                      className="w-40 rounded border border-gray-200 px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+                  </label>
+                  <label className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500">Date facture</span>
+                    <input type="date" value={editForm.date}
+                      onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))}
+                      className="w-40 rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+                  </label>
+                  <label className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500">Échéance</span>
+                    <input type="date" value={editForm.echeance}
+                      onChange={e => setEditForm(f => ({ ...f, echeance: e.target.value }))}
+                      className="w-40 rounded border border-gray-200 px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+                  </label>
+                  <label className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500">TVA (%)</span>
+                    <input type="number" step="0.01" min="0" max="100" value={editForm.tva}
+                      onChange={e => setEditForm(f => ({ ...f, tva: Number(e.target.value) }))}
+                      className="w-40 rounded border border-gray-200 px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+                  </label>
+                  <label className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500">Montant HT</span>
+                    <input type="number" step="0.01" min="0" value={editForm.montantHT}
+                      onChange={e => setEditForm(f => ({ ...f, montantHT: Number(e.target.value) }))}
+                      className="w-40 rounded border border-gray-200 px-2 py-1 text-xs text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+                  </label>
+                  <label className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500">Montant TTC</span>
+                    <input type="number" step="0.01" min="0" value={editForm.montantTTC}
+                      onChange={e => setEditForm(f => ({ ...f, montantTTC: Number(e.target.value) }))}
+                      className="w-40 rounded border border-gray-200 px-2 py-1 text-xs text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+                  </label>
+                </>
+              ) : (
+                <>
+                  {fa.commande && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-500">N° facture fournisseur</span>
+                      <span className="font-mono font-medium text-gray-800">{fa.commande}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Date facture</span>
+                    <span className="font-medium text-gray-800">{fmtDate(fa.date)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">Échéance</span>
+                    <span className="font-medium text-gray-800">{fmtDate(fa.echeance)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-gray-500">TVA</span>
+                    <span className="font-medium text-gray-800">{fa.tva} %</span>
+                  </div>
+                </>
               )}
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Date facture</span>
-                <span className="font-medium text-gray-800">{fmtDate(fa.date)}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-500">Échéance</span>
-                <span className="font-medium text-gray-800">{fmtDate(fa.echeance)}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-gray-500">TVA</span>
-                <span className="font-medium text-gray-800">{fa.tva} %</span>
-              </div>
             </div>
           </div>
+
+          {/* ── Avertissement si édition ────────────────────────────────── */}
+          {isEditing && (
+            <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-2.5">
+              <p className="text-[11px] text-blue-900">
+                💡 Édition activée — les <strong>lignes de saisie</strong> ne sont pas modifiables ici
+                (création/annulation seulement) pour préserver la cohérence avec le stock et la
+                comptabilité. Pour modifier les lignes, annulez cette facture puis créez-en une nouvelle.
+              </p>
+            </div>
+          )}
 
           {/* ── Lignes de saisie ────────────────────────────────────────── */}
           <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -961,11 +1146,19 @@ function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttac
             </div>
           </div>
 
-          {/* ── Notes ───────────────────────────────────────────────────── */}
-          {fa.notes && (
+          {/* ── Notes internes (éditables) ───────────────────────────────── */}
+          {(isEditing || fa.notes) && (
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Notes internes</p>
-              <p className="text-xs text-gray-700 whitespace-pre-wrap">{fa.notes}</p>
+              {isEditing ? (
+                <textarea value={editForm.notes}
+                  onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={3}
+                  placeholder="Annotations internes, références, références bancaires…"
+                  className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-green-500/30" />
+              ) : (
+                <p className="text-xs text-gray-700 whitespace-pre-wrap">{fa.notes}</p>
+              )}
             </div>
           )}
 
@@ -980,7 +1173,7 @@ function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttac
 export function FacturesAchatsPage() {
   const { fmt, defaultVatRate } = useCurrency()
   const { user }                = useAuth()
-  const { facturesAchats, achats, fournisseurs, updateFactureAchatStatut, attachPieceToFactureAchat, addFactureAchat } = useGestion()
+  const { facturesAchats, achats, fournisseurs, updateFactureAchatStatut, attachPieceToFactureAchat, addFactureAchat, updateFactureAchat } = useGestion()
   const { vatRate, company }    = useCompanySettings()
 
   const agenceNom    = user?.agenceNom ?? null
@@ -1277,29 +1470,14 @@ export function FacturesAchatsPage() {
                       <td className="px-4 py-2.5 text-xs text-gray-500">{new Date(f.echeance).toLocaleDateString('fr-FR')}</td>
                       <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{fmt(f.montantTTC)}</td>
                       {/* ── Pièce justificative inline ── */}
-                      {/*   - Présente : icône verte → clic ouvre le PDF dans un nouvel onglet */}
-                      {/*   - Absente  : icône bleue → clic ouvre le sélecteur de fichier */}
+                      {/* PieceInlineCell utilise un bouton + ref (plus fiable cross-browser
+                          que label+sr-only ; insensible aux stopPropagation parents). */}
                       <td className="px-2 py-2.5 text-center" onClick={e => e.stopPropagation()}>
-                        {f.pieceUrl ? (
-                          <a href={f.pieceUrl} target="_blank" rel="noreferrer"
-                            title={`Ouvrir : ${f.pieceName ?? 'pièce jointe'}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
-                            📎
-                          </a>
-                        ) : (
-                          <label
-                            title="Joindre la facture reçue du fournisseur (PDF, image)"
-                            className="inline-flex items-center justify-center w-7 h-7 rounded-full border border-dashed border-blue-300 text-blue-500 cursor-pointer hover:bg-blue-50 hover:border-blue-500 transition-colors">
-                            <input type="file" className="sr-only"
-                              accept=".pdf,.png,.jpg,.jpeg,.webp"
-                              onChange={ev => {
-                                const file = ev.target.files?.[0]
-                                if (file) void uploadAndAttachFA(f.id, file)
-                                ev.target.value = ''
-                              }} />
-                            +
-                          </label>
-                        )}
+                        <PieceInlineCell
+                          pieceUrl={f.pieceUrl}
+                          pieceName={f.pieceName}
+                          onPick={file => uploadAndAttachFA(f.id, file)}
+                        />
                       </td>
                       <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                         <select value={f.statut}
@@ -1328,6 +1506,7 @@ export function FacturesAchatsPage() {
             onChangeStatut={s => updateFactureAchatStatut(selectedLive.id, s)}
             onAttachPiece={file => uploadAndAttachFA(selectedLive.id, file)}
             onRemovePiece={() => attachPieceToFactureAchat(selectedLive.id, null, null)}
+            onUpdate={patch => updateFactureAchat(selectedLive.id, patch)}
           />
         )}
       </div>
