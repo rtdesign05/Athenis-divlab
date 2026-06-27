@@ -44,11 +44,17 @@ function PieceInlineCell({ pieceUrl, pieceName, onPick }: PieceInlineCellProps) 
   const inputRef = useRef<HTMLInputElement>(null)
   if (pieceUrl) {
     return (
-      <a href={pieceUrl} target="_blank" rel="noreferrer"
+      <button type="button"
         title={`Ouvrir : ${pieceName ?? 'pièce jointe'}`}
+        onClick={() => {
+          attachmentsApi.openInNewTab(pieceUrl).catch(err => {
+            console.error('[FA] open piece failed', err)
+            alert("Impossible d'ouvrir le justificatif (session expirée ?)")
+          })
+        }}
         className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-50 text-green-700 hover:bg-green-100 transition-colors">
         📎
-      </a>
+      </button>
     )
   }
   return (
@@ -946,17 +952,29 @@ function FAView({ fa, fournisseur, fmtCurrency, onClose, onChangeStatut, onAttac
                   <span className="text-2xl">📎</span>
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-green-700">Justificatif fournisseur attaché</p>
-                    <a href={fa.pieceUrl!} target="_blank" rel="noreferrer"
-                      className="text-sm font-medium text-green-800 hover:underline truncate block">
+                    <button type="button"
+                      onClick={() => {
+                        attachmentsApi.openInNewTab(fa.pieceUrl!).catch(err => {
+                          console.error('[FA] open piece failed', err)
+                          alert("Impossible d'ouvrir le justificatif (session expirée ?)")
+                        })
+                      }}
+                      className="text-sm font-medium text-green-800 hover:underline truncate block text-left">
                       {fa.pieceName ?? 'Pièce jointe'}
-                    </a>
+                    </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <a href={fa.pieceUrl!} target="_blank" rel="noreferrer"
+                  <button type="button"
+                    onClick={() => {
+                      attachmentsApi.openInNewTab(fa.pieceUrl!).catch(err => {
+                        console.error('[FA] open piece failed', err)
+                        alert("Impossible d'ouvrir le justificatif (session expirée ?)")
+                      })
+                    }}
                     className="rounded-lg border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50">
                     Ouvrir
-                  </a>
+                  </button>
                   {onRemovePiece && (
                     <button onClick={() => {
                       if (confirm(`Retirer la pièce "${fa.pieceName}" ? La saisie comptable est conservée.`)) {

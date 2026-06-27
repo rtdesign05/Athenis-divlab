@@ -971,15 +971,19 @@ export function JournalPage() {
                                   <>
                                     {e.pieceUrl ? (
                                       <span className="inline-flex items-center gap-0.5">
-                                        <a
-                                          href={e.pieceUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            attachmentsApi.openInNewTab(e.pieceUrl!).catch(err => {
+                                              console.error('[Journal] open piece failed', err)
+                                              alert("Impossible d'ouvrir la pièce justificative (session expirée ?)")
+                                            })
+                                          }}
                                           title={`Voir la pièce justificative : ${e.pieceName ?? ''}`}
                                           className="text-green-600 hover:text-green-800 text-xs leading-none"
                                         >
                                           📎
-                                        </a>
+                                        </button>
                                         {!isReadOnly && (
                                           <button
                                             onClick={() => {
