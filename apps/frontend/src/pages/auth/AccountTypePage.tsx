@@ -89,7 +89,7 @@ export function AccountTypePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="athenis-auth-page min-h-screen bg-gray-50">
 
       {/* Header */}
       <div className="bg-gradient-to-br from-green-950 via-green-900 to-green-800 text-white px-6 py-10 relative overflow-hidden">

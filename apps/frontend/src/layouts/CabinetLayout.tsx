@@ -13,7 +13,7 @@ export function CabinetLayout() {
   const clientId = isClientView ? location.pathname.split('/')[3] : null
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="athenis-app-shell flex h-screen bg-gray-50">
       <aside className="flex w-64 flex-col border-r border-gray-200 bg-forest-900">
         <div className="flex h-16 items-center px-5">
           <span className="text-xl font-bold tracking-tight text-white">Athenis</span>

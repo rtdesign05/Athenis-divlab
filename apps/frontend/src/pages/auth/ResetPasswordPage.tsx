@@ -58,7 +58,7 @@ export function ResetPasswordPage() {
 
   if (tokenMissing) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
+      <div className="athenis-auth-page min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8 space-y-4">
           <h1 className="text-xl font-semibold text-gray-900">Lien invalide</h1>
           <p className="text-sm text-gray-500">
@@ -73,7 +73,7 @@ export function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
+    <div className="athenis-auth-page min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8 space-y-5">
 
         <div>

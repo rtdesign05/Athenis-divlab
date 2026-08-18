@@ -337,7 +337,7 @@ export function Register() {
   const showSiren = isCompany && form.country === 'FR'
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
+    <div className="athenis-auth-page min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
     <div ref={cardRef} className="w-full max-w-lg bg-white rounded-2xl shadow-lg p-8">
     <div className="space-y-6">
 

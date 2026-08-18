@@ -352,7 +352,7 @@ export function AppDashboard() {
 
   return (
     <ErrorBoundary>
-      <div className="h-full flex flex-col gap-3 p-4 overflow-hidden">
+      <div className="athenis-dashboard h-full flex flex-col gap-3 p-4 overflow-hidden">
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
         <div className="shrink-0 flex items-center justify-between">

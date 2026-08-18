@@ -29,7 +29,7 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
+    <div className="athenis-auth-page min-h-screen bg-gray-50 flex items-start justify-center py-12 px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-8 space-y-5">
 
         <div>

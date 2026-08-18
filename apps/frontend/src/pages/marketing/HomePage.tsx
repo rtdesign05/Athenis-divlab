@@ -1,660 +1,137 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getCountryConfig, getAllPlansPricing } from '@athenis/shared-types'
+import { getCountryConfig } from '@athenis/shared-types'
 import { useDetectedCountry } from '@/hooks/useDetectedCountry'
 
-// ── Mockup numbers — adaptés au pays détecté ─────────────────────────────────
-// Ces chiffres servent de "preview crédible" sur le hero. On les affiche
-// dans la devise locale plutôt qu'en FCFA dur, sinon un utilisateur français
-// voit "12.4M FCFA" qui ne lui parle pas.
-function useMockNumbers(): { ca: string; treso: string; facture: string } {
-  const { countryCode } = useDetectedCountry('CM')
-  const cfg = getCountryConfig(countryCode)
-  const symbol = cfg.currencySymbol
-  // En XAF (Cameroun/Afrique CFA), montants en millions/milliers FCFA.
-  // En EUR/USD/autres, on adapte les ordres de grandeur (PME française = 30-100k€ CA mensuel).
-  if (cfg.currencyCode === 'XAF' || cfg.currencyCode === 'XOF') {
-    return { ca: `12.4M ${symbol}`, treso: `3.8M ${symbol}`, facture: `850 000 ${symbol}` }
+type IconName = 'chart' | 'wallet' | 'people' | 'scale' | 'leaf' | 'building' | 'check' | 'arrow' | 'spark'
+
+function Icon({ name, className = 'h-5 w-5' }: { name: IconName; className?: string }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    chart: <><path d="M4 19V9m6 10V5m6 14v-7m4 7H2" /><path d="m4 7 6-4 6 6 4-3" /></>,
+    wallet: <><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H18v16H5.5A2.5 2.5 0 0 1 3 17.5z" /><path d="M3 7h15m-4 5h6v4h-6a2 2 0 0 1 0-4Z" /></>,
+    people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
+    scale: <><path d="m12 3-7 3 7 3 7-3-7-3Z" /><path d="M5 6v8m14-8v8M3 14h4l-2 4-2-4Zm14 0h4l-2 4-2-4ZM12 9v12" /></>,
+    leaf: <><path d="M20 4c-7.5 0-13 2.5-13 8a5 5 0 0 0 5 5c5.5 0 8-5.5 8-13Z" /><path d="M4 21c2-5 5-8 11-11" /></>,
+    building: <><path d="M4 21V4h11v17M2 21h20M8 8h3m-3 4h3m-3 4h3m6-6h3v11" /></>,
+    check: <path d="m5 12 4 4L19 6" />,
+    arrow: <><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></>,
+    spark: <><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3Z" /><path d="m5 14 .8 2.2L8 17l-2.2.8L5 20l-.8-2.2L2 17l2.2-.8L5 14Zm14-2 .6 1.4L21 14l-1.4.6L19 16l-.6-1.4L17 14l1.4-.6L19 12Z" /></>,
   }
-  if (cfg.currencyCode === 'USD' || cfg.currencyCode === 'CAD') {
-    return { ca: `$24,000`, treso: `$7,200`, facture: `$1,600` }
-  }
-  // EUR / FR / BE / autres pays européens
-  return { ca: `24 000 ${symbol}`, treso: `7 200 ${symbol}`, facture: `1 600 ${symbol}` }
+  return <svg aria-hidden className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }
 
-// ── Reusable: section heading ────────────────────────────────────────────────
+function Reveal({ children, className = '', delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) { setVisible(true); observer.disconnect() }
+    }, { threshold: 0.14 })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  return <div ref={ref} style={{ transitionDelay: `${delay}ms` }} className={`landing-reveal ${visible ? 'is-visible' : ''} ${className}`}>{children}</div>
+}
 
-function SectionHeading({ eyebrow, title, subtitle, center = false }: {
-  eyebrow?: string
-  title:    string
-  subtitle?: string
-  center?:  boolean
-}) {
+function useMockNumbers() {
+  const { countryCode } = useDetectedCountry('CM')
+  const cfg = getCountryConfig(countryCode)
+  if (cfg.currencyCode === 'XAF' || cfg.currencyCode === 'XOF') return { ca: `12,4 M ${cfg.currencySymbol}`, cash: `3,8 M ${cfg.currencySymbol}`, invoice: `850 000 ${cfg.currencySymbol}` }
+  if (cfg.currencyCode === 'USD' || cfg.currencyCode === 'CAD') return { ca: '$24,000', cash: '$7,200', invoice: '$1,600' }
+  return { ca: `24 000 ${cfg.currencySymbol}`, cash: `7 200 ${cfg.currencySymbol}`, invoice: `1 600 ${cfg.currencySymbol}` }
+}
+
+function HeroDashboard() {
+  const mock = useMockNumbers()
+  const bars = [36, 53, 44, 69, 58, 82, 66, 91, 77, 96, 85, 100]
   return (
-    <div className={`max-w-3xl ${center ? 'mx-auto text-center' : ''}`}>
-      {eyebrow && (
-        <p className="text-sm font-semibold uppercase tracking-wider text-forest-700 mb-3">
-          {eyebrow}
-        </p>
-      )}
-      <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-gray-900 leading-tight">
-        {title}
-      </h2>
-      {subtitle && (
-        <p className="mt-4 text-lg text-gray-600 leading-relaxed">{subtitle}</p>
-      )}
+    <div className="landing-dashboard-stage relative mx-auto w-full max-w-[590px] lg:mr-0">
+      <div className="landing-orbit landing-orbit-one" />
+      <div className="landing-orbit landing-orbit-two" />
+      <div className="landing-dashboard relative overflow-hidden rounded-[28px] border border-white/80 bg-white/90 p-2 shadow-[0_40px_100px_-35px_rgba(13,34,25,.45)] backdrop-blur-xl">
+        <div className="rounded-[22px] border border-gray-100 bg-[#f7faf8] p-4 sm:p-6">
+          <div className="mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-forest-900 font-bold text-white">A</div><div><p className="text-sm font-bold text-gray-900">Vue d'ensemble</p><p className="text-[11px] text-gray-500">Mise à jour à l'instant</p></div></div>
+            <div className="flex gap-1.5"><span className="h-2 w-2 rounded-full bg-forest-300"/><span className="h-2 w-2 rounded-full bg-forest-500"/><span className="h-2 w-2 rounded-full bg-forest-800"/></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {[['Chiffre d’affaires', mock.ca, '+12,8 %'], ['Trésorerie', mock.cash, '+4,2 %'], ['À encaisser', mock.invoice, '3 factures']].map((item, i) => (
+              <div key={item[0]} className={`rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${i === 2 ? 'col-span-2 sm:col-span-1' : ''}`}>
+                <p className="text-[10px] font-semibold uppercase tracking-[.12em] text-gray-400">{item[0]}</p><p className="mt-2 text-lg font-bold tracking-tight text-gray-900">{item[1]}</p><p className={`mt-1 text-[11px] font-semibold ${i === 2 ? 'text-amber-600' : 'text-forest-600'}`}>{item[2]}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-[1.5fr_.8fr]">
+            <div className="rounded-2xl border border-gray-100 bg-white p-4">
+              <div className="mb-5 flex items-center justify-between"><div><p className="text-xs font-bold text-gray-800">Activité financière</p><p className="text-[10px] text-gray-400">12 derniers mois</p></div><span className="rounded-full bg-forest-50 px-2 py-1 text-[9px] font-bold text-forest-700">+18,4 %</span></div>
+              <div className="flex h-28 items-end gap-1.5">{bars.map((height, i) => <span key={i} className="landing-bar flex-1 rounded-t-md bg-gradient-to-t from-forest-800 to-forest-300" style={{ height: `${height}%`, animationDelay: `${i * 70}ms` }} />)}</div>
+            </div>
+            <div className="rounded-2xl bg-forest-950 p-4 text-white"><p className="text-[10px] uppercase tracking-widest text-forest-300">Santé globale</p><p className="mt-2 text-3xl font-bold">92<span className="text-sm text-forest-300">/100</span></p><div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full w-[92%] rounded-full bg-gradient-to-r from-forest-400 to-amber-300"/></div><p className="mt-3 text-[10px] leading-relaxed text-forest-200">Tous vos indicateurs sont au vert.</p></div>
+          </div>
+        </div>
+      </div>
+      <div className="landing-float landing-float-left hidden sm:flex"><span className="grid h-9 w-9 place-items-center rounded-xl bg-forest-100 text-forest-700"><Icon name="check" /></span><div><p className="text-xs font-bold text-gray-900">Facture réglée</p><p className="text-[10px] text-gray-500">Paiement rapproché automatiquement</p></div></div>
+      <div className="landing-float landing-float-right hidden sm:flex"><span className="relative flex h-3 w-3"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-70"/><span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500"/></span><div><p className="text-xs font-bold text-gray-900">Échéance fiscale</p><p className="text-[10px] text-gray-500">Anticipée 5 jours avant</p></div></div>
     </div>
   )
 }
 
-// ── Hero ─────────────────────────────────────────────────────────────────────
-
-function Hero() {
-  const mock = useMockNumbers()
-  return (
-    <section className="relative overflow-hidden bg-gradient-to-b from-forest-50/40 via-white to-white pt-12 pb-16 lg:pt-20 lg:pb-24">
-      {/* Décoratif : motifs en arrière-plan */}
-      <div aria-hidden className="absolute inset-0 -z-10">
-        <div className="absolute top-0 right-0 -mr-48 mt-12 h-96 w-96 rounded-full bg-forest-100/40 blur-3xl" />
-        <div className="absolute bottom-0 left-0 -ml-48 -mb-24 h-96 w-96 rounded-full bg-amber-100/30 blur-3xl" />
-      </div>
-
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-          {/* Left: texte */}
-          <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-forest-50 border border-forest-200 px-3 py-1.5 mb-6">
-              <span className="h-2 w-2 rounded-full bg-forest-500 animate-pulse"></span>
-              <p className="text-xs font-semibold text-forest-800">
-                🇨🇲 Conforme SYSCOHADA · 🇫🇷 Conforme PCG
-              </p>
-            </div>
-
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-gray-900 leading-[1.05]">
-              La <span className="text-forest-700">gestion 360°</span> de votre PME, enfin&nbsp;simple.
-            </h1>
-
-            <p className="mt-6 text-lg sm:text-xl text-gray-600 leading-relaxed max-w-xl">
-              Comptabilité, facturation, paie, juridique, ESG —
-              tous les outils de gestion de votre entreprise dans <strong className="text-gray-900">un seul logiciel</strong>,
-              en français, conçu pour les PME d'Afrique et de France.
-            </p>
-
-            <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              <Link
-                to="/auth/register"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-forest-900 px-6 py-3 text-base font-semibold text-white shadow-md transition-all hover:bg-forest-800 hover:shadow-lg hover:scale-105"
-              >
-                Essayer gratuitement
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
-              </Link>
-              <Link
-                to="/fonctionnalites"
-                className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-gray-200 bg-white px-6 py-3 text-base font-semibold text-gray-700 transition-colors hover:border-forest-300 hover:text-forest-700"
-              >
-                Voir les fonctionnalités
-              </Link>
-            </div>
-
-            <div className="mt-8 flex items-center gap-6 text-sm text-gray-500">
-              <div className="flex items-center gap-1.5">
-                <svg className="h-5 w-5 text-forest-600" fill="currentColor" viewBox="0 0 20 20"><path d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"/></svg>
-                Gratuit pour démarrer
-              </div>
-              <div className="flex items-center gap-1.5">
-                <svg className="h-5 w-5 text-forest-600" fill="currentColor" viewBox="0 0 20 20"><path d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"/></svg>
-                Sans engagement
-              </div>
-              <div className="hidden sm:flex items-center gap-1.5">
-                <svg className="h-5 w-5 text-forest-600" fill="currentColor" viewBox="0 0 20 20"><path d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"/></svg>
-                Données en France/UE
-              </div>
-            </div>
-          </div>
-
-          {/* Right: mock screenshot */}
-          <div className="relative">
-            <div className="relative rounded-2xl bg-white shadow-2xl border border-gray-200 overflow-hidden">
-              {/* Browser bar */}
-              <div className="bg-gray-100 border-b border-gray-200 px-4 py-2.5 flex items-center gap-1.5">
-                <div className="h-2.5 w-2.5 rounded-full bg-red-400"></div>
-                <div className="h-2.5 w-2.5 rounded-full bg-amber-400"></div>
-                <div className="h-2.5 w-2.5 rounded-full bg-green-400"></div>
-                <div className="ml-4 flex-1 bg-white rounded px-2 py-1 text-xs text-gray-500">
-                  athenis360.com/app/dashboard
-                </div>
-              </div>
-              {/* Dashboard mockup */}
-              <div className="p-6 bg-gray-50">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-base font-bold text-gray-900">Tableau de bord</h3>
-                  <div className="flex gap-1">
-                    <div className="h-6 w-16 rounded bg-forest-100"></div>
-                    <div className="h-6 w-16 rounded bg-gray-200"></div>
-                  </div>
-                </div>
-                {/* KPI cards */}
-                <div className="grid grid-cols-3 gap-3 mb-4">
-                  <div className="bg-white rounded-lg p-3 border border-gray-200">
-                    <p className="text-[10px] text-gray-500 uppercase">Chiffre d'affaires</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">{mock.ca}</p>
-                    <p className="text-[10px] text-green-600 mt-0.5">↑ 12% ce mois</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 border border-gray-200">
-                    <p className="text-[10px] text-gray-500 uppercase">Factures à émettre</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">8</p>
-                    <p className="text-[10px] text-amber-600 mt-0.5">3 en retard</p>
-                  </div>
-                  <div className="bg-white rounded-lg p-3 border border-gray-200">
-                    <p className="text-[10px] text-gray-500 uppercase">Trésorerie</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">{mock.treso}</p>
-                    <p className="text-[10px] text-green-600 mt-0.5">Stable</p>
-                  </div>
-                </div>
-                {/* Chart placeholder */}
-                <div className="bg-white rounded-lg p-3 border border-gray-200 h-32 flex items-end gap-1.5 px-2">
-                  {[40, 65, 50, 80, 70, 95, 60, 85, 75, 90, 80, 100].map((h, i) => (
-                    <div key={i} className="flex-1 bg-gradient-to-t from-forest-600 to-forest-400 rounded-t" style={{ height: `${h}%` }}></div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            {/* Floating badges */}
-            <div className="hidden lg:block absolute -bottom-4 -left-6 bg-white rounded-xl shadow-xl border border-gray-100 p-3 flex items-center gap-2">
-              <div className="h-9 w-9 rounded-lg bg-green-100 flex items-center justify-center text-xl">✓</div>
-              <div>
-                <p className="text-xs font-semibold text-gray-900">Facture validée</p>
-                <p className="text-[10px] text-gray-500">FAC-2026-0042 · {mock.facture}</p>
-              </div>
-            </div>
-            <div className="hidden lg:block absolute -top-4 -right-6 bg-white rounded-xl shadow-xl border border-gray-100 p-3 flex items-center gap-2">
-              <div className="h-9 w-9 rounded-lg bg-amber-100 flex items-center justify-center text-xl">🔔</div>
-              <div>
-                <p className="text-xs font-semibold text-gray-900">CNPS du mois</p>
-                <p className="text-[10px] text-gray-500">Échéance dans 5 jours</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Trust strip ──────────────────────────────────────────────────────────────
-
-function TrustStrip() {
-  return (
-    <section className="border-y border-gray-100 py-8 bg-gray-50/30">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <p className="text-center text-xs font-semibold uppercase tracking-wider text-gray-400 mb-6">
-          Conformité &amp; Standards
-        </p>
-        <div className="flex flex-wrap justify-center items-center gap-x-10 gap-y-4 text-center">
-          <div className="flex items-center gap-2 text-gray-500 font-semibold text-sm">
-            <span className="text-2xl">📒</span> SYSCOHADA Révisé 2017
-          </div>
-          <div className="flex items-center gap-2 text-gray-500 font-semibold text-sm">
-            <span className="text-2xl">🇫🇷</span> Plan Comptable Général
-          </div>
-          <div className="flex items-center gap-2 text-gray-500 font-semibold text-sm">
-            <span className="text-2xl">🔒</span> RGPD compliant
-          </div>
-          <div className="flex items-center gap-2 text-gray-500 font-semibold text-sm">
-            <span className="text-2xl">🇪🇺</span> Hébergement UE
-          </div>
-          <div className="flex items-center gap-2 text-gray-500 font-semibold text-sm">
-            <span className="text-2xl">🔐</span> 2FA · AES-256
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Modules section ──────────────────────────────────────────────────────────
-
-const MODULES = [
-  {
-    icon: '🧾',
-    title: 'Gestion commerciale',
-    desc:  'Devis, factures, clients, fournisseurs, stocks et trésorerie en temps réel.',
-    color: 'bg-blue-50 text-blue-700 border-blue-100',
-    link:  '/fonctionnalites/gestion',
-  },
-  {
-    icon: '📒',
-    title: 'Comptabilité',
-    desc:  'Journal, grand livre, états financiers (Bilan, CR, TAFIRE). SYSCOHADA + PCG.',
-    color: 'bg-forest-50 text-forest-700 border-forest-100',
-    link:  '/fonctionnalites/comptabilite',
-  },
-  {
-    icon: '👥',
-    title: 'Ressources Humaines',
-    desc:  'Employés, contrats, paie (CNPS Cameroun, URSSAF France), congés, planning.',
-    color: 'bg-purple-50 text-purple-700 border-purple-100',
-    link:  '/fonctionnalites/rh',
-  },
-  {
-    icon: '⚖️',
-    title: 'Juridique',
-    desc:  'Contrats, signature électronique OHADA, conformité RGPD, alertes légales.',
-    color: 'bg-amber-50 text-amber-700 border-amber-100',
-    link:  '/fonctionnalites/juridique',
-  },
-  {
-    icon: '🌿',
-    title: 'ESG / CSRD',
-    desc:  'Bilan carbone, indicateurs sociaux, gouvernance, rapport DPEF exportable.',
-    color: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-    link:  '/fonctionnalites/esg',
-  },
-  {
-    icon: '🏛️',
-    title: 'Fiscalité',
-    desc:  'Déclarations DSF, TVA, IS, IRPP. Calculs automatisés selon votre zone.',
-    color: 'bg-rose-50 text-rose-700 border-rose-100',
-    link:  '/fonctionnalites/fiscalite',
-  },
+const modules: { icon: IconName; label: string; desc: string; accent: string }[] = [
+  { icon: 'wallet', label: 'Gestion commerciale', desc: 'Factures, devis, achats, stocks et trésorerie réunis dans un flux simple.', accent: 'from-blue-50 to-cyan-50 text-blue-700' },
+  { icon: 'chart', label: 'Comptabilité', desc: 'Une comptabilité conforme, automatisée et lisible, du journal au bilan.', accent: 'from-forest-50 to-emerald-50 text-forest-700' },
+  { icon: 'people', label: 'Ressources humaines', desc: 'Employés, contrats, congés et paie pilotés depuis le même espace.', accent: 'from-violet-50 to-purple-50 text-violet-700' },
+  { icon: 'scale', label: 'Juridique', desc: 'Contrats, signatures et conformité suivis sans perdre une échéance.', accent: 'from-amber-50 to-orange-50 text-amber-700' },
+  { icon: 'leaf', label: 'ESG & impact', desc: 'Mesurez vos engagements et transformez vos données en plans d’action.', accent: 'from-emerald-50 to-teal-50 text-emerald-700' },
+  { icon: 'building', label: 'Fiscalité', desc: 'TVA, DSF, IS et obligations locales calculés dans leur bon contexte.', accent: 'from-rose-50 to-pink-50 text-rose-700' },
 ]
 
-function ModulesSection() {
-  return (
-    <section className="py-20 lg:py-28">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeading
-          eyebrow="6 modules · 1 logiciel"
-          title="Tout ce dont votre PME a besoin pour fonctionner"
-          subtitle="Fini les outils éparpillés. Athenis regroupe la comptabilité, la gestion, la paie et plus encore — avec une vraie cohérence entre les modules."
-          center
-        />
+function SectionTitle({ tag, title, text, centered = false }: { tag: string; title: string; text: string; centered?: boolean }) {
+  return <div className={`max-w-[680px] ${centered ? 'mx-auto text-center' : ''}`}><p className="mb-4 text-[11px] font-bold uppercase tracking-[.2em] text-amber-700">{tag}</p><h2 className="text-[1.85rem] font-bold leading-[1.15] tracking-[-.03em] text-gray-950 sm:text-[2.35rem] lg:text-[2.75rem]">{title}</h2><p className="mt-5 text-[15px] leading-7 text-gray-600 sm:text-base">{text}</p></div>
+}
 
-        <div className="mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {MODULES.map((m) => (
-            <Link
-              key={m.title}
-              to={m.link}
-              className="group relative p-7 rounded-2xl bg-white border border-gray-200 hover:border-forest-300 hover:shadow-lg transition-all"
-            >
-              <div className={`inline-flex items-center justify-center h-14 w-14 rounded-xl ${m.color} border text-3xl mb-5`}>
-                {m.icon}
-              </div>
-              <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-forest-700 transition-colors">
-                {m.title}
-              </h3>
-              <p className="text-sm text-gray-600 leading-relaxed">{m.desc}</p>
-              <div className="mt-4 inline-flex items-center text-sm font-semibold text-forest-700 group-hover:gap-2 transition-all gap-1">
-                Découvrir
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
-              </div>
-            </Link>
-          ))}
+function HomePage() {
+  const [activeStep, setActiveStep] = useState(0)
+  const [openFaq, setOpenFaq] = useState(0)
+  const steps = [
+    ['01', 'Votre espace se configure', 'Choisissez votre pays et votre activité. Athenis adapte automatiquement la devise, la fiscalité et le plan comptable.'],
+    ['02', 'Vos données prennent vie', 'Importez clients, fournisseurs et collaborateurs, puis laissez les modules communiquer entre eux.'],
+    ['03', 'Vous pilotez en confiance', 'Suivez vos indicateurs, anticipez les échéances et prenez vos décisions depuis une vue claire.'],
+  ]
+  const faqs = [
+    ['Athenis convient-il à mon pays ?', 'Oui. Athenis adapte les devises, référentiels et règles aux pays couverts, notamment SYSCOHADA en Afrique francophone et PCG en France.'],
+    ['Puis-je commencer sans être comptable ?', 'Oui. Les parcours sont guidés et le vocabulaire reste accessible. Les opérations techniques sont automatisées en arrière-plan.'],
+    ['Mes données sont-elles protégées ?', 'Les accès sont contrôlés par rôles, l’authentification à deux facteurs est disponible et les données sensibles sont chiffrées.'],
+    ['Puis-je inviter mon équipe ou mon cabinet ?', 'Oui. Vous choisissez précisément les modules et actions accessibles à chaque collaborateur ou cabinet partenaire.'],
+  ]
+  return <div className="overflow-hidden bg-white text-gray-950">
+    <section className="landing-hero relative isolate min-h-screen overflow-hidden pb-14 pt-28 sm:pb-16 sm:pt-28 lg:flex lg:items-center lg:pb-14 lg:pt-24">
+      <div className="landing-grid absolute inset-0 -z-20"/><div className="landing-glow absolute left-1/2 top-0 -z-10 h-[680px] w-[900px] -translate-x-1/2 rounded-full bg-forest-100/70 blur-[110px]"/>
+      <div className="mx-auto grid max-w-[1180px] items-center gap-10 px-5 sm:px-8 lg:grid-cols-[.94fr_1.06fr] lg:gap-10 lg:px-10">
+        <div className="landing-hero-copy">
+          <div className="landing-enter inline-flex items-center gap-2 rounded-full border border-forest-200/80 bg-white/70 px-3.5 py-2 text-xs font-semibold text-forest-800 shadow-sm backdrop-blur" style={{ animationDelay: '80ms' }}><span className="relative flex h-2 w-2"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-forest-400 opacity-60"/><span className="relative inline-flex h-2 w-2 rounded-full bg-forest-600"/></span>La gestion nouvelle génération, pensée ici</div>
+          <h1 className="landing-enter mt-6 max-w-[610px] text-[clamp(2.35rem,5vw,4.2rem)] font-bold leading-[1.02] tracking-[-.045em] text-gray-950" style={{ animationDelay: '160ms' }}>Toute votre entreprise.<br/><span className="landing-gradient-text">Enfin en mouvement.</span></h1>
+          <p className="landing-enter mt-6 max-w-[560px] text-base leading-7 text-gray-600 sm:text-lg" style={{ animationDelay: '240ms' }}>Athenis relie gestion, comptabilité, paie, juridique et impact dans une expérience claire — pour vous laisser piloter, pas jongler.</p>
+          <div className="landing-enter mt-9 flex flex-col gap-3 sm:flex-row" style={{ animationDelay: '320ms' }}><Link to="/auth/register" className="landing-primary group">Commencer gratuitement <Icon name="arrow" className="h-5 w-5 transition-transform group-hover:translate-x-1"/></Link><a href="#decouvrir" className="landing-secondary group">Explorer la plateforme <span className="ml-1 text-lg transition-transform group-hover:translate-y-0.5">↓</span></a></div>
+          <div className="landing-enter mt-8 flex flex-wrap gap-x-6 gap-y-3 text-sm text-gray-500" style={{ animationDelay: '400ms' }}>{['Sans carte bancaire', 'Configuration en 2 min', 'Conforme SYSCOHADA & PCG'].map(item => <span key={item} className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-forest-100 text-forest-700"><Icon name="check" className="h-3.5 w-3.5"/></span>{item}</span>)}</div>
         </div>
+        <div className="landing-enter" style={{ animationDelay: '280ms' }}><HeroDashboard /></div>
       </div>
     </section>
-  )
+
+    <section className="border-y border-gray-100 bg-[#fbfcfb] py-8"><div className="mx-auto flex max-w-7xl flex-col items-center gap-6 px-5 lg:flex-row lg:justify-between lg:px-10"><p className="text-center text-xs font-bold uppercase tracking-[.18em] text-gray-400 lg:text-left">Une base solide pour grandir</p><div className="flex flex-wrap justify-center gap-x-8 gap-y-4 text-sm font-semibold text-gray-500">{['SYSCOHADA 2017', 'Plan comptable général', 'RGPD', '2FA & chiffrement', 'Multi-entreprise'].map((item,i)=><span key={item} className="flex items-center gap-2 transition-colors hover:text-forest-700"><span className="text-forest-500">0{i+1}</span>{item}</span>)}</div></div></section>
+
+    <section id="decouvrir" className="py-24 sm:py-32"><div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-10"><Reveal><SectionTitle tag="Un écosystème cohérent" title="Six métiers. Une seule façon de travailler." text="Chaque action alimente la suivante. Une facture met à jour la trésorerie, la comptabilité et vos indicateurs — sans ressaisie." centered/></Reveal><div className="mt-16 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{modules.map((module,i)=><Reveal key={module.label} delay={i*70}><Link to="/fonctionnalites" className="landing-module group flex h-full min-h-[270px] flex-col rounded-[24px] border border-gray-200/80 bg-white p-7"><span className={`grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br ${module.accent} transition-transform duration-500 group-hover:-rotate-3 group-hover:scale-110`}><Icon name={module.icon} className="h-7 w-7"/></span><h3 className="mt-8 text-xl font-bold tracking-tight text-gray-900">{module.label}</h3><p className="mt-3 flex-1 text-sm leading-7 text-gray-600">{module.desc}</p><span className="mt-5 flex items-center gap-2 text-sm font-bold text-forest-700">Découvrir <Icon name="arrow" className="h-4 w-4 transition-transform group-hover:translate-x-1.5"/></span></Link></Reveal>)}</div></div></section>
+
+    <section className="relative bg-forest-950 py-24 text-white sm:py-32"><div className="absolute inset-0 overflow-hidden"><div className="absolute -right-28 top-10 h-80 w-80 rounded-full border border-white/10"/><div className="absolute -right-10 top-28 h-80 w-80 rounded-full border border-white/5"/></div><div className="relative mx-auto grid max-w-7xl gap-16 px-5 sm:px-8 lg:grid-cols-[.85fr_1.15fr] lg:px-10"><Reveal><p className="text-xs font-bold uppercase tracking-[.2em] text-forest-300">Simple par conception</p><h2 className="mt-5 text-4xl font-bold leading-[1.05] tracking-[-.04em] sm:text-5xl">De zéro à une vision claire, sans détour.</h2><p className="mt-6 max-w-lg text-lg leading-8 text-forest-100/70">Athenis transforme une configuration complexe en trois moments naturels. Vous avancez, le système s’adapte.</p><div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-300 text-forest-950"><Icon name="spark"/></span><div><p className="text-sm font-bold">Prêt en moins de 30 minutes</p><p className="text-xs text-forest-200/60">Et accompagné à chaque étape</p></div></div></div></Reveal><Reveal delay={150}><div className="space-y-3">{steps.map((step,i)=><button key={step[0]} type="button" onMouseEnter={()=>setActiveStep(i)} onFocus={()=>setActiveStep(i)} onClick={()=>setActiveStep(i)} className={`w-full rounded-[22px] border p-5 text-left transition-all duration-500 sm:p-6 ${activeStep===i?'translate-x-2 border-forest-400/40 bg-white text-gray-950 shadow-2xl':'border-white/10 bg-white/[.04] text-white hover:bg-white/[.08]'}`}><div className="flex gap-5"><span className={`text-sm font-bold ${activeStep===i?'text-forest-600':'text-forest-300'}`}>{step[0]}</span><div><h3 className="text-lg font-bold">{step[1]}</h3><div className={`grid transition-all duration-500 ${activeStep===i?'grid-rows-[1fr] opacity-100':'grid-rows-[0fr] opacity-0'}`}><p className="overflow-hidden pt-3 text-sm leading-7 text-gray-600">{step[2]}</p></div></div></div></button>)}</div></Reveal></div></section>
+
+    <section className="py-24 sm:py-32"><div className="mx-auto grid max-w-7xl items-center gap-16 px-5 sm:px-8 lg:grid-cols-2 lg:px-10"><Reveal><div className="relative rounded-[32px] bg-[#eff7f3] p-6 sm:p-10"><div className="landing-pulse-card rounded-[24px] bg-white p-6 shadow-xl shadow-forest-900/10"><div className="flex items-center justify-between"><div><p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Temps gagné ce mois</p><p className="mt-2 text-4xl font-bold tracking-tight text-gray-950">24h 30</p></div><span className="grid h-14 w-14 place-items-center rounded-2xl bg-forest-900 text-white"><Icon name="spark" className="h-7 w-7"/></span></div><div className="mt-8 space-y-4">{[['Facturation automatisée','8h'],['Rapprochement & comptabilité','11h'],['Paie et déclarations','5h30']].map((r,i)=><div key={r[0]}><div className="mb-2 flex justify-between text-xs font-semibold"><span className="text-gray-600">{r[0]}</span><span className="text-forest-700">{r[1]}</span></div><div className="h-2 rounded-full bg-gray-100"><div className="landing-progress h-full rounded-full bg-gradient-to-r from-forest-800 to-forest-400" style={{width:`${[62,84,47][i]}%`,animationDelay:`${i*180}ms`}}/></div></div>)}</div></div><div className="absolute -bottom-5 -right-3 rounded-2xl border border-white bg-amber-300 px-5 py-4 shadow-xl sm:-right-5"><p className="text-xs font-bold uppercase tracking-wider text-amber-950/60">Votre priorité</p><p className="mt-1 font-bold text-forest-950">Faire avancer l’entreprise.</p></div></div></Reveal><Reveal delay={120}><SectionTitle tag="Moins d’administration" title="Un outil qui travaille pendant que vous décidez." text="Les automatismes restent discrets, mais leurs effets sont visibles : moins de saisie, moins d’oublis et une information toujours à jour."/><ul className="mt-8 space-y-4">{['Des alertes pertinentes, jamais envahissantes','Des tableaux de bord qui expliquent avant d’afficher','Une expérience fluide sur web, ordinateur et mobile'].map(item=><li key={item} className="flex items-center gap-3 text-sm font-semibold text-gray-700"><span className="grid h-7 w-7 place-items-center rounded-full bg-forest-50 text-forest-700"><Icon name="check" className="h-4 w-4"/></span>{item}</li>)}</ul></Reveal></div></section>
+
+    <section className="bg-[#f7faf8] py-24 sm:py-32"><div className="mx-auto max-w-3xl px-5 sm:px-8"><Reveal><SectionTitle tag="Questions fréquentes" title="Tout devient plus simple quand tout est clair." text="Les réponses essentielles avant de commencer." centered/></Reveal><div className="mt-12 space-y-3">{faqs.map((faq,i)=><Reveal key={faq[0]} delay={i*50}><button type="button" aria-expanded={openFaq===i} onClick={()=>setOpenFaq(openFaq===i?-1:i)} className={`w-full rounded-2xl border bg-white px-5 py-5 text-left transition-all ${openFaq===i?'border-forest-200 shadow-lg shadow-forest-900/5':'border-gray-200 hover:border-forest-200'}`}><div className="flex items-center justify-between gap-5"><span className="font-bold text-gray-900">{faq[0]}</span><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full bg-forest-50 text-xl text-forest-700 transition-transform ${openFaq===i?'rotate-45':''}`}>+</span></div><div className={`grid transition-all duration-300 ${openFaq===i?'grid-rows-[1fr] opacity-100':'grid-rows-[0fr] opacity-0'}`}><p className="overflow-hidden pt-4 text-sm leading-7 text-gray-600">{faq[1]}</p></div></button></Reveal>)}</div></div></section>
+
+    <section className="px-5 py-20 sm:px-8 sm:py-28"><Reveal className="mx-auto max-w-7xl"><div className="landing-cta relative overflow-hidden rounded-[32px] bg-forest-950 px-6 py-16 text-center text-white sm:px-12 sm:py-20"><div className="absolute inset-0 opacity-30"><div className="absolute -left-20 -top-24 h-72 w-72 rounded-full bg-forest-400 blur-[90px]"/><div className="absolute -bottom-28 right-0 h-72 w-72 rounded-full bg-amber-300 blur-[100px]"/></div><div className="relative"><p className="text-xs font-bold uppercase tracking-[.2em] text-forest-300">Le bon moment, c’est maintenant</p><h2 className="mx-auto mt-5 max-w-3xl text-4xl font-bold leading-[1.05] tracking-[-.04em] sm:text-5xl lg:text-6xl">Votre entreprise mérite une vision à 360°.</h2><p className="mx-auto mt-6 max-w-xl text-base leading-7 text-forest-100/70">Créez votre espace gratuitement et découvrez une gestion enfin fluide, cohérente et agréable.</p><div className="mt-9 flex flex-col justify-center gap-3 sm:flex-row"><Link to="/auth/register" className="landing-primary !bg-white !text-forest-950 hover:!bg-forest-50">Créer mon espace <Icon name="arrow" className="h-5 w-5"/></Link><Link to="/contact" className="inline-flex items-center justify-center rounded-xl border border-white/20 px-6 py-3.5 text-sm font-bold text-white transition hover:bg-white/10">Parler à un expert</Link></div></div></div></Reveal></section>
+  </div>
 }
 
-// ── How it works ─────────────────────────────────────────────────────────────
-
-const STEPS = [
-  {
-    num: '01',
-    title: 'Créez votre compte',
-    desc:  'Inscription en 2 minutes. Choisissez votre pays — Athenis configure automatiquement votre plan comptable (SYSCOHADA ou PCG) et votre devise locale.',
-    icon:  '✍️',
-  },
-  {
-    num: '02',
-    title: 'Importez vos données',
-    desc:  'Clients, fournisseurs, employés, factures existantes. Import en masse via Excel ou intégration directe avec votre banque.',
-    icon:  '📥',
-  },
-  {
-    num: '03',
-    title: 'Pilotez votre entreprise',
-    desc:  'Tableaux de bord, factures émises en 1 minute, paie automatisée, rapports financiers générés à la demande. Vous gagnez du temps tous les jours.',
-    icon:  '🚀',
-  },
-]
-
-function HowItWorks() {
-  return (
-    <section className="py-20 lg:py-28 bg-gradient-to-b from-white to-forest-50/30">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeading
-          eyebrow="Démarrage simple"
-          title="Opérationnel en 3 étapes"
-          subtitle="De l'inscription à la première facture émise — moins de 30 minutes."
-          center
-        />
-
-        <div className="mt-16 grid lg:grid-cols-3 gap-8 relative">
-          {/* Ligne de connexion (desktop only) */}
-          <div aria-hidden className="hidden lg:block absolute top-12 left-[20%] right-[20%] h-0.5 bg-gradient-to-r from-forest-200 via-forest-300 to-forest-200" />
-
-          {STEPS.map((step) => (
-            <div key={step.num} className="relative bg-white rounded-2xl p-7 border border-gray-100 shadow-sm">
-              <div className="flex items-start gap-4">
-                <div className="shrink-0 h-12 w-12 rounded-full bg-forest-900 text-white flex items-center justify-center font-bold text-lg shadow-lg">
-                  {step.num}
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-gray-900 mb-2">
-                    {step.icon} {step.title}
-                  </h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">{step.desc}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-12 text-center">
-          <Link
-            to="/auth/register"
-            className="inline-flex items-center gap-2 rounded-lg bg-forest-900 px-6 py-3 text-base font-semibold text-white shadow-md hover:bg-forest-800 transition-colors"
-          >
-            Commencer maintenant — gratuit
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-            </svg>
-          </Link>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Why Athenis ──────────────────────────────────────────────────────────────
-
-const WHY_FEATURES = [
-  {
-    icon:  '🌍',
-    title: 'Multi-zones natif',
-    desc:  'Le SEUL logiciel qui gère vraiment SYSCOHADA (Afrique) ET PCG (France) dans la même base de code. Plus besoin de jongler entre 2 outils.',
-  },
-  {
-    icon:  '💱',
-    title: 'Multi-devises temps réel',
-    desc:  'F CFA, Euro, USD et 50+ devises. Factures, états financiers, tarifs adaptés au pays. Tout est cohérent et formaté correctement.',
-  },
-  {
-    icon:  '👥',
-    title: 'Mode cabinet comptable',
-    desc:  'Gérez les comptabilités de tous vos clients depuis un seul login. Bascule rapide entre les dossiers, facturation des honoraires intégrée.',
-  },
-  {
-    icon:  '🔒',
-    title: 'Sécurité bancaire',
-    desc:  'JWT + Refresh tokens, 2FA (TOTP / Email / SMS), AES-256, audit log de toutes les actions. Hébergement UE conforme RGPD.',
-  },
-  {
-    icon:  '📱',
-    title: 'Web + Desktop + Mobile',
-    desc:  'Une seule app, partout. Navigateur, application Windows native, mobile PWA. Vos données sont synchronisées en permanence.',
-  },
-  {
-    icon:  '🎯',
-    title: 'Adapté aux PME',
-    desc:  'Pas une usine à gaz comme SAP. Pas un Excel surdimensionné comme QuickBooks. Athenis est conçu pour les PME de 1 à 50 employés.',
-  },
-]
-
-function WhyAthenis() {
-  return (
-    <section className="py-20 lg:py-28">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <SectionHeading
-          eyebrow="Pourquoi Athenis"
-          title="Ce qui nous différencie"
-          subtitle="6 raisons qui font qu'Athenis est le bon choix pour votre PME."
-          center
-        />
-
-        <div className="mt-16 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-12">
-          {WHY_FEATURES.map((f) => (
-            <div key={f.title}>
-              <div className="text-3xl mb-3">{f.icon}</div>
-              <h3 className="text-base font-bold text-gray-900 mb-2">{f.title}</h3>
-              <p className="text-sm text-gray-600 leading-relaxed">{f.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Pricing preview ──────────────────────────────────────────────────────────
-
-function PricingPreview() {
-  const { countryCode } = useDetectedCountry('CM')
-  const cfg     = getCountryConfig(countryCode)
-  const pricing = getAllPlansPricing(cfg.currencyCode, cfg.locale, cfg.currencySymbol)
-  const isXaf   = cfg.currencyCode === 'XAF' || cfg.currencyCode === 'XOF'
-  return (
-    <section className="py-20 lg:py-28 bg-forest-900 text-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-wider text-forest-300 mb-3">
-              Tarifs
-            </p>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight">
-              Démarrez gratuitement.<br />
-              <span className="text-forest-300">Évoluez quand vous voulez.</span>
-            </h2>
-            <p className="mt-6 text-lg text-gray-300 leading-relaxed">
-              Le plan <strong className="text-white">Gratuit</strong> couvre tous les besoins essentiels —
-              comptabilité simple, jusqu'à 30 factures/mois, 1 utilisateur. Parfait pour démarrer.
-            </p>
-            <p className="mt-3 text-gray-300 leading-relaxed">
-              Les plans payants débloquent les modules avancés (paie, ESG, juridique),
-              plus d'utilisateurs et des limites étendues. Tarifs adaptés à votre pays.
-            </p>
-            <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              <Link
-                to="/tarifs"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-3 text-base font-semibold text-forest-900 hover:bg-gray-50 transition-colors"
-              >
-                Voir les tarifs détaillés
-              </Link>
-              <Link
-                to="/auth/register"
-                className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-forest-700 px-6 py-3 text-base font-semibold text-white hover:bg-forest-800 transition-colors"
-              >
-                Démarrer gratuitement
-              </Link>
-            </div>
-          </div>
-
-          {/* Mini comparatif tarifs */}
-          <div className="bg-white/10 backdrop-blur rounded-2xl p-6 lg:p-8 border border-white/20">
-            <p className="text-sm font-semibold text-forest-300 mb-4">
-              EXEMPLES DE TARIFS · {cfg.flag} {cfg.currency} ({cfg.currencySymbol})
-            </p>
-            <div className="space-y-3">
-              {[
-                { plan: 'Gratuit', plankey: 'FREE'    as const, desc: 'Comptabilité simple, 1 user',  badge: null },
-                { plan: 'Starter', plankey: 'STARTER' as const, desc: 'Gestion + RH, 3 users',         badge: null },
-                { plan: 'Pro',     plankey: 'PRO'     as const, desc: 'Tout en illimité, 5 users',     badge: 'Populaire' as const },
-                { plan: 'Premium', plankey: 'PREMIUM' as const, desc: 'Multi-tenant, 20 users',        badge: null },
-              ].map(t => {
-                const p = pricing[t.plankey]
-                const isFree = p.amount === 0
-                return (
-                  <div key={t.plan} className={`flex items-baseline justify-between gap-4 p-3 rounded-lg ${t.badge ? 'bg-amber-400/10 border border-amber-400/30' : 'bg-white/5'}`}>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-white">{t.plan}</p>
-                        {t.badge && <span className="text-[10px] uppercase font-bold tracking-wider text-amber-300">{t.badge}</span>}
-                      </div>
-                      <p className="text-xs text-gray-400 truncate">{t.desc}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-white">{isFree ? `0 ${cfg.currencySymbol}` : p.formatted}</p>
-                      {!isFree && <p className="text-[10px] text-gray-400">/ mois</p>}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <p className="mt-4 text-xs text-gray-400 text-center">
-              {isXaf
-                ? 'Tarifs en F CFA pour l\'Afrique francophone — en EUR/USD ailleurs'
-                : 'Tarifs adaptés automatiquement à votre pays'}
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── FAQ ──────────────────────────────────────────────────────────────────────
-
-const FAQS = [
-  {
-    q: 'Est-ce vraiment gratuit pour démarrer ?',
-    a: 'Oui. Le plan Gratuit est utilisable indéfiniment, sans carte bancaire requise. Vous accédez à la comptabilité simple, jusqu\'à 30 factures par mois, et 1 utilisateur. Aucune obligation de passer à un plan payant.',
-  },
-  {
-    q: 'Athenis est-il conforme aux normes comptables ?',
-    a: 'Oui. Athenis applique automatiquement SYSCOHADA Révisé 2017 pour les pays OHADA (Cameroun, Sénégal, Côte d\'Ivoire, etc.) et le Plan Comptable Général (PCG) pour la France. Tous les documents (Bilan, Compte de Résultat, TAFIRE) sont aux normes.',
-  },
-  {
-    q: 'Mes données sont-elles en sécurité ?',
-    a: 'Oui. Vos données sont hébergées en Europe (conformité RGPD), chiffrées en transit (HTTPS/TLS 1.3) et au repos (AES-256). Nous proposons l\'authentification à 2 facteurs (TOTP, e-mail, SMS) et des sauvegardes quotidiennes automatiques avec rétention 30 jours.',
-  },
-  {
-    q: 'Puis-je importer mes données existantes ?',
-    a: 'Oui. Vous pouvez importer vos clients, fournisseurs, articles et écritures comptables via fichiers Excel/CSV. Pour des migrations plus complexes (depuis Sage, QuickBooks, etc.), notre équipe peut vous accompagner.',
-  },
-  {
-    q: 'Comment se passe la facturation ?',
-    a: 'Athenis est facturé au mois, sans engagement. Vous pouvez résilier à tout moment depuis votre interface. Paiement par carte bancaire, virement, ou Mobile Money (Orange Money, MTN Mobile Money) selon votre pays.',
-  },
-  {
-    q: 'Mes employés ont-ils accès à Athenis ?',
-    a: 'Oui. Selon votre plan, vous pouvez ajouter jusqu\'à 1, 3, 5 ou 20 utilisateurs. Chaque utilisateur a un rôle (Admin, Comptable, RH, Lecture seule…) qui limite ce qu\'il peut voir et modifier.',
-  },
-  {
-    q: 'Athenis fonctionne-t-il hors ligne ?',
-    a: 'Partiellement. L\'application Web et Desktop fonctionne avec une connexion internet. Pour les périodes hors ligne courtes, les écrans déjà chargés restent consultables. Un vrai mode hors-ligne complet est sur notre roadmap.',
-  },
-]
-
-function FAQ() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0)
-
-  return (
-    <section className="py-20 lg:py-28">
-      <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-        <SectionHeading
-          eyebrow="Questions fréquentes"
-          title="Tout ce que vous voulez savoir"
-          subtitle="Pas trouvé votre question ? Écrivez-nous à contact@athenis360.com"
-          center
-        />
-
-        <div className="mt-12 space-y-3">
-          {FAQS.map((faq, i) => (
-            <details
-              key={i}
-              open={openIndex === i}
-              onToggle={(e) => {
-                if ((e.target as HTMLDetailsElement).open) setOpenIndex(i)
-                else if (openIndex === i) setOpenIndex(null)
-              }}
-              className="group rounded-xl border border-gray-200 bg-white open:border-forest-300 open:shadow-sm"
-            >
-              <summary className="cursor-pointer list-none px-5 py-4 flex items-center justify-between gap-4">
-                <span className="text-base font-semibold text-gray-900">{faq.q}</span>
-                <svg className="h-5 w-5 shrink-0 text-gray-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-              </summary>
-              <div className="px-5 pb-4 text-sm text-gray-600 leading-relaxed">
-                {faq.a}
-              </div>
-            </details>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Final CTA ────────────────────────────────────────────────────────────────
-
-function FinalCTA() {
-  return (
-    <section className="py-20 lg:py-24">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="rounded-3xl bg-gradient-to-br from-forest-900 via-forest-800 to-forest-900 px-8 py-16 lg:px-16 lg:py-20 text-center relative overflow-hidden">
-          {/* Décoratif */}
-          <div aria-hidden className="absolute inset-0 opacity-20">
-            <div className="absolute -top-12 -left-12 h-64 w-64 rounded-full bg-amber-400 blur-3xl" />
-            <div className="absolute -bottom-12 -right-12 h-64 w-64 rounded-full bg-forest-400 blur-3xl" />
-          </div>
-
-          <div className="relative">
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white leading-tight">
-              Prêt à simplifier la gestion de votre PME ?
-            </h2>
-            <p className="mt-4 text-lg text-gray-300 max-w-2xl mx-auto">
-              Rejoignez les entreprises qui ont choisi Athenis pour leur comptabilité,
-              leur paie et leur gestion 360°. Démarrage en 2 minutes, gratuit.
-            </p>
-
-            <div className="mt-8 flex flex-col sm:flex-row justify-center gap-3">
-              <Link
-                to="/auth/register"
-                className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-8 py-4 text-base font-semibold text-forest-900 shadow-lg hover:bg-gray-50 transition-colors"
-              >
-                Créer mon compte gratuit
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                </svg>
-              </Link>
-              <Link
-                to="/contact"
-                className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-white/20 px-8 py-4 text-base font-semibold text-white hover:bg-white/10 transition-colors"
-              >
-                Parler à un expert
-              </Link>
-            </div>
-
-            <p className="mt-6 text-sm text-gray-400">
-              Sans engagement · Sans carte bancaire · Configuration en 2 min
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-// ── Page export ──────────────────────────────────────────────────────────────
-
-export function HomePage() {
-  return (
-    <>
-      <Hero />
-      <TrustStrip />
-      <ModulesSection />
-      <HowItWorks />
-      <WhyAthenis />
-      <PricingPreview />
-      <FAQ />
-      <FinalCTA />
-    </>
-  )
-}
+export { HomePage }

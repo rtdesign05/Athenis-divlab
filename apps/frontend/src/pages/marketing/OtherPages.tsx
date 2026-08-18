@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom'
 
 export function AboutPage() {
   return (
-    <div className="bg-white">
+    <div className="marketing-page marketing-about bg-white">
       {/* Hero */}
       <section className="bg-gradient-to-b from-forest-50/40 to-white pt-12 pb-12 lg:pt-20 lg:pb-16 border-b border-gray-100">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 text-center">
@@ -21,55 +21,68 @@ export function AboutPage() {
       </section>
 
       {/* Story */}
-      <section className="py-16 lg:py-20">
-        <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 prose prose-gray">
-          <h2>Pourquoi Athenis ?</h2>
-          <p>
-            Les outils comptables actuels sont conçus soit pour les grandes entreprises (SAP, Oracle —
-            chers et complexes), soit pour les marchés anglo-saxons (QuickBooks, Xero — incompatibles
-            SYSCOHADA). Entre les deux, les <strong>PME francophones d'Afrique et de France</strong>
-            sont mal servies.
-          </p>
-          <p>
-            Athenis combine ce qu'il y a de mieux dans le SaaS moderne (interface claire, multi-device,
-            sécurité forte) avec une connaissance fine des spécificités locales : <strong>SYSCOHADA
-            Révisé 2017</strong>, <strong>Plan Comptable Général</strong>, <strong>CNPS</strong>,
-            <strong> URSSAF</strong>, <strong>NIU</strong>, <strong>RCCM</strong>, <strong>Mobile Money</strong>.
-          </p>
+      <section className="about-story py-16 lg:py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid items-stretch gap-6 lg:grid-cols-[1.08fr_.92fr]">
+            <article className="about-panel about-panel--primary">
+              <div className="about-kicker"><span aria-hidden="true">✦</span> Notre point de départ</div>
+              <h2>Pourquoi Athenis&nbsp;?</h2>
+              <p>
+                Les solutions historiques sont souvent trop lourdes pour une PME, tandis que les outils
+                anglo-saxons comprennent mal les réalités comptables francophones. Entre les deux, les
+                entreprises d'Afrique et de France méritent une solution réellement pensée pour elles.
+              </p>
+              <div className="about-highlight">
+                <span className="about-symbol" aria-hidden="true">◎</span>
+                <p><strong>Une ambition locale, une expérience moderne.</strong> Athenis réunit la clarté du SaaS, le multi-device et une sécurité forte avec une connaissance fine des réglementations locales.</p>
+              </div>
+            </article>
 
-          <h2>Nos valeurs</h2>
-          <ul>
-            <li>
-              <strong>Simplicité.</strong> Un outil de gestion ne devrait pas nécessiter une formation
-              de 3 jours. Athenis est conçu pour être pris en main en moins de 30 minutes.
-            </li>
-            <li>
-              <strong>Souveraineté des données.</strong> Vos données restent sur des serveurs en
-              Europe (OVH France), conformes RGPD. Vous restez propriétaire de tout, à tout moment.
-            </li>
-            <li>
-              <strong>Transparence des prix.</strong> Pas de prix cachés, pas de coûts d'installation,
-              pas de surcoût pour la fonctionnalité X. Le prix affiché est le prix payé.
-            </li>
-            <li>
-              <strong>Support en français.</strong> Notre équipe est francophone et basée en Afrique
-              et en France. Vous parlez à des humains qui comprennent votre contexte.
-            </li>
-          </ul>
+            <aside className="about-panel about-panel--standards">
+              <span className="about-panel-number">01</span>
+              <div className="about-icon" aria-hidden="true">▱</div>
+              <h3>Conçu pour votre réalité</h3>
+              <p>Un socle unifié qui s’adapte aux usages et obligations de chaque marché.</p>
+              <div className="about-tags">
+                {['SYSCOHADA Révisé 2017', 'Plan Comptable Général', 'CNPS', 'URSSAF', 'NIU', 'RCCM', 'Mobile Money'].map((tag) => <span key={tag}>{tag}</span>)}
+              </div>
+            </aside>
+          </div>
 
-          <h2>L'équipe</h2>
-          <p>
-            Athenis est porté par une équipe pluridisciplinaire — développeurs, comptables agréés,
-            juristes, designers — répartie entre le Cameroun et la France. Nous travaillons en
-            étroite collaboration avec des cabinets d'expertise comptable de la zone OHADA pour
-            garantir la conformité de notre solution.
-          </p>
+          <div className="about-section-heading">
+            <div><span>Ce qui nous guide</span><h2>Des valeurs qui se voient dans le produit</h2></div>
+            <p>Chaque choix d’interface, de sécurité et d’accompagnement part d’un même principe&nbsp;: faciliter le quotidien des PME.</p>
+          </div>
 
-          <h2>Nous rejoindre</h2>
-          <p>
-            Vous êtes développeur, comptable, ou commercial intéressé par le projet ?
-            Écrivez-nous à <a href="mailto:contact@athenis360.com">contact@athenis360.com</a>.
-          </p>
+          <div className="about-values-grid">
+            {[
+              { icon: '✦', n: '01', title: 'Simplicité', text: 'Une prise en main naturelle, pensée pour devenir autonome en moins de 30 minutes.' },
+              { icon: '◉', n: '02', title: 'Souveraineté', text: 'Des données hébergées en Europe, conformes au RGPD et qui restent entièrement les vôtres.' },
+              { icon: '◇', n: '03', title: 'Transparence', text: 'Un prix clair, sans frais d’installation ni fonctionnalité essentielle cachée.' },
+              { icon: '↔', n: '04', title: 'Proximité', text: 'Un support francophone assuré par des personnes qui comprennent réellement votre contexte.' },
+            ].map(({ icon, n, title, text }) => (
+              <article className="about-value-card" key={title}>
+                <span className="about-value-number">{n}</span>
+                <div className="about-icon" aria-hidden="true">{icon}</div>
+                <h3>{title}</h3><p>{text}</p>
+              </article>
+            ))}
+          </div>
+
+          <div className="about-team-card">
+            <div className="about-team-visual" aria-hidden="true">
+              <span>4×</span><i></i><i></i><i></i>
+            </div>
+            <div className="about-team-copy">
+              <span className="about-eyebrow">Une expertise plurielle</span>
+              <h2>L’équipe derrière Athenis</h2>
+              <p>Développeurs, comptables agréés, juristes et designers travaillent entre le Cameroun et la France, en collaboration étroite avec des cabinets d’expertise comptable de la zone OHADA.</p>
+              <div className="about-team-pills"><span>Cameroun</span><span>France</span><span>Expertise OHADA</span></div>
+            </div>
+            <a className="about-join-link" href="mailto:contact@athenis360.com">
+              <span><small>Envie de nous rejoindre&nbsp;?</small>Découvrir les opportunités</span><b aria-hidden="true">↗</b>
+            </a>
+          </div>
         </div>
       </section>
 
@@ -162,7 +175,7 @@ const SECURITY_PILLARS = [
 
 export function SecurityPage() {
   return (
-    <div className="bg-white">
+    <div className="marketing-page marketing-security bg-white">
       {/* Header */}
       <section className="bg-gradient-to-b from-forest-50/40 to-white pt-12 pb-12 lg:pt-20 lg:pb-16 border-b border-gray-100">
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 text-center">
@@ -274,7 +287,7 @@ export function ContactPage() {
   }
 
   return (
-    <div className="bg-white">
+    <div className="marketing-page marketing-contact bg-white">
       <section className="bg-gradient-to-b from-forest-50/40 to-white pt-12 pb-12 lg:pt-20 lg:pb-16 border-b border-gray-100">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 text-center">
           <p className="text-sm font-semibold uppercase tracking-wider text-forest-700 mb-3">Contact</p>

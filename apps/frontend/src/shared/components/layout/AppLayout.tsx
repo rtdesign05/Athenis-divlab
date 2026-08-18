@@ -15,7 +15,7 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="athenis-app-shell flex h-screen overflow-hidden bg-slate-50">
 
       {/* Sidebar desktop */}
       <div className="relative z-10 hidden lg:flex">
