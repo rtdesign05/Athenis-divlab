@@ -25,28 +25,29 @@ function MarketingHeader() {
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
 
   return (
-    <header className={`sticky top-0 z-50 transition-all ${scrolled ? 'bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100' : 'bg-white border-b border-transparent'}`}>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-16 items-center justify-between">
+    <header className={`fixed inset-x-0 z-50 px-3 transition-all duration-700 ease-in-out sm:px-5 ${scrolled ? 'top-3' : 'top-0'}`}>
+      <div className={`mx-auto rounded-2xl border px-4 backdrop-blur-xl transition-all duration-700 ease-in-out sm:px-5 ${scrolled ? 'max-w-[1060px] border-white/65 bg-white/[.72] shadow-[0_20px_48px_-20px_rgba(13,34,25,.45)]' : 'max-w-[1240px] border-white/75 bg-white/[.82] shadow-[0_10px_30px_-20px_rgba(13,34,25,.28)]'}`}>
+        <div className={`flex items-center justify-between transition-all duration-500 ${scrolled ? 'h-[56px]' : 'h-[60px]'}`}>
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-forest-900 transition-transform group-hover:scale-105">
-              <span className="text-lg font-bold text-white">A</span>
+          <Link to="/" className="group flex items-center gap-2.5" aria-label="Athenis — accueil">
+            <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-[10px] bg-forest-900 shadow-md shadow-forest-900/15 transition-all duration-300 group-hover:-rotate-3 group-hover:scale-105">
+              <span className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-forest-600/70 to-transparent" />
+              <span className="relative text-base font-bold text-white">A</span>
             </div>
             <div>
-              <p className="text-lg font-bold text-gray-900 leading-tight">Athenis</p>
-              <p className="text-[10px] font-medium uppercase tracking-wider text-forest-700 leading-none">Gestion 360°</p>
+              <p className="text-base font-bold leading-tight tracking-tight text-gray-950">Athenis</p>
+              <p className="text-[9px] font-bold uppercase leading-none tracking-[.18em] text-forest-600">Gestion 360°</p>
             </div>
           </Link>
 
           {/* Desktop nav */}
-          <nav className="hidden lg:flex items-center gap-8">
+          <nav className="hidden items-center gap-1 lg:flex">
             {NAV_LINKS.map((link) => (
               <NavLink
                 key={link.to}
                 to={link.to}
                 className={({ isActive }) =>
-                  `text-sm font-medium transition-colors ${isActive ? 'text-forest-700' : 'text-gray-600 hover:text-forest-700'}`
+                  `relative rounded-lg px-3 py-2 text-[13px] font-semibold transition-all duration-300 after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:origin-left after:rounded-full after:bg-amber-500 after:transition-transform ${isActive ? 'bg-amber-50 text-forest-900 after:scale-x-100' : 'text-gray-600 after:scale-x-0 hover:-translate-y-0.5 hover:bg-amber-50/70 hover:text-forest-900 hover:after:scale-x-100'}`
                 }
               >
                 {link.label}
@@ -55,13 +56,16 @@ function MarketingHeader() {
           </nav>
 
           {/* CTAs */}
-          <div className="hidden lg:flex items-center gap-3">
-            <Link to="/auth/login" className="text-sm font-medium text-gray-700 hover:text-forest-700 transition-colors">
+          <div className="hidden items-center gap-2 lg:flex">
+            <Link to="/auth/login" className="rounded-lg px-2.5 py-2 text-[13px] font-semibold text-gray-700 transition-all duration-300 hover:-translate-y-0.5 hover:bg-amber-50 hover:text-forest-800">
               Se connecter
+            </Link>
+            <Link to="/contact" className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] font-bold text-gray-700 shadow-[3px_3px_0_#e7d8c1] transition-all duration-200 hover:-translate-y-0.5 hover:border-amber-200 hover:text-forest-800 hover:shadow-[4px_4px_0_#f5c36a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">
+              Demander une démo
             </Link>
             <Link
               to="/auth/register"
-              className="rounded-lg bg-forest-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:bg-forest-800 hover:shadow"
+              className="rounded-lg bg-forest-900 px-3.5 py-2 text-[13px] font-bold text-white shadow-[3px_3px_0_#e8b04c] transition-all duration-200 hover:-translate-y-0.5 hover:bg-forest-800 hover:shadow-[4px_4px_0_#f5c36a] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
             >
               Essayer gratuitement
             </Link>
@@ -71,8 +75,9 @@ function MarketingHeader() {
           <button
             type="button"
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-100"
-            aria-label="Menu"
+            className="rounded-xl border border-gray-200 p-2.5 transition hover:border-forest-200 hover:bg-forest-50 lg:hidden"
+            aria-label={mobileOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+            aria-expanded={mobileOpen}
           >
             <svg className="h-6 w-6 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               {mobileOpen
@@ -84,7 +89,7 @@ function MarketingHeader() {
 
         {/* Mobile menu */}
         {mobileOpen && (
-          <div className="lg:hidden pb-4 border-t border-gray-100 pt-3 space-y-1">
+          <div className="space-y-1 border-t border-gray-100 pb-5 pt-3 lg:hidden">
             {NAV_LINKS.map((link) => (
               <NavLink
                 key={link.to}
@@ -104,6 +109,9 @@ function MarketingHeader() {
                 Essayer
               </Link>
             </div>
+            <Link to="/contact" className="mt-2 block rounded-lg border border-gray-200 px-3 py-2 text-center text-sm font-semibold text-gray-700">
+              Demander une démo
+            </Link>
           </div>
         )}
       </div>
@@ -115,7 +123,7 @@ function MarketingHeader() {
 
 function MarketingFooter() {
   return (
-    <footer className="bg-forest-950 text-gray-300 mt-24">
+    <footer className="mt-0 bg-forest-950 text-gray-300">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12">
 

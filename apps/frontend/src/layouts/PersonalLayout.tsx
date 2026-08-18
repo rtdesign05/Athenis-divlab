@@ -65,7 +65,7 @@ export function PersonalLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="athenis-app-shell flex h-screen overflow-hidden bg-gray-50">
       {/* Sidebar desktop (>= lg) */}
       <div className="hidden lg:flex">
         <PersonalSidebar />

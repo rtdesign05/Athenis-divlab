@@ -277,7 +277,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-2">
+    <div className="athenis-auth-page min-h-screen lg:grid lg:grid-cols-2">
       <style>{`
         @keyframes shake {
           0%,100% { transform: translateX(0) }

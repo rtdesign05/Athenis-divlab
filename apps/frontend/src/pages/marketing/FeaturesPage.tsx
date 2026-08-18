@@ -146,7 +146,7 @@ export const MODULES: ModuleDetail[] = [
 
 export function FeaturesPage() {
   return (
-    <div className="bg-white">
+    <div className="marketing-page marketing-features bg-white">
       {/* Header */}
       <section className="bg-gradient-to-b from-forest-50/40 to-white pt-12 pb-12 lg:pt-20 lg:pb-16 border-b border-gray-100">
         <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 text-center">
